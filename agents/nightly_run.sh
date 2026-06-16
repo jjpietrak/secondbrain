@@ -85,6 +85,27 @@ run_vault() {  # $1 = vault name
     fi
   fi
 
+  # 2b. Research topics due today — ALWAYS the claude engine ($0, subscription / Agent SDK
+  # credit; never Perplexity in unattended runs). Capped by NIGHTLY_RESEARCH_MAX (default 3).
+  echo "--- [2b] Research due topics ($V, claude engine) ---"
+  local DUE_MAX="${NIGHTLY_RESEARCH_MAX:-3}"
+  local DUE=() topic n=0
+  mapfile -t DUE < <(cd "$CODE_PATH" && "$PY" -m agents.vault_config topics-due)
+  if [ "${#DUE[@]}" -eq 0 ]; then
+    echo "No topics due today."
+  else
+    for topic in "${DUE[@]}"; do
+      [ -z "$topic" ] && continue
+      n=$((n + 1))
+      if [ "$n" -gt "$DUE_MAX" ]; then
+        echo "Deferring $(( ${#DUE[@]} - DUE_MAX )) more due topic(s) (NIGHTLY_RESEARCH_MAX=$DUE_MAX)."
+        break
+      fi
+      echo "Researching ($n/$DUE_MAX): $topic"
+      run_claude "Run the /obsidian-research-deep command with arguments: \"$topic\" --claude"
+    done
+  fi
+
   # 3. Lint pass.
   echo "--- [3/5] Lint ($V) ---"
   [ "$SKIP_PAID" = "0" ] && run_claude "Run the /obsidian-lint command on the vault."

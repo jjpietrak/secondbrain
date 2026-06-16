@@ -17,6 +17,7 @@ CLI (used by agents/commands to resolve paths without parsing YAML themselves):
   python -m agents.vault_config purpose      # active vault PURPOSE one-liner
   python -m agents.vault_config notebook     # active vault NotebookLM notebook id/alias
   python -m agents.vault_config engine       # default research engine (claude|perplexity|free)
+  python -m agents.vault_config topics-due   # topic names due for research today
   python -m agents.vault_config list         # all registered vault names
   python -m agents.vault_config env          # export lines: VAULT, VAULT_ROOT, VAULT_PATH
   ... add --vault <name> to any of the above to target a specific vault.
@@ -125,6 +126,20 @@ def research_engine(name: str | None = None) -> str:
     return val if val in {"claude", "perplexity", "free"} else "claude"
 
 
+def due_topics(name: str | None = None) -> list[str]:
+    """Topic names due for research today: `daily` always, others only on Mondays."""
+    from datetime import date
+    is_monday = date.today().weekday() == 0
+    out = []
+    for t in load_topics(name).get("topics", []):
+        if not isinstance(t, dict) or not t.get("name"):
+            continue
+        freq = (t.get("frequency") or "weekly").strip().lower()
+        if freq == "daily" or is_monday:
+            out.append(t["name"])
+    return out
+
+
 def _main(argv: list[str]) -> int:
     args = list(argv)
     name = None
@@ -144,6 +159,8 @@ def _main(argv: list[str]) -> int:
         print(notebooklm_notebook(name))
     elif cmd == "engine":
         print(research_engine(name))
+    elif cmd == "topics-due":
+        print("\n".join(due_topics(name)))
     elif cmd == "list":
         print("\n".join(registered_vaults()))
     elif cmd == "env":

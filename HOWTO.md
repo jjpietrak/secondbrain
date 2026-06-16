@@ -92,12 +92,15 @@ citation-grounded shape, at $0 marginal cost. Change the default per vault by ed
 ## Automations (shell / Python, run from `/home/jpietrak/second_brain` in WSL)
 
 ### Nightly run — `agents/nightly_run.sh`
-Tier-2 local maintenance (pull → ingest new `raw/` → lint → health → NotebookLM sync → commit/push),
-all on Agent SDK credit ($0). Per-vault budget gate + 20h catch-up guard.
+Tier-2 local maintenance (pull → ingest new `raw/` → **research due topics** → lint → health →
+NotebookLM sync → commit/push), all on Agent SDK credit ($0). Per-vault budget gate + 20h
+catch-up guard. Research **always uses the `--claude` engine** (never Perplexity in unattended
+runs); topics due = `daily` every night + `weekly` on Mondays, capped by `NIGHTLY_RESEARCH_MAX`.
 ```bash
 DRY_RUN=1 bash agents/nightly_run.sh          # rehearse the active vault (no writes)
 bash agents/nightly_run.sh                     # run the active vault for real
 VAULT=all bash agents/nightly_run.sh           # process every enabled vault
+NIGHTLY_RESEARCH_MAX=5 bash agents/nightly_run.sh   # raise the per-night research cap (default 3)
 bash scripts/setup_cron.sh                     # register the 2 AM Windows Task Scheduler job
 ```
 
