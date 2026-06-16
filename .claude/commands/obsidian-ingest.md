@@ -1,5 +1,5 @@
 ---
-description: Ingest a source (file/url/text) into the vault - or batch-ingest every not-yet-ingested raw source (no arg, or --new/--all). The vault rewrites itself around new knowledge; a per-vault content-hash index dedupes so nothing is ingested twice.
+description: Ingest a source (file/url/text) into the vault - or batch-ingest every not-yet-ingested raw source (no arg, or --new/--all). The vault rewrites itself around new knowledge; a per-vault source-id index (arXiv/DOI/URL/hash, in meta/) dedupes so nothing is ingested twice - even if a file is renamed.
 category: research
 triggers_en: ["ingest this source", "add this article", "import this", "absorb this"]
 ---
@@ -11,7 +11,8 @@ or empty). Resolve which mode:
 
 - **Single source** — `$ARGUMENTS` is a specific URL / file path / pasted text → ingest just that.
 - **Batch (no argument, or `--new` / `--all`)** — ingest every raw source not yet ingested.
-  Get the list from the per-vault ingest index (content-hash keyed, idempotent):
+  Get the list from the per-vault ingest index (keyed by STABLE source id — arXiv/DOI/
+  YouTube/URL/content-hash, NOT filename — so renamed files are not re-ingested):
   ```bash
   python -m agents.ingest_index pending      # one raw relpath per line (new or changed files)
   ```

@@ -119,14 +119,21 @@ Folder: `<vault>/research/notebooklm/<notebook-slug>/` — `push/` (you → note
 `notes/` (notebook → you), `.nlm-sync.json` (manifest). Conflicts back up to `.conflicts/`.
 
 ### Ingest index — `agents/ingest_index.py`
-Per-vault content-hash ledger (`<vault>/meta/ingest_index.json`) of which `raw/` sources have
-been ingested. Powers batch `/obsidian-ingest` and the nightly ingest step (idempotent dedup).
+Per-vault registry of which sources are ingested vs pending. Canonical store
+`<vault>/meta/ingest_index.json`; human-readable table `<vault>/meta/ingest_index.md`.
+**Keyed by a stable source id — arXiv/DOI/YouTube/URL/content-hash, NOT the filename** — so a
+renamed file is never mistaken for a new source. Each row also keeps `filename`, `url`, title,
+type, and the `source_page` it produced. Powers batch `/obsidian-ingest` and the nightly step.
 ```bash
-python -m agents.ingest_index status            # raw_sources / ingested / pending counts
+python -m agents.ingest_index scan              # register raw/ sources as pending (no ingest)
+python -m agents.ingest_index status            # total / ingested / pending counts
 python -m agents.ingest_index pending           # raw files new or changed since last ingest
+python -m agents.ingest_index id <relpath>      # show the derived source id for one file
 python -m agents.ingest_index mark <relpath> --source-page <wiki/sources/x.md>   # record ingested
+python -m agents.ingest_index report            # (re)write the meta/ingest_index.md table
 ```
-A file is "pending" if new, or if its content hash changed since it was ingested (→ re-ingest).
+A source is "pending" if its id is new, or its content hash changed since ingest (→ re-ingest).
+IDs: `arxiv:2401.12345`, `doi:10.…`, `youtube:<id>`, `url:<canonical>`, `sha256:<hash>`.
 
 ### Cost & health — `agents/cost_tracker.py`, `agents/vault_health.py`
 ```bash
