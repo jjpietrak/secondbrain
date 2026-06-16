@@ -37,8 +37,18 @@ PERPLEXITY_RESEARCH_MODEL = get_optional("PERPLEXITY_RESEARCH_MODEL", "sonar-pro
 PERPLEXITY_DEEP_MODEL = get_optional("PERPLEXITY_DEEP_MODEL", "sonar-deep-research")
 NOTEBOOKLM_MODEL = get_optional("NOTEBOOKLM_MODEL", "gemini-2.5-flash")
 
-# Project uses VAULT_PATH; fall back to legacy OBSIDIAN_VAULT_PATH name.
-VAULT_PATH = Path(
-    os.environ.get("VAULT_PATH") or get_required("OBSIDIAN_VAULT_PATH")
-).expanduser()
+def _resolve_vault_path() -> Path:
+    """Active vault path. Precedence: VAULT_PATH env > multi-vault resolver
+    (VAULT / default_vault) > legacy OBSIDIAN_VAULT_PATH."""
+    vp = os.environ.get("VAULT_PATH")
+    if vp:
+        return Path(vp).expanduser()
+    try:
+        from agents import vault_config as vc  # resolves VAULT / default_vault
+        return vc.vault_path()
+    except Exception:
+        return Path(get_required("OBSIDIAN_VAULT_PATH")).expanduser()
+
+
+VAULT_PATH = _resolve_vault_path()
 USAGE_LOG = Path.home() / ".research-toolkit" / "usage.log"

@@ -8,8 +8,8 @@ triggers_en: ["deep research", "thorough research", "vault-first research", "res
 
 Execute the following for `$ARGUMENTS`:
 
-1. Load the vault **PURPOSE** (`/mnt/c/Obsidian/Inference-Disagg/_CLAUDE.md` → "## Vault
-   purpose", mirrored in `config/vault.yaml`) and hold it as a high-priority relevance
+1. Load the vault **PURPOSE** (`$VAULT_ROOT/_CLAUDE.md` → "## Vault
+   purpose", mirrored in the active vault's `config/vaults/<vault>/vault.yaml`) and hold it as a high-priority relevance
    filter for gap analysis and source selection. Then resolve the topic from the user's
    argument. If no topic, default to the PURPOSE as the subject. Gaps and queries should
    advance the PURPOSE; flag clearly off-purpose findings rather than expanding into them.
@@ -25,14 +25,14 @@ Execute the following for `$ARGUMENTS`:
    - **Phase 1** - vault scan: finds existing notes mentioning the topic (the baseline).
    - **Phase 2** - gap analysis: Perplexity sonar-pro identifies what's missing/stale and emits 3-5 targeted queries (each tagged `web` or `x`).
    - **Phase 3** - gap-fill: runs each query via Perplexity (web) or Grok+Live Search (X discourse).
-   - **Phase 4** - synthesis: Perplexity produces a delta report, the script saves it to `/mnt/c/Obsidian/Inference-Disagg/research/deep/YYYY-MM-DD - <slug>.md`, then emits a JSON payload between `<<<RESEARCH_DEEP_PROPAGATION_PAYLOAD>>>` markers.
+   - **Phase 4** - synthesis: Perplexity produces a delta report, the script saves it to `$VAULT_ROOT/research/deep/YYYY-MM-DD - <slug>.md`, then emits a JSON payload between `<<<RESEARCH_DEEP_PROPAGATION_PAYLOAD>>>` markers.
 
    Show the synthesis body verbatim, then do the propagation step (step 5).
 
 4. **Free mode** - the script does Phase 1 (vault scan) plus free-source aggregation and prints a JSON block with `"mode": "free-sources-deep"`, containing `vault_baseline_notes` (path, score, excerpt of what the vault already knew), `sources` (fresh external results), `stats`, `warnings`, and an `instruction`. YOU are the synthesizer:
    - Read the baseline excerpts and the source results. If `stats.success` is false (fewer than 3 sources returned), flag the thin coverage in Open Questions - do not pad.
    - Produce a delta with exactly these sections: What's New Since Vault Baseline, What's Confirmed, Contradictions / Updates Needed (name the `[[vault path]]`), Synthesis, Recommended Vault Updates, Open Questions. Every external claim carries a recency marker and source domain; every vault reference uses `[[wikilinks]]`. Never invent facts to fill a section.
-   - Save it yourself to `/mnt/c/Obsidian/Inference-Disagg/research/deep/YYYY-MM-DD - <slug>.md`, starting from `/mnt/c/Obsidian/Inference-Disagg/wiki/synthesis/_template.md` and following `/home/jpietrak/second_brain/skills/references/ai-first-rules.md` (preamble; frontmatter with `type: research-deep`, `ai-first: true`, `created`, `updated`, `vault-baseline-notes`, and a `sources` list of every result URL verbatim).
+   - Save it yourself to `$VAULT_ROOT/research/deep/YYYY-MM-DD - <slug>.md`, starting from `$VAULT_ROOT/wiki/synthesis/_template.md` and following `/home/jpietrak/second_brain/skills/references/ai-first-rules.md` (preamble; frontmatter with `type: research-deep`, `ai-first: true`, `created`, `updated`, `vault-baseline-notes`, and a `sources` list of every result URL verbatim).
    - Show the synthesis to the user, then do the propagation step (step 5).
 
 5. **Propagation (both modes):**
@@ -40,7 +40,7 @@ Execute the following for `$ARGUMENTS`:
    - Treat the synthesis body as the "conversation context" input to `/obsidian-save`.
    - Run the standard `/obsidian-save` flow: spawn parallel subagents (People, Projects, Tasks, Decisions, Ideas) and update vault notes per the synthesis's "Recommended Vault Updates" bullets.
    - Apply the AI-first vault rule on every note created or updated (preamble, frontmatter, recency markers, wikilinks, sources).
-   - Link the new research note from today's daily note (`/mnt/c/Obsidian/Inference-Disagg/daily/`).
+   - Link the new research note from today's daily note (`$VAULT_ROOT/daily/`).
    - Then report back a clean list - "Updated [[X]], created [[Y]], linked [[Z]] from today's daily note."
 
 6. Plain English triggers: "do deep research on [topic]", "research properly [topic]", "vault-aware research on [topic]", "research and update the vault on [topic]".

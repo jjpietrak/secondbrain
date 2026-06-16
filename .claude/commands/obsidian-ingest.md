@@ -8,7 +8,7 @@ Execute the following for `$ARGUMENTS`:
 
 The argument is a URL, file path, or pasted text. If no argument, ask what to ingest.
 
-1. Read `/mnt/c/Obsidian/Inference-Disagg/_CLAUDE.md` first if it exists. Load the
+1. Read `$VAULT_ROOT/_CLAUDE.md` first if it exists. Load the
    **"## Vault purpose"** statement and hold it as a high-priority relevance filter for
    this ingest: frame all extraction around the PURPOSE, pull out what advances it, and
    for a clearly off-purpose source ingest only the on-purpose slice and mark the rest
@@ -49,7 +49,7 @@ The argument is a URL, file path, or pasted text. If no argument, ask what to in
    ```
    If `whisper` can't be installed, ask the user to paste the transcript.
    After transcription: identify speakers if possible, extract decisions, action items, promises, and who said what.
-   Save the transcript to `/mnt/c/Obsidian/Inference-Disagg/raw/transcripts/`.
+   Save the transcript to `$VAULT_ROOT/raw/transcripts/`.
 
    **For images/screenshots** (.png, .jpg, .jpeg, .webp):
    Claude can read images directly. Analyze the image for:
@@ -57,7 +57,7 @@ The argument is a URL, file path, or pasted text. If no argument, ask what to in
    - UI screenshots - describe what's shown, extract data from tables/forms/dashboards
    - Whiteboard/diagram photos - describe the structure and extract concepts
    - Chat screenshots - extract messages, people, decisions
-   Save the image description to `/mnt/c/Obsidian/Inference-Disagg/raw/articles/` as a markdown summary with context.
+   Save the image description to `$VAULT_ROOT/raw/articles/` as a markdown summary with context.
 
    **For articles** - use WebFetch to pull the page content
    **For PDFs** - read the file directly
@@ -70,27 +70,27 @@ The argument is a URL, file path, or pasted text. If no argument, ask what to in
    - **Action items**: anything actionable for the user
    - **Quotes**: notable quotes worth preserving
 
-5. Save the raw source to `/mnt/c/Obsidian/Inference-Disagg/raw/` (immutable - never modify after saving):
-   - Create `/mnt/c/Obsidian/Inference-Disagg/raw/articles/YYYY-MM-DD — Source Title.md` (or transcripts/, pdfs/, videos/)
+5. Save the raw source to `$VAULT_ROOT/raw/` (immutable - never modify after saving):
+   - Create `$VAULT_ROOT/raw/articles/YYYY-MM-DD — Source Title.md` (or transcripts/, pdfs/, videos/)
    - Frontmatter: `date`, `tags: [source, <type>]`, `source_url`, `source_type`, `content_hash`
 
 6. **REWRITE the vault** - this is the critical step. Don't just create new pages. Rewrite existing ones.
 
-   Read `/mnt/c/Obsidian/Inference-Disagg/wiki/index.md` first to understand what already exists in the vault. Then spawn parallel subagents:
+   Read `$VAULT_ROOT/wiki/index.md` first to understand what already exists in the vault. Then spawn parallel subagents:
 
    - **Entities agent**: for each person/company/tool mentioned:
-     - Search `/mnt/c/Obsidian/Inference-Disagg/wiki/entities/` for existing page
+     - Search `$VAULT_ROOT/wiki/entities/` for existing page
      - If found: REWRITE the page - merge new info with old, update role/context/interactions, add new links. Don't just append - integrate.
-     - If not found: create new entity page (start from `/mnt/c/Obsidian/Inference-Disagg/wiki/entities/_template.md`, frontmatter with `type, created, updated, sources`) with full context
+     - If not found: create new entity page (start from `$VAULT_ROOT/wiki/entities/_template.md`, frontmatter with `type, created, updated, sources`) with full context
    
    - **Concepts agent**: for each idea/framework/methodology:
-     - Search `/mnt/c/Obsidian/Inference-Disagg/wiki/concepts/` for existing or related pages
+     - Search `$VAULT_ROOT/wiki/concepts/` for existing or related pages
      - If found: REWRITE - update the concept with new evidence, new examples, new connections. If the new source adds depth, rewrite the whole section.
-     - If not found: create new concept page (start from `/mnt/c/Obsidian/Inference-Disagg/wiki/concepts/_template.md`, frontmatter with `type, created, updated, sources`)
-     - If the ingest reveals a PATTERN across multiple existing concepts: create a new synthesis page in `/mnt/c/Obsidian/Inference-Disagg/wiki/synthesis/` (start from `/mnt/c/Obsidian/Inference-Disagg/wiki/synthesis/_template.md`) that connects them (e.g., "Three sources now mention X - this is a trend, not a one-off")
+     - If not found: create new concept page (start from `$VAULT_ROOT/wiki/concepts/_template.md`, frontmatter with `type, created, updated, sources`)
+     - If the ingest reveals a PATTERN across multiple existing concepts: create a new synthesis page in `$VAULT_ROOT/wiki/synthesis/` (start from `$VAULT_ROOT/wiki/synthesis/_template.md`) that connects them (e.g., "Three sources now mention X - this is a trend, not a one-off")
    
    - **Projects agent**: for each project referenced (a project is an entity with `entity_type: project`):
-     - Search `/mnt/c/Obsidian/Inference-Disagg/wiki/entities/` for matching project
+     - Search `$VAULT_ROOT/wiki/entities/` for matching project
      - If found: update with new findings, add to Recent Activity, update Key Decisions if the source contains relevant decisions
    
    - **Contradictions agent**: for each claim in the new source:
@@ -99,10 +99,10 @@ The argument is a URL, file path, or pasted text. If no argument, ask what to in
      - If the new source SUPERSEDES old info: rewrite the old page with updated info and note what changed and why in the page's history section
 
 7. Update structural files:
-   - REBUILD `/mnt/c/Obsidian/Inference-Disagg/wiki/index.md` - don't just append. Regenerate the sections that changed so descriptions stay current with the rewritten pages.
-   - Append to the operation log at `/mnt/c/Obsidian/Inference-Disagg/wiki/log.md`: `## [YYYY-MM-DD] ingest | Source Title (type) — X created, Y rewritten, Z contradictions resolved`
+   - REBUILD `$VAULT_ROOT/wiki/index.md` - don't just append. Regenerate the sections that changed so descriptions stay current with the rewritten pages.
+   - Append to the operation log at `$VAULT_ROOT/wiki/log.md`: `## [YYYY-MM-DD] ingest | Source Title (type) — X created, Y rewritten, Z contradictions resolved`
 
-8. Update today's daily note (`/mnt/c/Obsidian/Inference-Disagg/daily/`) with:
+8. Update today's daily note (`$VAULT_ROOT/daily/`) with:
    - What was ingested
    - What pages were REWRITTEN (not just created - this is the important part)
    - Any contradictions found and how they were resolved

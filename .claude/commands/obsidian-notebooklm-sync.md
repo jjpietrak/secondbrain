@@ -5,7 +5,7 @@ triggers_en: ["notebooklm sync", "sync notebook", "sync my notebook", "push to n
 ---
 
 Bi-directionally sync a real Google NotebookLM notebook with the vault folder
-`/mnt/c/Obsidian/Inference-Disagg/research/notebooklm/<notebook-slug>/`, using the installed `nlm` CLI.
+`$VAULT_ROOT/research/notebooklm/<notebook-slug>/`, using the installed `nlm` CLI.
 
 This is the REAL-notebook counterpart to `/obsidian-notebooklm` (which is ephemeral
 Gemini File Search and creates no persistent notebook). Use THIS command when you want
@@ -44,7 +44,7 @@ Execute for `$ARGUMENTS` (a notebook id, an `nlm` alias, or empty for the defaul
 5. **After sync, propagate (same as other research commands).** For each newly pulled note in
    `notes/`, treat it as conversation context for `/obsidian-save`: extract entities/concepts,
    update/create wiki pages, and link the notebook folder from today's daily note
-   (`/mnt/c/Obsidian/Inference-Disagg/daily/`).
+   (`$VAULT_ROOT/daily/`).
 
 6. **Report back:** "Synced [[research/notebooklm/<slug>]] <-> NotebookLM. Pulled N notes,
    pushed M sources." List any CONFLICT or PRUNE lines the script emitted.

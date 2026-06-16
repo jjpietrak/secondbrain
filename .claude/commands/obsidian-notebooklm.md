@@ -8,7 +8,7 @@ triggers_en: ["notebooklm", "research grounded", "ground research in vault", "as
 
 Execute the following for `$ARGUMENTS`:
 
-1. Load the vault **PURPOSE** (`/mnt/c/Obsidian/Inference-Disagg/_CLAUDE.md` → "## Vault
+1. Load the vault **PURPOSE** (`$VAULT_ROOT/_CLAUDE.md` → "## Vault
    purpose"). Then resolve the topic from the user's argument; if no topic, default to the
    PURPOSE. The grounding vault-scan should favour on-purpose notes so the synthesis stays
    within the vault's subject.
@@ -23,7 +23,7 @@ Execute the following for `$ARGUMENTS`:
    - Scans the vault for the top 12 relevant notes (same shape as `/obsidian-research-deep` Phase 1).
    - Uploads them to a fresh Gemini File Search store.
    - Asks Gemini (default `gemini-2.5-pro`, override via `NOTEBOOKLM_MODEL` env) for a synthesis grounded against those sources.
-   - Writes the AI-first synthesis to `/mnt/c/Obsidian/Inference-Disagg/research/notebooklm/YYYY-MM-DD - <slug>.md`.
+   - Writes the AI-first synthesis to `$VAULT_ROOT/research/notebooklm/YYYY-MM-DD - <slug>.md`.
    - Deletes the File Search store so nothing is left behind.
    - Emits a `<<<NOTEBOOKLM_PROPAGATION_PAYLOAD>>>` JSON block.
 
@@ -32,9 +32,9 @@ Execute the following for `$ARGUMENTS`:
    - Read the saved synthesis at `saved_note`.
    - Treat the synthesis as the "conversation context" input to `/obsidian-save`.
    - Run the standard `/obsidian-save` flow: spawn parallel subagents (People, Projects, Tasks, Decisions, Ideas) and update vault notes per any "Recommended next reads or angles" bullets if they map to entities or projects.
-   - Link the new synthesis note from today's daily note (`/mnt/c/Obsidian/Inference-Disagg/daily/`).
+   - Link the new synthesis note from today's daily note (`$VAULT_ROOT/daily/`).
 
-5. Report back to the user: "Saved [[YYYY-MM-DD - <slug>]] to /mnt/c/Obsidian/Inference-Disagg/research/notebooklm/. Linked from today's daily note. Updated [[X]], created [[Y]]."
+5. Report back to the user: "Saved [[YYYY-MM-DD - <slug>]] to $VAULT_ROOT/research/notebooklm/. Linked from today's daily note. Updated [[X]], created [[Y]]."
 
 6. Plain English triggers: "notebooklm this", "ground research on X using my vault", "source-grounded research on X", "ask my own notes about X".
 
@@ -47,7 +47,7 @@ Execute the following for `$ARGUMENTS`:
 
 ---
 
-**AI-first rule:** Every note created or updated by this command MUST follow `/home/jpietrak/second_brain/skills/references/ai-first-rules.md`. The saved synthesis at `/mnt/c/Obsidian/Inference-Disagg/research/notebooklm/YYYY-MM-DD - <slug>.md` follows the template baked into the script (preamble, frontmatter, vault-baseline links, response verbatim). Do not strip those.
+**AI-first rule:** Every note created or updated by this command MUST follow `/home/jpietrak/second_brain/skills/references/ai-first-rules.md`. The saved synthesis at `$VAULT_ROOT/research/notebooklm/YYYY-MM-DD - <slug>.md` follows the template baked into the script (preamble, frontmatter, vault-baseline links, response verbatim). Do not strip those.
 
 **Anti-fabrication:** Search exhaustively before claiming any note, person, or file is absent - false absence is the most common failure mode - and never invent facts, entities, or dates (mark unknowns as `TBD`). See the anti-fabrication and search-completeness hard rules in `/home/jpietrak/second_brain/skills/references/ai-first-rules.md`.
 

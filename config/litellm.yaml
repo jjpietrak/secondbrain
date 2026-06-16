@@ -46,7 +46,7 @@ router_settings:
 
 litellm_settings:
   drop_params: true
-  max_budget: 2.0          # USD/day across all metered (paid) routes; mirrors config/budget.yaml
+  max_budget: 2.0          # USD/day across all metered routes (shared proxy = all vaults). Per-vault soft caps live in config/vaults/<vault>/budget.yaml
   budget_duration: 1d
   callbacks: cost_callback.proxy_handler_instance   # resolves to config/cost_callback.py
 

@@ -86,20 +86,38 @@ bash tests/test_routing.sh      # smoke-test the 3 backends
 
 ## Configuration
 
-- **Vault PURPOSE:** each vault has one research subject that binds all its pages and
-  sources. The authoritative statement is the **"## Vault purpose"** heading in the vault's
-  `_CLAUDE.md`; a one-line mirror lives in `config/vault.yaml` (`purpose:`). Agents load it as
+The framework is **multi-vault**: each vault is fully encapsulated. Exactly one vault is
+active per run, selected by the `VAULT` env var (default in `config/secondbrain.yaml`).
+
+```
+config/
+  secondbrain.yaml          # GLOBAL: default_vault, vault registry, shared-infra pointers
+  litellm.yaml              # GLOBAL: the single LiteLLM proxy (serves every vault)
+  vaults/
+    <VAULT>/
+      vault.yaml            # path, PURPOSE, methodology, REST url, max_turns, …
+      topics.yaml           # research topics
+      budget.yaml           # per-vault soft spend caps
+```
+
+- **Active vault / encapsulation:** `VAULT=<name>` picks `config/vaults/<name>/`. Resolve the
+  active vault root anywhere with `python -m agents.vault_config path` (`name`/`purpose`/`env`
+  also). Adding a vault = create `config/vaults/<name>/` + register it in `secondbrain.yaml`.
+  Run `VAULT=all` in the nightly to process every enabled vault. Shared across all vaults: the
+  LiteLLM proxy and the API keys in `.env`.
+- **Vault PURPOSE:** each vault has one research subject binding all its pages/sources. The
+  authoritative statement is the **"## Vault purpose"** heading in the vault's `_CLAUDE.md`;
+  a one-line mirror lives in `config/vaults/<name>/vault.yaml` (`purpose:`). Agents load it as
   a high-priority relevance filter for every automated action (ingest/research/discovery).
-  Switching the active vault = update `vault_path`/`vault_name` in `config/vault.yaml` and
-  `VAULT_PATH` in `.env`.
 - **Model routing — single switch file:** `config/litellm.yaml`. Each `model_name` is a stable
   **role** (`synthesis`/`bulk`/`validation`/`fallback`). To switch a provider/model, edit only
   that role's `model:` line, then `sudo systemctl restart litellm`.
 - **Main interactive agent model:** `.claude/settings.json` (`"model"`); override per session
   with `claude --model`.
-- **Budget:** `config/litellm.yaml` `max_budget` (daily $ cap, currently $2) mirrored in
-  `config/budget.yaml` `daily_usd_cap`. The real backstop is a hard spend limit on the Console key.
-- **Topics:** `config/topics.yaml` (mirrored to `meta/topics.md`).
+- **Budget:** per-vault soft cap in `config/vaults/<name>/budget.yaml` (`daily_usd_cap`); the
+  shared proxy's `config/litellm.yaml` `max_budget` is a global ceiling. The real backstop is a
+  hard spend limit on the Console key.
+- **Topics:** `config/vaults/<name>/topics.yaml` (mirrored to that vault's `meta/topics.md`).
 
 ---
 
@@ -148,9 +166,9 @@ Helpers: `agents/vault_health.py` (structural audit), `agents/cost_tracker.py {r
 ## Layout
 
 ```
-config/   litellm.yaml (routing switch), budget.yaml, vault.yaml, topics.yaml
+config/   secondbrain.yaml (global+registry), litellm.yaml (routing), vaults/<name>/{vault,topics,budget}.yaml
 .claude/  commands/ (16 slash commands), settings.json
-agents/   cost_tracker.py, vault_health.py, nightly_run.sh, __init__.py
+agents/   vault_config.py (active-vault resolver), cost_tracker.py, vault_health.py, nightly_run.sh, __init__.py
 services/litellm/  start.sh, litellm.service, cost_callback.py
 scripts/  claude_agent.sh (OAuth wrapper), obsidian_api.sh, setup_cron.sh,
           research/ (vendored research toolkit incl. key-less sources), architect_scan.py

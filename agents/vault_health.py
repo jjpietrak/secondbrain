@@ -16,7 +16,12 @@ import os, re
 from pathlib import Path
 from datetime import datetime, timedelta
 
-VAULT = Path(os.environ.get("VAULT_PATH", "/mnt/c/Obsidian/Inference-Disagg"))
+try:
+    from agents import vault_config as vc
+except ImportError:  # run as a script: agents/ is already on sys.path
+    import vault_config as vc
+
+VAULT = vc.vault_path()           # active vault ($VAULT or default_vault)
 WIKI = VAULT / "wiki"
 REPORT = VAULT / "meta" / "health_report.md"
 

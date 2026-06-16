@@ -11,7 +11,7 @@ Writers:
   - LiteLLM proxy  -> services/litellm/cost_callback.py calls record(...)
   - claude -p runs -> orchestrator parses `--output-format json` and calls record(...)
 
-The dollar budget (config/budget.yaml: daily_usd_cap) guards the pay-as-you-go pool.
+The dollar budget (per-vault config/vaults/<vault>/budget.yaml: daily_usd_cap) guards the pay-as-you-go pool.
 Agent-SDK-credit calls are recorded with cost_usd=0 and source="agent-sdk-credit".
 
 CLI:
@@ -26,19 +26,22 @@ from pathlib import Path
 from datetime import datetime, date, timedelta
 
 CODE_PATH = Path(os.environ.get("CODE_PATH", "/home/jpietrak/second_brain"))
-VAULT_PATH = Path(os.environ.get("VAULT_PATH", "/mnt/c/Obsidian/Inference-Disagg"))
-LEDGER = CODE_PATH / "logs" / "cost_ledger.jsonl"
-BUDGET_FILE = CODE_PATH / "config" / "budget.yaml"
-REPORT = VAULT_PATH / "meta" / "cost_report.md"
+try:
+    from agents import vault_config as vc
+except ImportError:  # run as a script: agents/ is already on sys.path
+    import vault_config as vc
+
+VAULT_NAME = vc.active_vault()
+VAULT_PATH = vc.vault_path()
+LEDGER = CODE_PATH / "logs" / "cost_ledger.jsonl"   # shared file; rows tagged by vault
+REPORT = VAULT_PATH / "meta" / "cost_report.md"      # per-vault report
 
 METERED_PROVIDERS = {"anthropic", "gemini"}  # default; refined by budget.yaml
 
 
 def _load_budget() -> dict:
     try:
-        import yaml
-        with open(BUDGET_FILE) as f:
-            return yaml.safe_load(f) or {}
+        return vc.load_budget(VAULT_NAME)
     except Exception:
         return {}
 
@@ -55,6 +58,7 @@ def record(action: str, role: str, provider: str,
     row = {
         "ts": now.isoformat(timespec="seconds"),
         "date": now.date().isoformat(),
+        "vault": VAULT_NAME,
         "action": action,
         "role": role,
         "provider": provider,
@@ -82,11 +86,17 @@ def _rows() -> list[dict]:
     return out
 
 
+def _in_active_vault(r: dict) -> bool:
+    """Row belongs to the active vault. Legacy untagged rows count toward it."""
+    v = r.get("vault")
+    return v is None or v == VAULT_NAME
+
+
 def spent_today(provider: str | None = None) -> float:
     today = date.today().isoformat()
     total = 0.0
     for r in _rows():
-        if r.get("date") != today:
+        if r.get("date") != today or not _in_active_vault(r):
             continue
         if provider and r.get("provider") != provider:
             continue
@@ -110,6 +120,7 @@ def report() -> None:
     today_s = today.isoformat()
     week_ago = today - timedelta(days=7)
 
+    rows = [r for r in rows if _in_active_vault(r)]   # per-vault encapsulation
     paid_today = sum(r["cost_usd"] for r in rows if r.get("date") == today_s)
     by_provider: dict[str, float] = {}
     by_action: dict[str, dict] = {}
@@ -127,7 +138,7 @@ def report() -> None:
     cap = daily_cap()
     remaining = max(0.0, cap - paid_today)
 
-    L = [f"# Cost report\n", f"_Generated: {datetime.now().isoformat(timespec='seconds')}_\n",
+    L = [f"# Cost report — {VAULT_NAME}\n", f"_Generated: {datetime.now().isoformat(timespec='seconds')}_\n",
          f"**Today ({today_s})** — paid spend: **${paid_today:.4f}** / cap ${cap:.2f} "
          f"(remaining ${remaining:.4f})",
          f"**Rolling 7-day paid spend:** ${rolling:.4f}",
