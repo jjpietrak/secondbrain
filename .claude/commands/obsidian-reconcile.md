@@ -8,14 +8,14 @@ Execute the following for `$ARGUMENTS`:
 
 The optional argument is a topic or entity to focus on. If not provided, scan the whole vault.
 
-1. Read `/mnt/c/Obsidian/_CLAUDE.md` first if it exists
-2. Read `/mnt/c/Obsidian/wiki/index.md` to understand the full vault landscape
+1. Read `/mnt/c/Obsidian/Inference-Disagg/_CLAUDE.md` first if it exists
+2. Read `/mnt/c/Obsidian/Inference-Disagg/wiki/index.md` to understand the full vault landscape
 
 3. Spawn parallel subagents to find contradictions:
-   - **Claims agent**: scan `/mnt/c/Obsidian/wiki/concepts/` and `/mnt/c/Obsidian/wiki/entities/` (projects are entities with `entity_type: project`) for factual claims - find pairs that contradict each other
-   - **Entity agent**: scan `/mnt/c/Obsidian/wiki/entities/` for outdated roles, companies, or descriptions that conflict with newer sources
-   - **Decisions agent**: scan `/mnt/c/Obsidian/wiki/synthesis/` and project Key Decisions for reversed or superseded decisions that were never updated
-   - **Source freshness agent**: compare `/mnt/c/Obsidian/raw/` source dates against `/mnt/c/Obsidian/wiki/` page dates - flag wiki pages that reference old sources when newer ones exist on the same topic
+   - **Claims agent**: scan `/mnt/c/Obsidian/Inference-Disagg/wiki/concepts/` and `/mnt/c/Obsidian/Inference-Disagg/wiki/entities/` (projects are entities with `entity_type: project`) for factual claims - find pairs that contradict each other
+   - **Entity agent**: scan `/mnt/c/Obsidian/Inference-Disagg/wiki/entities/` for outdated roles, companies, or descriptions that conflict with newer sources
+   - **Decisions agent**: scan `/mnt/c/Obsidian/Inference-Disagg/wiki/synthesis/` and project Key Decisions for reversed or superseded decisions that were never updated
+   - **Source freshness agent**: compare `/mnt/c/Obsidian/Inference-Disagg/raw/` source dates against `/mnt/c/Obsidian/Inference-Disagg/wiki/` page dates - flag wiki pages that reference old sources when newer ones exist on the same topic
 
 4. For each contradiction found, evaluate:
    - **Which source is newer?** (date comparison)
@@ -23,14 +23,14 @@ The optional argument is a topic or entity to focus on. If not provided, scan th
    - **Is this a genuine contradiction or an evolution?** (someone changing their mind is not a contradiction - it's growth)
 
 5. Resolve each contradiction:
-   - **Clear winner**: rewrite the outdated page with current info. Add a `## History` section noting what changed and why: "Previously stated X (source: /mnt/c/Obsidian/raw/articles/old-article.md, 2025-11-01). Updated to Y based on newer evidence (source: /mnt/c/Obsidian/raw/articles/new-article.md, 2026-03-15)."
-   - **Genuinely ambiguous**: create `/mnt/c/Obsidian/wiki/synthesis/Conflict — Topic.md` documenting both sides, the evidence for each, and mark as `status: open` for the user to decide
+   - **Clear winner**: rewrite the outdated page with current info. Add a `## History` section noting what changed and why: "Previously stated X (source: /mnt/c/Obsidian/Inference-Disagg/raw/articles/old-article.md, 2025-11-01). Updated to Y based on newer evidence (source: /mnt/c/Obsidian/Inference-Disagg/raw/articles/new-article.md, 2026-03-15)."
+   - **Genuinely ambiguous**: create `/mnt/c/Obsidian/Inference-Disagg/wiki/synthesis/Conflict — Topic.md` documenting both sides, the evidence for each, and mark as `status: open` for the user to decide
    - **Evolution**: update the entity/concept page to reflect the current state and add the historical context
 
 6. After all resolutions:
-   - Rebuild affected sections of `/mnt/c/Obsidian/wiki/index.md`
-   - Append to the operation log at `/mnt/c/Obsidian/wiki/log.md`: `## [YYYY-MM-DD] reconcile | X contradictions found, Y auto-resolved, Z flagged for user`
-   - Update today's daily note (`/mnt/c/Obsidian/daily/`) with a reconciliation summary
+   - Rebuild affected sections of `/mnt/c/Obsidian/Inference-Disagg/wiki/index.md`
+   - Append to the operation log at `/mnt/c/Obsidian/Inference-Disagg/wiki/log.md`: `## [YYYY-MM-DD] reconcile | X contradictions found, Y auto-resolved, Z flagged for user`
+   - Update today's daily note (`/mnt/c/Obsidian/Inference-Disagg/daily/`) with a reconciliation summary
 
 7. Report back:
    - **Auto-resolved** (list with old claim → new claim and why)

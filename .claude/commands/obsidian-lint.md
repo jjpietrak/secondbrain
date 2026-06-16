@@ -4,10 +4,10 @@ category: maintenance
 triggers_en: ["lint the vault", "vault health", "check the wiki", "find broken links"]
 ---
 
-Execute a structural health pass over the vault at `/mnt/c/Obsidian/`. Read
-`/mnt/c/Obsidian/_CLAUDE.md` first for vault rules.
+Execute a structural health pass over the vault at `/mnt/c/Obsidian/Inference-Disagg/`. Read
+`/mnt/c/Obsidian/Inference-Disagg/_CLAUDE.md` first for vault rules.
 
-Scope: `/mnt/c/Obsidian/wiki/**` (skip `_template.md` files and `index.md`, `log.md`,
+Scope: `/mnt/c/Obsidian/Inference-Disagg/wiki/**` (skip `_template.md` files and `index.md`, `log.md`,
 `hot.md`). If `/home/jpietrak/second_brain/agents/vault_health.py` exists, you MAY run it
 (`uv run python agents/vault_health.py` from the code repo) and fold its output in;
 otherwise perform the checks directly.
@@ -21,10 +21,10 @@ Checks:
 6. **Contradictions** — scan for pages making conflicting claims about the same entity/concept. Flag, do not auto-resolve here (use `/obsidian-reconcile` for that).
 
 Output:
-- Write a report to `/mnt/c/Obsidian/meta/health_report.md` with: generation timestamp,
+- Write a report to `/mnt/c/Obsidian/Inference-Disagg/meta/health_report.md` with: generation timestamp,
   total wiki page count, a **health score** (start at 100, −2 per issue, floor 0), and one
   section per check listing the affected files (cap each list at 20, note "...and N more").
-- Append one row to `/mnt/c/Obsidian/wiki/log.md`:
+- Append one row to `/mnt/c/Obsidian/Inference-Disagg/wiki/log.md`:
   `## [YYYY-MM-DD] lint | - | score N/100 | O orphans, D dead links, S stale`
 - Do NOT modify the linted pages — this command only reports. Fixes are a separate pass.
 

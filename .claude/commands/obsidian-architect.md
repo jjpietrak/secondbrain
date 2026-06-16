@@ -23,9 +23,9 @@ This is a hybrid command: a deterministic Python scan produces the facts, then Y
    python /home/jpietrak/second_brain/scripts/mine_commit_decisions.py --repo <codebase> --json
    ```
 
-4. **Pick the destination.** Write under the project's hub: `/mnt/c/Obsidian/wiki/entities/<name>/Architecture/` (create it if missing; a project is an entity with `entity_type: project`). If the vault has no project note for this codebase yet, offer to create one first so the architecture links into it.
+4. **Pick the destination.** Write under the project's hub: `/mnt/c/Obsidian/Inference-Disagg/wiki/entities/<name>/Architecture/` (create it if missing; a project is an entity with `entity_type: project`). If the vault has no project note for this codebase yet, offer to create one first so the architecture links into it.
 
-5. **Synthesize and write these notes**, each AI-first compliant (start pages from the matching `/mnt/c/Obsidian/wiki/<folder>/_template.md` and ensure frontmatter has `type, created, updated, sources`):
+5. **Synthesize and write these notes**, each AI-first compliant (start pages from the matching `/mnt/c/Obsidian/Inference-Disagg/wiki/<folder>/_template.md` and ensure frontmatter has `type, created, updated, sources`):
    - **`Architecture - Overview.md`** (`type: architecture-overview`): what the project is, its stack (from `languages`/`kind`/`dependencies`), how the parts fit together, and ONE Mermaid diagram of the modules and their main flow. Include a short **Personas** section (2-4 likely user types, marked `confidence: speculation` unless a README states them). Link to each module note.
    - **One note per `core` module** (`type: architecture-module`): `Architecture - <Module>.md` - what it does, what it depends on, and its role in the whole. Keep `support` modules to a single line in the overview unless they are substantial.
    - **`Architecture - Key decisions.md`** (`type: adr` entries or a decisions list): write up the candidates from the commit-decisions miner, each as a real decision with context. Mark anything inferred as `confidence: speculation`.
@@ -40,7 +40,7 @@ This is a hybrid command: a deterministic Python scan produces the facts, then Y
 
 7. **Refresh behavior.** If the architecture notes already exist, this is a refresh: re-scan, then update only the generated blocks whose underlying facts changed (new module, dropped dependency, etc.). Note in the overview's frontmatter the `scanned-commit` so a reader knows how current the docs are. Report what changed.
 
-8. Link the overview from the project note and from today's daily note (`/mnt/c/Obsidian/daily/`). Append a one-line entry to the operation log at `/mnt/c/Obsidian/wiki/log.md`.
+8. Link the overview from the project note and from today's daily note (`/mnt/c/Obsidian/Inference-Disagg/daily/`). Append a one-line entry to the operation log at `/mnt/c/Obsidian/Inference-Disagg/wiki/log.md`.
 
 ---
 

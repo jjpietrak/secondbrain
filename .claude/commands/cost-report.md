@@ -11,7 +11,7 @@ cd /home/jpietrak/second_brain
 uv run python agents/cost_tracker.py report
 ```
 
-This reads `logs/cost_ledger.jsonl` and writes `/mnt/c/Obsidian/meta/cost_report.md`
+This reads `logs/cost_ledger.jsonl` and writes `/mnt/c/Obsidian/Inference-Disagg/meta/cost_report.md`
 (today's paid spend vs the daily cap, rolling 7-day spend, per-provider $, per-action
 token/cost breakdown).
 

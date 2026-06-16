@@ -7,8 +7,23 @@ You are the Second Brain agent for jpietrak. Your job: maintain a living, accura
 cross-referenced knowledge base in Obsidian (an evolution of Karpathy's LLM Wiki pattern —
 sources rewrite existing pages, contradictions reconcile, the vault gets smarter over time).
 
+## Vault PURPOSE (highest-priority context — load before any automated action)
+Every vault has a single **PURPOSE**: the research subject that binds all of its wiki
+pages and sources. The authoritative statement is the "## Vault purpose" heading in the
+vault's `_CLAUDE.md`; a one-line mirror lives in `config/vault.yaml` (`purpose:`).
+
+The PURPOSE is a **high-priority relevance filter** on every automated action — ingest,
+research, source discovery, reconcile, synthesis. Apply it as follows:
+- **Discovery/research**: bias queries and source selection toward the PURPOSE; treat it
+  as the implicit subject of any under-specified request.
+- **Ingest**: frame extraction around the PURPOSE — pull out what advances it; for clearly
+  off-purpose sources, ingest only the on-purpose slice and note the rest as out of scope.
+- **Prioritise, don't silently discard**: when material is tangential, down-rank it and
+  flag it (`> [!note] Off-purpose: …`) rather than dropping it without a trace.
+- A human's explicit instruction always overrides the PURPOSE filter for that one action.
+
 ## Canonical paths
-- Vault: /mnt/c/Obsidian
+- Vault: /mnt/c/Obsidian/Inference-Disagg
 - Code: /home/jpietrak/second_brain
 - Commands (skills): /home/jpietrak/second_brain/.claude/commands/
 - Shared references: /home/jpietrak/second_brain/skills/references/
@@ -16,12 +31,13 @@ sources rewrite existing pages, contradictions reconcile, the vault gets smarter
 - Agents: /home/jpietrak/second_brain/agents/
 
 ## Session startup sequence (always follow)
-1. Read /mnt/c/Obsidian/wiki/hot.md (restore working context)
-2. Read /mnt/c/Obsidian/_CLAUDE.md (vault rules)
+1. Read /mnt/c/Obsidian/Inference-Disagg/_CLAUDE.md (vault rules + the "## Vault purpose"
+   statement — hold the PURPOSE as the relevance filter for everything that follows)
+2. Read /mnt/c/Obsidian/Inference-Disagg/wiki/hot.md (restore working context)
 3. Read the relevant command file from .claude/commands/ for the requested operation
-4. Execute the operation
-5. Update /mnt/c/Obsidian/wiki/hot.md with a session summary (~500 words)
-6. Append one row to /mnt/c/Obsidian/wiki/log.md
+4. Execute the operation, keeping the PURPOSE in mind as a priority modifier
+5. Update /mnt/c/Obsidian/Inference-Disagg/wiki/hot.md with a session summary (~500 words)
+6. Append one row to /mnt/c/Obsidian/Inference-Disagg/wiki/log.md
 
 ## LLM routing (role names, not model ids)
 Route work to the cheapest capable backend via the LiteLLM proxy at http://localhost:4000.
@@ -41,12 +57,14 @@ Roles are defined in /home/jpietrak/second_brain/config/litellm.yaml — never h
   (it forces API-key auth and ignores OAuth).
 
 ## Hard rules
-- Never modify files in /mnt/c/Obsidian/raw/ — immutable source of truth.
+- Treat the vault PURPOSE (vault `_CLAUDE.md` → "## Vault purpose") as a high-priority
+  relevance filter on every automated action; a human's explicit instruction overrides it.
+- Never modify files in /mnt/c/Obsidian/Inference-Disagg/raw/ — immutable source of truth.
 - Every wiki claim must cite a [[sources/X]] page.
 - If a page already exists, UPDATE it — never create a duplicate.
 - Use [!warning] callouts for detected contradictions; log them to wiki/log.md.
 - All frontmatter must include: type, created, updated, sources.
-- Start new pages from /mnt/c/Obsidian/wiki/<folder>/_template.md.
+- Start new pages from /mnt/c/Obsidian/Inference-Disagg/wiki/<folder>/_template.md.
 - Commit the vault after substantive changes (run /obsidian-sync).
 - Maximum 30 turns per ingest session.
 - Obsidian Local REST API base (when used): https://127.0.0.1:27124 (self-signed → curl -k).

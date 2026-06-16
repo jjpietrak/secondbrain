@@ -4,7 +4,7 @@
 # Run interactively (NOT in a restricted sandbox): bash tests/test_ingest.sh
 set -uo pipefail
 CODE_PATH="${CODE_PATH:-/home/jpietrak/second_brain}"
-VAULT_PATH="${VAULT_PATH:-/mnt/c/Obsidian}"
+VAULT_PATH="${VAULT_PATH:-/mnt/c/Obsidian/Inference-Disagg}"
 
 ART="$VAULT_PATH/raw/articles/test-ingest-$(date +%s).md"
 cat > "$ART" <<'EOF'

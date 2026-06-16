@@ -24,7 +24,7 @@ Execute the following for `$ARGUMENTS`:
 
 4. Show the script output verbatim to the user.
 
-5. **Default save behavior: saves automatically.** AI-first note written to `/mnt/c/Obsidian/research/youtube/YYYY-MM-DD — <video-title-slug>.md`. Frontmatter includes video ID, channel, view counts, etc. for future Dataview queries.
+5. **Default save behavior: saves automatically.** AI-first note written to `/mnt/c/Obsidian/Inference-Disagg/research/youtube/YYYY-MM-DD — <video-title-slug>.md`. Frontmatter includes video ID, channel, view counts, etc. for future Dataview queries.
 
 6. Plain English triggers: "summarize this YouTube video", "what's in this video", "extract this YouTube link", "transcribe this video", or just pasting a YouTube URL with a question about content.
 

@@ -26,7 +26,7 @@ from pathlib import Path
 from datetime import datetime, date, timedelta
 
 CODE_PATH = Path(os.environ.get("CODE_PATH", "/home/jpietrak/second_brain"))
-VAULT_PATH = Path(os.environ.get("VAULT_PATH", "/mnt/c/Obsidian"))
+VAULT_PATH = Path(os.environ.get("VAULT_PATH", "/mnt/c/Obsidian/Inference-Disagg"))
 LEDGER = CODE_PATH / "logs" / "cost_ledger.jsonl"
 BUDGET_FILE = CODE_PATH / "config" / "budget.yaml"
 REPORT = VAULT_PATH / "meta" / "cost_report.md"

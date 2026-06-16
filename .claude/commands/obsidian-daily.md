@@ -6,10 +6,10 @@ triggers_en: ["todays note", "create todays daily", "open daily", "today daily n
 
 Execute the following:
 
-1. Read `/mnt/c/Obsidian/_CLAUDE.md` first if it exists
+1. Read `/mnt/c/Obsidian/Inference-Disagg/_CLAUDE.md` first if it exists
 2. Read `CRITICAL_FACTS.md` for timezone
 
-3. Check if `/mnt/c/Obsidian/daily/YYYY-MM-DD.md` exists for today
+3. Check if `/mnt/c/Obsidian/Inference-Disagg/daily/YYYY-MM-DD.md` exists for today
    - If not: read `templates/Daily Note.md`, fill in date fields, create the file
    - If yes: update existing note (inject, don't overwrite)
 
@@ -28,7 +28,7 @@ Execute the following:
    - Tasks in progress, people mentioned, decisions made, what's being worked on
    - Pre-fill or update the note's sections with that context
 
-7. Check the operation log for last night's sleeptime consolidation by reading `/mnt/c/Obsidian/wiki/log.md`:
+7. Check the operation log for last night's sleeptime consolidation by reading `/mnt/c/Obsidian/Inference-Disagg/wiki/log.md`:
    - If the nightly agent ran, summarize what it did (reconciled, synthesized, healed)
    - Add a brief "Overnight changes" note so the user knows what happened while they slept
 

@@ -10,7 +10,7 @@
 set -uo pipefail
 
 CODE_PATH="${CODE_PATH:-/home/jpietrak/second_brain}"
-VAULT_PATH="${VAULT_PATH:-/mnt/c/Obsidian}"
+VAULT_PATH="${VAULT_PATH:-/mnt/c/Obsidian/Inference-Disagg}"
 export CODE_PATH VAULT_PATH
 DRY_RUN="${DRY_RUN:-0}"
 AGENT="$CODE_PATH/scripts/claude_agent.sh"

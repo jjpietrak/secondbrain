@@ -8,12 +8,12 @@ Execute the following for `$ARGUMENTS`:
 
 The optional argument is the idea text. If not provided, pull the most recent idea or thought from the conversation.
 
-1. Read `/mnt/c/Obsidian/_CLAUDE.md` first if it exists
+1. Read `/mnt/c/Obsidian/Inference-Disagg/_CLAUDE.md` first if it exists
 2. Take the argument as the idea, or pull from recent conversation context
-3. Search `/mnt/c/Obsidian/wiki/concepts/` for a related existing note - if found, append to it
-4. If new: create `/mnt/c/Obsidian/wiki/concepts/Title.md` starting from `/mnt/c/Obsidian/wiki/concepts/_template.md`, ensuring frontmatter has `type, created, updated, sources` (and `tags: [idea]`)
+3. Search `/mnt/c/Obsidian/Inference-Disagg/wiki/concepts/` for a related existing note - if found, append to it
+4. If new: create `/mnt/c/Obsidian/Inference-Disagg/wiki/concepts/Title.md` starting from `/mnt/c/Obsidian/Inference-Disagg/wiki/concepts/_template.md`, ensuring frontmatter has `type, created, updated, sources` (and `tags: [idea]`)
 5. Write the idea with any supporting context from the conversation
-6. Add a brief mention in today's daily note (`/mnt/c/Obsidian/daily/`) under an Ideas or Captures section
+6. Add a brief mention in today's daily note (`/mnt/c/Obsidian/Inference-Disagg/daily/`) under an Ideas or Captures section
 
 ---
 

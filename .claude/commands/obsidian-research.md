@@ -8,7 +8,12 @@ triggers_en: ["research this", "look up", "find information about", "perplexity 
 
 Execute the following for `$ARGUMENTS`:
 
-1. Resolve the topic from the user's argument. Multi-word topics fine ("AI memory tools", "vector databases for RAG"). If no topic, ask: "What topic should I research?"
+1. Load the vault **PURPOSE** (`/mnt/c/Obsidian/Inference-Disagg/_CLAUDE.md` → "## Vault
+   purpose", mirrored in `config/vault.yaml`). Then resolve the topic from the user's
+   argument. Multi-word topics fine ("AI memory tools", "vector databases for RAG"). If no
+   topic, default to the PURPOSE as the subject. Bias queries and source selection toward
+   the PURPOSE, and prefer recent, on-purpose sources; note clearly off-purpose findings
+   rather than expanding scope into them.
 
 2. Run the Python command from the repo root (`/home/jpietrak/second_brain/`):
    ```bash
@@ -18,11 +23,11 @@ Execute the following for `$ARGUMENTS`:
    The script auto-selects its mode: if `PERPLEXITY_API_KEY` is set it uses Perplexity Sonar (paid); otherwise it falls back to free, key-less sources. Pass `--free` to force free mode even when a key is set, or `--academic` (free mode only) to restrict to scholarly sources (arXiv, Semantic Scholar, OpenAlex, CrossRef).
 
 3. Handle the output by mode:
-   - **Paid mode** - the script prints a finished dossier (Summary, Key Facts with recency markers, Timeline, Key Players, Contrarian Views, Further Reading, Open Questions, Sources) and saves the AI-first note itself to `/mnt/c/Obsidian/research/daily/` plus a log line. Show the dossier verbatim, then surface the saved file path. Nothing else to do.
+   - **Paid mode** - the script prints a finished dossier (Summary, Key Facts with recency markers, Timeline, Key Players, Contrarian Views, Further Reading, Open Questions, Sources) and saves the AI-first note itself to `/mnt/c/Obsidian/Inference-Disagg/research/daily/` plus a log line. Show the dossier verbatim, then surface the saved file path. Nothing else to do.
    - **Free mode** - the script prints a JSON block with `"mode": "free-sources"`, containing `results` (raw items per source: title, url, snippet/abstract, authors, year, points, comments), `stats`, and `warnings`. YOU synthesize the dossier from it:
      a. Read the JSON. If `stats.success` is false (fewer than 3 sources returned results), say so plainly and flag the thin coverage in Open Questions - do not pad.
      b. Write a dossier with the same structure as paid mode. Every Key Fact carries a recency marker and the source domain/URL it came from. Never invent facts to fill a section; if the sources are thin, the section is short or empty (see the anti-fabrication rule below).
-     c. Save it yourself as an AI-first note at `/mnt/c/Obsidian/research/daily/YYYY-MM-DD - <slug>.md`, starting from `/mnt/c/Obsidian/wiki/sources/_template.md` and following `/home/jpietrak/second_brain/skills/references/ai-first-rules.md` (preamble, frontmatter with `type: research`, `ai-first: true`, `created`, `updated`, a `sources` list of every result URL verbatim, tags). Append a one-line entry to the operation log at `/mnt/c/Obsidian/wiki/log.md`.
+     c. Save it yourself as an AI-first note at `/mnt/c/Obsidian/Inference-Disagg/research/daily/YYYY-MM-DD - <slug>.md`, starting from `/mnt/c/Obsidian/Inference-Disagg/wiki/sources/_template.md` and following `/home/jpietrak/second_brain/skills/references/ai-first-rules.md` (preamble, frontmatter with `type: research`, `ai-first: true`, `created`, `updated`, a `sources` list of every result URL verbatim, tags). Append a one-line entry to the operation log at `/mnt/c/Obsidian/Inference-Disagg/wiki/log.md`.
      d. Show the dossier to the user and surface the saved path.
 
 4. Plain English triggers: "research [topic]", "look up [topic]", "deep research on [topic]" (note: "do deep research" or "research deep" should route to `/obsidian-research-deep` instead - the chained version), "find me info on [topic]".

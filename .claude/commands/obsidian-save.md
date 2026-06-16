@@ -6,24 +6,24 @@ triggers_en: ["save this", "save the conversation", "save to vault", "obsidian s
 
 Execute the following:
 
-1. Read `/mnt/c/Obsidian/_CLAUDE.md` first if it exists
+1. Read `/mnt/c/Obsidian/Inference-Disagg/_CLAUDE.md` first if it exists
 2. Scan the entire conversation and identify all vault-worthy items: decisions, tasks, people mentioned, projects started, ideas, learnings, deals, mentions/shoutouts, AND content-worthy items (hooks, data points, swipe-file material, research findings)
 3. Group items by type: people, projects, tasks, decisions, ideas, deals, content
 4. Spawn parallel subagents - one per group - so all note types are handled simultaneously:
-   - **People agent**: search for each person, create or update notes in `/mnt/c/Obsidian/wiki/entities/`, log interactions
-   - **Projects agent**: search for each project (a project is an entity with `entity_type: project`), create or update notes in `/mnt/c/Obsidian/wiki/entities/`
+   - **People agent**: search for each person, create or update notes in `/mnt/c/Obsidian/Inference-Disagg/wiki/entities/`, log interactions
+   - **Projects agent**: search for each project (a project is an entity with `entity_type: project`), create or update notes in `/mnt/c/Obsidian/Inference-Disagg/wiki/entities/`
    - **Tasks agent**: parse tasks, add to the right kanban columns
-   - **Decisions agent**: find relevant project notes in `/mnt/c/Obsidian/wiki/entities/`, append to Key Decisions sections
-   - **Ideas agent**: search `/mnt/c/Obsidian/wiki/concepts/` for related notes, create or append
+   - **Decisions agent**: find relevant project notes in `/mnt/c/Obsidian/Inference-Disagg/wiki/entities/`, append to Key Decisions sections
+   - **Ideas agent**: search `/mnt/c/Obsidian/Inference-Disagg/wiki/concepts/` for related notes, create or append
    - **Content agent** (if a `social-media/` folder exists in the vault): scan for content-worthy items and route them:
      - **Hooks, angles, contrarian takes** → append to `social-media/ideas.md` (dated bullet)
      - **Specific numbers, stats, reusable data points** → append to `social-media/data-points.md` (with source)
      - **External posts that hit + why** → append to `social-media/swipe-file.md` (link + reason)
      - **Research findings, frameworks, methodologies** → create `social-media/research/YYYY-MM-DD — topic.md`
-5. After all agents complete: update today's daily note in `/mnt/c/Obsidian/daily/` with links to everything saved
+5. After all agents complete: update today's daily note in `/mnt/c/Obsidian/Inference-Disagg/daily/` with links to everything saved
 6. Report back: a clean list of what was saved and where
 
-When creating pages under the wiki layer (`/mnt/c/Obsidian/wiki/entities/`, `/mnt/c/Obsidian/wiki/concepts/`, `/mnt/c/Obsidian/wiki/synthesis/`, `/mnt/c/Obsidian/wiki/sources/`), start from the matching `/mnt/c/Obsidian/wiki/<folder>/_template.md` and ensure frontmatter has `type, created, updated, sources`.
+When creating pages under the wiki layer (`/mnt/c/Obsidian/Inference-Disagg/wiki/entities/`, `/mnt/c/Obsidian/Inference-Disagg/wiki/concepts/`, `/mnt/c/Obsidian/Inference-Disagg/wiki/synthesis/`, `/mnt/c/Obsidian/Inference-Disagg/wiki/sources/`), start from the matching `/mnt/c/Obsidian/Inference-Disagg/wiki/<folder>/_template.md` and ensure frontmatter has `type, created, updated, sources`.
 
 Search before creating anything - duplicate notes are vault rot. Propagate every write to boards, daily note, and linked notes. Never create an orphaned note.
 

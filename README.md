@@ -5,8 +5,8 @@ rewrite cross-referenced wiki pages, lint, reconcile contradictions, and sync �
 Claude, Ollama, and Gemini to keep marginal cost near zero.
 
 - **Code:** `/home/jpietrak/second_brain` (WSL)
-- **Vault:** `/mnt/c/Obsidian` (shared between Windows Obsidian and WSL agents)
-- **Agent spec:** [`CLAUDE.md`](CLAUDE.md) · **Vault rules:** `/mnt/c/Obsidian/_CLAUDE.md`
+- **Vault:** `/mnt/c/Obsidian/Inference-Disagg` (shared between Windows Obsidian and WSL agents)
+- **Agent spec:** [`CLAUDE.md`](CLAUDE.md) · **Vault rules:** `/mnt/c/Obsidian/Inference-Disagg/_CLAUDE.md`
 
 ---
 
@@ -14,7 +14,7 @@ Claude, Ollama, and Gemini to keep marginal cost near zero.
 
 ```
 Windows:  Obsidian (vault C:\Obsidian) + Local REST API (:27124) + Task Scheduler (nightly)
-                              │  /mnt/c/Obsidian  (shared path)
+                              │  /mnt/c/Obsidian/Inference-Disagg  (shared path)
 WSL2:     Claude Code (agent) ─ LiteLLM proxy (:4000) ─┬─ Ollama (:11434, local/free)
                                                        ├─ Gemini Flash (free tier)
                                                        └─ Anthropic Haiku (metered)
@@ -86,6 +86,12 @@ bash tests/test_routing.sh      # smoke-test the 3 backends
 
 ## Configuration
 
+- **Vault PURPOSE:** each vault has one research subject that binds all its pages and
+  sources. The authoritative statement is the **"## Vault purpose"** heading in the vault's
+  `_CLAUDE.md`; a one-line mirror lives in `config/vault.yaml` (`purpose:`). Agents load it as
+  a high-priority relevance filter for every automated action (ingest/research/discovery).
+  Switching the active vault = update `vault_path`/`vault_name` in `config/vault.yaml` and
+  `VAULT_PATH` in `.env`.
 - **Model routing — single switch file:** `config/litellm.yaml`. Each `model_name` is a stable
   **role** (`synthesis`/`bulk`/`validation`/`fallback`). To switch a provider/model, edit only
   that role's `model:` line, then `sudo systemctl restart litellm`.

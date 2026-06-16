@@ -16,7 +16,7 @@ import os, re
 from pathlib import Path
 from datetime import datetime, timedelta
 
-VAULT = Path(os.environ.get("VAULT_PATH", "/mnt/c/Obsidian"))
+VAULT = Path(os.environ.get("VAULT_PATH", "/mnt/c/Obsidian/Inference-Disagg"))
 WIKI = VAULT / "wiki"
 REPORT = VAULT / "meta" / "health_report.md"
 

@@ -8,7 +8,7 @@ Execute the following for `$ARGUMENTS`:
 
 The argument is the search query.
 
-1. Read `/mnt/c/Obsidian/_CLAUDE.md` first if it exists
+1. Read `/mnt/c/Obsidian/Inference-Disagg/_CLAUDE.md` first if it exists
 2. Run `search(query="...")` with the provided query
 3. Also try variations if results are sparse (synonyms, related terms)
 4. Return results with context: note title, folder, a relevant excerpt, and what type of note it is

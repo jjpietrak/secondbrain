@@ -1,6 +1,23 @@
 # Second Brain — core vault & agent settings.
-vault_path: /mnt/c/Obsidian
+
+# ── Vault identity ───────────────────────────────────────────────────────────
+# A vault is a single PURPOSE-bound knowledge base. To switch which vault is
+# active, change vault_path (and vault_name) — this file is the single source of
+# truth for the active vault's location.
+vault_name: Inference-Disagg
+vault_path: /mnt/c/Obsidian/Inference-Disagg
 code_path: /home/jpietrak/second_brain
+
+# PURPOSE — the research subject that binds every wiki page and source in this
+# vault. Agents MUST load it as a high-priority relevance filter for all automated
+# actions (ingest, research, source discovery): prioritise on-purpose material,
+# down-rank or flag off-purpose material, and frame every extraction around it.
+# The authoritative, full statement lives in the vault's `_CLAUDE.md` under
+# "## Vault purpose"; keep this one-liner in sync with that heading.
+purpose: >
+  TBD — pending user confirmation. Folder name implies: disaggregated LLM
+  inference (prefill/decode separation, KV-cache transfer, serving systems).
+
 methodology: PARA            # PARA | Zettelkasten | LYT | Generic
 
 # Obsidian Local REST API (coddingtonbear plugin in Windows Obsidian).
