@@ -1,0 +1,13 @@
+# Second Brain — core vault & agent settings.
+vault_path: /mnt/c/Obsidian
+code_path: /home/jpietrak/second_brain
+methodology: PARA            # PARA | Zettelkasten | LYT | Generic
+
+# Obsidian Local REST API (coddingtonbear plugin in Windows Obsidian).
+# HTTPS/27124 is the plugin default (self-signed cert). Switch to
+# http://127.0.0.1:27123 only if you enable non-encrypted mode.
+obsidian_api_url: https://127.0.0.1:27124
+
+agent_max_turns: 30         # per ingest session
+hot_cache_words: 500        # target size of wiki/hot.md
+nightly_run_hour: 2         # local time for Tier-2 local nightly run

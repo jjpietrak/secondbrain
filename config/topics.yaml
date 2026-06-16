@@ -1,0 +1,23 @@
+# Research topics for automated nightly crawl.
+# Tier-1 cloud Routines (code.claude.com) read this list conceptually; the local
+# Tier-2 nightly_run.sh pulls whatever those Routines committed. Mirror of meta/topics.md.
+topics:
+  - name: LLM research
+    keywords: [large language models, transformer architecture, RLHF, reasoning, alignment]
+    sources: [arxiv, hackernews, reddit/r/MachineLearning]
+    frequency: daily
+    output: research/daily/llm
+
+  - name: AI agents
+    keywords: [AI agents, multi-agent systems, tool use, planning, MCP protocol]
+    sources: [arxiv, hackernews]
+    frequency: daily
+    output: research/daily/agents
+
+  - name: Personal knowledge management
+    keywords: [PKM, Obsidian, Zettelkasten, second brain, knowledge graphs]
+    sources: [hackernews, reddit/r/ObsidianMD]
+    frequency: weekly
+    output: research/daily/pkm
+
+# Add your own topics below — one entry per research area.

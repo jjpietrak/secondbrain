@@ -1,3 +1,10 @@
+# Secrets & local config
+.env
+
+# Reference repos (cloned, not vendored)
+.osb_reference/
+.co_reference/
+
 # Python-generated files
 __pycache__/
 *.py[oc]
@@ -8,3 +15,10 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Logs & cost ledger (high-churn, local-only)
+*.log
+logs/
+
+# LiteLLM local cache
+services/litellm/.litellm_cache/
