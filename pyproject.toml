@@ -5,7 +5,9 @@ description = "AI-maintained Obsidian second brain — agents, skills, and routi
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "google-genai>=1.0.0",
     "litellm>=1.89.0",
+    "python-dotenv>=1.2.2",
     "pyyaml>=6.0.3",
     "requests>=2.34.2",
     "websockets>=16.0",

@@ -1,11 +1,14 @@
-"""Loads research-toolkit credentials and model defaults from ~/.config/obsidian-second-brain/.env"""
+"""Loads research-toolkit credentials from the project .env at CODE_PATH/.env."""
 
 from pathlib import Path
 from dotenv import load_dotenv
 import os
 
-CONFIG_DIR = Path.home() / ".config" / "obsidian-second-brain"
-ENV_PATH = CONFIG_DIR / ".env"
+# Prefer the project .env; fall back to the legacy osb config dir.
+_code_path = Path(os.environ.get("CODE_PATH", "/home/jpietrak/second_brain"))
+_project_env = _code_path / ".env"
+_legacy_env = Path.home() / ".config" / "obsidian-second-brain" / ".env"
+ENV_PATH = _project_env if _project_env.exists() else _legacy_env
 
 load_dotenv(ENV_PATH)
 
@@ -16,7 +19,6 @@ def get_required(name: str) -> str:
         raise SystemExit(
             f"\n{name} not configured.\n"
             f"Add it to {ENV_PATH}\n"
-            f"Or run install.sh from the obsidian-second-brain repo to set it up.\n"
         )
     return val
 
@@ -35,5 +37,8 @@ PERPLEXITY_RESEARCH_MODEL = get_optional("PERPLEXITY_RESEARCH_MODEL", "sonar-pro
 PERPLEXITY_DEEP_MODEL = get_optional("PERPLEXITY_DEEP_MODEL", "sonar-deep-research")
 NOTEBOOKLM_MODEL = get_optional("NOTEBOOKLM_MODEL", "gemini-2.5-flash")
 
-VAULT_PATH = Path(get_required("OBSIDIAN_VAULT_PATH")).expanduser()
+# Project uses VAULT_PATH; fall back to legacy OBSIDIAN_VAULT_PATH name.
+VAULT_PATH = Path(
+    os.environ.get("VAULT_PATH") or get_required("OBSIDIAN_VAULT_PATH")
+).expanduser()
 USAGE_LOG = Path.home() / ".research-toolkit" / "usage.log"

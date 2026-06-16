@@ -33,9 +33,9 @@ from google.genai import types
 
 from .lib.config import NOTEBOOKLM_MODEL, VAULT_PATH, get_required
 
-VAULT_SCAN_DIRS = ["wiki", "Research", "Knowledge", "Projects", "Ideas"]
+VAULT_SCAN_DIRS = ["wiki", "research", "daily", "output"]
 MAX_BUNDLE_NOTES = 12
-NOTEBOOKLM_DIR = VAULT_PATH / "Research" / "NotebookLM"
+NOTEBOOKLM_DIR = VAULT_PATH / "research" / "notebooklm"
 
 
 def slugify(text: str) -> str:
@@ -132,7 +132,7 @@ Source-grounded synthesis on "{topic}" via Gemini File Search (model: {model}). 
 
 ## Related
 
-- [[Research/Deep/]] (the parallel Perplexity-based research track)
+- [[research/deep/]] (the parallel Perplexity-based research track)
 """
 
 
