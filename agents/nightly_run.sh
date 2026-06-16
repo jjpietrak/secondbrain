@@ -70,6 +70,20 @@ echo "--- [4/5] Vault health ---"
 "$CODE_PATH/.venv/bin/python" "$CODE_PATH/agents/vault_health.py"
 "$CODE_PATH/.venv/bin/python" "$CODE_PATH/agents/cost_tracker.py" report
 
+# 4b. NotebookLM sync (opt-in, $0, non-fatal). Runs only if NLM_SYNC_NOTEBOOK is set
+# and `nlm` auth is still valid (cookies last ~20 min — unattended runs often skip).
+if [ -n "${NLM_SYNC_NOTEBOOK:-}" ]; then
+  echo "--- [4b] NotebookLM sync ---"
+  if [ "$DRY_RUN" = "1" ]; then
+    echo "[dry-run] would sync NotebookLM notebook $NLM_SYNC_NOTEBOOK"
+  elif nlm login --check >/dev/null 2>&1; then
+    ( cd "$CODE_PATH" && "$CODE_PATH/.venv/bin/python" -m scripts.research.notebooklm_sync \
+      --notebook "$NLM_SYNC_NOTEBOOK" ) || echo "WARN: NotebookLM sync failed"
+  else
+    echo "nlm not authenticated — skipping NotebookLM sync (run 'nlm login')."
+  fi
+fi
+
 # 5. Commit + push vault.
 echo "--- [5/5] Sync vault ---"
 if [ "$DRY_RUN" = "1" ]; then
