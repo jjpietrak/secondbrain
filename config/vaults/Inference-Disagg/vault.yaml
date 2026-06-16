@@ -32,3 +32,9 @@ obsidian_api_url: https://127.0.0.1:27124
 agent_max_turns: 30         # per ingest session
 hot_cache_words: 500        # target size of wiki/hot.md
 nightly_run_hour: 2         # local time for Tier-2 local nightly run
+
+# NotebookLM sync (per-vault). The notebook id (or `nlm` alias) this vault syncs with
+# via /obsidian-notebooklm-sync and the nightly step. $0 (Google cookies, no API pool).
+# Leave blank to disable. A global NLM_SYNC_NOTEBOOK env var overrides this only when
+# this field is empty (back-compat). See [[notebooklm-integration]].
+notebooklm_notebook: e490aeb9-7257-4308-9007-3be03c544338

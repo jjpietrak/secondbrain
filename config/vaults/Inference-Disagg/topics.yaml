@@ -40,7 +40,9 @@ topics:
 
   - name: Optical accelerators and inference efficiency
     keywords: [optical accelerator, photonic computing, silicon photonics AI, analog optical compute,
-               energy-efficient inference, power efficiency accelerator, optical matrix multiply]
+               energy-efficient inference, power efficiency accelerator, optical matrix multiply,
+               Lightmatter, Celestial AI Photonic Fabric, Ayar Labs optical I/O,
+               photonic interconnect, co-packaged optics, optical interconnect disaggregation]
     sources: [arxiv, hackernews, semantic_scholar]
     frequency: weekly
     output: research/daily/optical-accelerators

@@ -13,9 +13,10 @@ files to flow both ways with an actual notebook at notebooklm.google.com.
 
 Execute for `$ARGUMENTS` (a notebook id, an `nlm` alias, or empty for the default alias):
 
-1. **Resolve the notebook.** If `$ARGUMENTS` is empty, use the `nlm` alias `mybook`
-   (set once: `nlm alias set mybook <notebook-id>`). Otherwise pass `$ARGUMENTS` through
-   as the `--notebook` value (the script accepts a raw id or an alias).
+1. **Resolve the notebook.** If `$ARGUMENTS` is given, pass it through as the `--notebook`
+   value (a raw id or an `nlm` alias). If empty, use the active vault's configured notebook:
+   `python -m agents.vault_config notebook` (reads `notebooklm_notebook` from
+   `config/vaults/<vault>/vault.yaml`, falling back to the global `NLM_SYNC_NOTEBOOK` env).
 
 2. **Check auth.** `nlm` sessions last ~20 minutes (browser cookies). The script gates on
    `nlm login --check` and exits 2 if expired. If it reports not authenticated, tell the
@@ -53,8 +54,9 @@ Execute for `$ARGUMENTS` (a notebook id, an `nlm` alias, or empty for the defaul
 
 **Setup (one-time, manual):**
 - `nlm login` in a terminal (Chromium-family browser) — authenticates via cookies.
-- `nlm alias set mybook <notebook-id>` — e.g. for the example notebook, the id is the last
-  path segment of its URL.
+- Set the vault's notebook in `config/vaults/<vault>/vault.yaml` → `notebooklm_notebook:`
+  (a notebook id — the last path segment of its URL — or an `nlm` alias). Each vault syncs
+  with its own notebook; the nightly step resolves it per-vault.
 - To push vault notes into the notebook, drop or symlink `.md` files into
   `research/notebooklm/<slug>/push/` and run the sync.
 

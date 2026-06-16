@@ -15,6 +15,7 @@ CLI (used by agents/commands to resolve paths without parsing YAML themselves):
   python -m agents.vault_config name        # active vault name
   python -m agents.vault_config path        # active vault absolute path  ($VAULT_ROOT)
   python -m agents.vault_config purpose      # active vault PURPOSE one-liner
+  python -m agents.vault_config notebook     # active vault NotebookLM notebook id/alias
   python -m agents.vault_config list         # all registered vault names
   python -m agents.vault_config env          # export lines: VAULT, VAULT_ROOT, VAULT_PATH
   ... add --vault <name> to any of the above to target a specific vault.
@@ -108,6 +109,15 @@ def purpose(name: str | None = None) -> str:
     return " ".join((load_vault(name).get("purpose") or "").split()) or "(no purpose set)"
 
 
+def notebooklm_notebook(name: str | None = None) -> str:
+    """The active vault's NotebookLM notebook id/alias for sync.
+
+    Per-vault config wins; the global NLM_SYNC_NOTEBOOK env is a fallback only when the
+    vault sets none (keeps VAULT=all correct — each vault uses its own notebook)."""
+    return (load_vault(name).get("notebooklm_notebook")
+            or os.environ.get("NLM_SYNC_NOTEBOOK") or "").strip()
+
+
 def _main(argv: list[str]) -> int:
     args = list(argv)
     name = None
@@ -123,6 +133,8 @@ def _main(argv: list[str]) -> int:
         print(vault_path(name))
     elif cmd == "purpose":
         print(purpose(name))
+    elif cmd == "notebook":
+        print(notebooklm_notebook(name))
     elif cmd == "list":
         print("\n".join(registered_vaults()))
     elif cmd == "env":

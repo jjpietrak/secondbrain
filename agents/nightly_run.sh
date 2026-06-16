@@ -94,14 +94,17 @@ run_vault() {  # $1 = vault name
   "$PY" "$CODE_PATH/agents/vault_health.py"
   "$PY" "$CODE_PATH/agents/cost_tracker.py" report
 
-  # 4b. NotebookLM sync (opt-in, $0, non-fatal). NLM_SYNC_NOTEBOOK may be per-vault.
-  if [ -n "${NLM_SYNC_NOTEBOOK:-}" ]; then
-    echo "--- [4b] NotebookLM sync ($V) ---"
+  # 4b. NotebookLM sync (opt-in, $0, non-fatal). Notebook resolved per-vault from
+  # vault.yaml (notebooklm_notebook), falling back to the global NLM_SYNC_NOTEBOOK env.
+  local NOTEBOOK
+  NOTEBOOK="$(cd "$CODE_PATH" && "$PY" -m agents.vault_config notebook)"
+  if [ -n "$NOTEBOOK" ]; then
+    echo "--- [4b] NotebookLM sync ($V → $NOTEBOOK) ---"
     if [ "$DRY_RUN" = "1" ]; then
-      echo "[dry-run] would sync NotebookLM notebook $NLM_SYNC_NOTEBOOK"
+      echo "[dry-run] would sync NotebookLM notebook $NOTEBOOK"
     elif nlm login --check >/dev/null 2>&1; then
       ( cd "$CODE_PATH" && "$PY" -m scripts.research.notebooklm_sync \
-        --notebook "$NLM_SYNC_NOTEBOOK" ) || echo "WARN: NotebookLM sync failed"
+        --notebook "$NOTEBOOK" ) || echo "WARN: NotebookLM sync failed"
     else
       echo "nlm not authenticated — skipping NotebookLM sync (run 'nlm login')."
     fi
