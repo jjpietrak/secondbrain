@@ -15,8 +15,12 @@ code_path: /home/jpietrak/second_brain
 # The authoritative, full statement lives in the vault's `_CLAUDE.md` under
 # "## Vault purpose"; keep this one-liner in sync with that heading.
 purpose: >
-  TBD — pending user confirmation. Folder name implies: disaggregated LLM
-  inference (prefill/decode separation, KV-cache transfer, serving systems).
+  Stay current on disaggregated LLM inference — prefill/decode separation and finer
+  FFN/attention-layer disaggregation across distinct resource pools, KV-cache transfer,
+  and the serving systems, scheduling, and (heterogeneous-cluster) hardware that enable
+  it — in service of designing a disaggregated-inference simulator and architecture for
+  the "Iris Tetra" optical accelerator (power-efficient, high-throughput, strong at
+  long-context prefill, unlike decode-oriented chips such as Groq or Cerebras).
 
 methodology: PARA            # PARA | Zettelkasten | LYT | Generic
 
