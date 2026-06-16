@@ -54,11 +54,24 @@ live in `<vault>/_CLAUDE.md`. The LiteLLM proxy and API keys (`.env`) are shared
 ### Research
 | Command | What it does |
 |---------|--------------|
-| `/obsidian-research <topic>` | Web research with citations — Perplexity Sonar if keyed, else free key-less sources (Wikipedia, HN, arXiv, Reddit…). Saves a dossier. |
-| `/obsidian-research-deep <topic>` | Vault-first deep research: scans the vault, fills gaps, synthesises a delta, then propagates updates across the wiki. |
+| `/obsidian-research <topic> [--claude\|--perplexity\|--free]` | Web research with citations. Saves a dossier. Engine selectable — see below. |
+| `/obsidian-research-deep <topic> [--claude\|--perplexity\|--free]` | Vault-first deep research: scans the vault, fills gaps, synthesises a delta, then propagates updates across the wiki. Engine selectable. |
 | `/obsidian-notebooklm <topic>` | Source-grounded synthesis via **Gemini File Search** (ephemeral, no real notebook, ~$0.01–0.05). |
 | `/obsidian-youtube <url>` | Pull a video's transcript, metadata, top comments → summarised into the vault. |
 | `/obsidian-architect <path>` | Scan a codebase → maintained architecture notes (overview, per-module, key decisions). Re-runnable. |
+
+**Research engine** (`/obsidian-research[-deep]`). Precedence: a flag in the command >
+the vault default (`research_engine` in `config/vaults/<vault>/vault.yaml`, check with
+`python -m agents.vault_config engine`) > `claude`.
+| Engine | Backend | Cost |
+|--------|---------|------|
+| `--claude` *(default)* | Claude's native **WebSearch + WebFetch** (+ the `deep-research` skill for the deep variant) | **$0** — subscription / Agent SDK credit, no API key |
+| `--perplexity` | Perplexity Sonar / sonar-deep-research (+ Grok for X) | metered (~$0.20–0.80 deep); needs `PERPLEXITY_API_KEY` |
+| `--free` | key-less sources (arXiv, HN, Reddit, Wikipedia, Semantic Scholar) | $0, shallow |
+
+The `claude` engine **replaces Perplexity** with Claude's own agentic web research — same
+citation-grounded shape, at $0 marginal cost. Change the default per vault by editing
+`research_engine:` in that vault's `vault.yaml`.
 
 ### NotebookLM (real notebook, via `nlm` CLI — $0)
 | Command | What it does |
@@ -109,11 +122,12 @@ python agents/vault_health.py                  # structural audit → <vault>/me
 ```
 
 ### Research backends — `scripts/research/*.py`
-Invoked by the research commands, but runnable directly:
+These power the `--perplexity` and `--free` engines; the default `--claude` engine is
+agent-native (WebSearch/WebFetch, no script). Runnable directly:
 ```bash
-uv run -m scripts.research.research "<topic>"          # web dossier (free or Perplexity)
-uv run -m scripts.research.research_deep "<topic>"     # vault-first deep research
-uv run -m scripts.research.notebooklm --topic "<t>"    # Gemini File Search grounded synthesis
+uv run -m scripts.research.research "<topic>" [--free]       # perplexity/free web dossier
+uv run -m scripts.research.research_deep "<topic>" [--free]  # perplexity/free deep research
+uv run -m scripts.research.notebooklm --topic "<t>"          # Gemini File Search grounded synthesis
 ```
 
 ### Unattended Claude — `scripts/claude_agent.sh`

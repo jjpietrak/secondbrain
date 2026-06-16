@@ -1,10 +1,8 @@
 ---
-description: Web research with citations - Perplexity Sonar when an API key is set, free key-less sources (Wikipedia, HackerNews, arXiv, Reddit, and more) otherwise. Deep dossier with summary, facts, timeline, players, contrarian views, open questions
+description: Web research with citations. Selectable engine - claude (native WebSearch+WebFetch, $0, default), perplexity (Sonar, metered), or free (key-less arXiv/HN/Reddit/Wikipedia). Deep dossier with summary, facts, timeline, players, contrarian views, open questions.
 category: research
 triggers_en: ["research this", "look up", "find information about", "perplexity research"]
 ---
-
-> NOTE: research/NotebookLM/YouTube backend integration is deferred (Phase 7); this command may need its Python backend wired before it runs end-to-end.
 
 Execute the following for `$ARGUMENTS`:
 
@@ -15,26 +13,45 @@ Execute the following for `$ARGUMENTS`:
    the PURPOSE, and prefer recent, on-purpose sources; note clearly off-purpose findings
    rather than expanding scope into them.
 
-2. Run the Python command from the repo root (`/home/jpietrak/second_brain/`):
-   ```bash
-   uv run -m scripts.research.research "<topic>"
-   ```
-   (The research backend currently lives at `/home/jpietrak/second_brain/scripts/research/research.py`.)
-   The script auto-selects its mode: if `PERPLEXITY_API_KEY` is set it uses Perplexity Sonar (paid); otherwise it falls back to free, key-less sources. Pass `--free` to force free mode even when a key is set, or `--academic` (free mode only) to restrict to scholarly sources (arXiv, Semantic Scholar, OpenAlex, CrossRef).
+2. **Choose the research ENGINE.** Precedence: an explicit flag in `$ARGUMENTS`
+   (`--claude` | `--perplexity` | `--free`) > the vault default
+   (`python -m agents.vault_config engine`) > `claude`. Tell the user which engine ran.
 
-3. Handle the output by mode:
-   - **Paid mode** - the script prints a finished dossier (Summary, Key Facts with recency markers, Timeline, Key Players, Contrarian Views, Further Reading, Open Questions, Sources) and saves the AI-first note itself to `$VAULT_ROOT/research/daily/` plus a log line. Show the dossier verbatim, then surface the saved file path. Nothing else to do.
-   - **Free mode** - the script prints a JSON block with `"mode": "free-sources"`, containing `results` (raw items per source: title, url, snippet/abstract, authors, year, points, comments), `stats`, and `warnings`. YOU synthesize the dossier from it:
-     a. Read the JSON. If `stats.success` is false (fewer than 3 sources returned results), say so plainly and flag the thin coverage in Open Questions - do not pad.
-     b. Write a dossier with the same structure as paid mode. Every Key Fact carries a recency marker and the source domain/URL it came from. Never invent facts to fill a section; if the sources are thin, the section is short or empty (see the anti-fabrication rule below).
-     c. Save it yourself as an AI-first note at `$VAULT_ROOT/research/daily/YYYY-MM-DD - <slug>.md`, starting from `$VAULT_ROOT/wiki/sources/_template.md` and following `/home/jpietrak/second_brain/skills/references/ai-first-rules.md` (preamble, frontmatter with `type: research`, `ai-first: true`, `created`, `updated`, a `sources` list of every result URL verbatim, tags). Append a one-line entry to the operation log at `$VAULT_ROOT/wiki/log.md`.
-     d. Show the dossier to the user and surface the saved path.
+3. Run by engine:
 
-4. Plain English triggers: "research [topic]", "look up [topic]", "deep research on [topic]" (note: "do deep research" or "research deep" should route to `/obsidian-research-deep` instead - the chained version), "find me info on [topic]".
+   **A) `claude` (default — $0 on the subscription / Agent SDK credit pool, no API key):**
+   - Fan out 3–6 targeted **WebSearch** queries, biased to the PURPOSE and the topic; prefer
+     recent results (current year). Use `allowed_domains` / `blocked_domains` to focus when useful.
+   - **WebFetch** the 3–8 most relevant results and read them in full — do not synthesise from
+     search snippets alone. If WebFetch returns a cross-host redirect, call it again on that URL.
+   - Synthesize the dossier (sections in step 4). Every Key Fact carries a recency marker + source URL.
 
-5. If the user wants ALSO X discourse on the same topic, suggest running `/x-pulse [topic]` after this. If they want full vault-aware synthesis with propagation, suggest `/obsidian-research-deep [topic]`.
+   **B) `perplexity` (metered — needs `PERPLEXITY_API_KEY`):**
+   - `uv run -m scripts.research.research "<topic>"` from the repo root. It prints a finished
+     dossier and saves the AI-first note to `$VAULT_ROOT/research/daily/` itself — show it
+     verbatim, surface the path. (Step 4 is already done by the script for this engine.)
 
-6. Errors handled inside the script with auto-retry on transient failures. Surface fatal errors verbatim.
+   **C) `free` (key-less sources — $0 but shallow):**
+   - `uv run -m scripts.research.research "<topic>" --free` (add `--academic` to restrict to
+     arXiv / Semantic Scholar / OpenAlex / CrossRef). The script prints a JSON block
+     (`"mode": "free-sources"`) with `results`, `stats`, `warnings`. YOU synthesize the dossier:
+     read it; if `stats.success` is false (fewer than 3 sources), flag the thin coverage in Open
+     Questions — do not pad.
+
+4. **Save the dossier** (engines A and C — engine B's script already saved it). Write an AI-first
+   note at `$VAULT_ROOT/research/daily/YYYY-MM-DD - <slug>.md`, starting from
+   `$VAULT_ROOT/wiki/sources/_template.md` and following `/home/jpietrak/second_brain/skills/references/ai-first-rules.md`
+   (preamble; frontmatter `type: research`, `ai-first: true`, `created`, `updated`,
+   `engine: <claude|perplexity|free>`, a `sources` list of every result URL verbatim, tags).
+   Append one line to `$VAULT_ROOT/wiki/log.md`. Dossier sections: Summary, Key Facts (recency
+   markers), Timeline, Key Players, Contrarian Views, Further Reading, Open Questions, Sources.
+   Never invent facts to fill a section; thin sources → short/empty section (see anti-fabrication).
+
+5. Plain English triggers: "research [topic]", "look up [topic]", "find me info on [topic]"
+   ("do deep research" / "research deep" routes to `/obsidian-research-deep` instead). If the user
+   wants full vault-aware synthesis with propagation, suggest `/obsidian-research-deep [topic]`.
+
+6. Errors: for engines B/C the script auto-retries transient failures; surface fatal errors verbatim.
 
 ---
 

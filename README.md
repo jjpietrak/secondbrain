@@ -137,7 +137,7 @@ Most-used commands:
 | Command | Does |
 |---------|------|
 | `/obsidian-ingest <file\|url\|text>` | absorb a source → rewrites entities/concepts/synthesis |
-| `/obsidian-research[-deep] <topic>` | web/deep research (free key-less sources or Perplexity) |
+| `/obsidian-research[-deep] <topic>` | web/deep research; engine `--claude` (default, $0) / `--perplexity` / `--free` |
 | `/obsidian-notebooklm-sync` | bidirectional sync with the vault's real NotebookLM notebook ($0) |
 | `/obsidian-query <q>` | smart vault search |
 | `/obsidian-lint` · `/obsidian-reconcile` | health report · resolve contradictions |

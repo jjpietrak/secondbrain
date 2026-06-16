@@ -1,10 +1,8 @@
 ---
-description: Vault-first deep research - scans the vault, fills gaps (Perplexity + Grok when keyed, free key-less sources otherwise), synthesizes a delta, then propagates updates across people/projects/ideas via /obsidian-save
+description: Vault-first deep research - scans the vault, fills gaps, synthesizes a delta, then propagates updates via /obsidian-save. Selectable engine - claude (native WebSearch+WebFetch + deep-research skill, $0, default), perplexity (Sonar+Grok, metered), or free (key-less).
 category: research
 triggers_en: ["deep research", "thorough research", "vault-first research", "research gaps"]
 ---
-
-> NOTE: research/NotebookLM/YouTube backend integration is deferred (Phase 7); this command may need its Python backend wired before it runs end-to-end.
 
 Execute the following for `$ARGUMENTS`:
 
@@ -14,29 +12,46 @@ Execute the following for `$ARGUMENTS`:
    argument. If no topic, default to the PURPOSE as the subject. Gaps and queries should
    advance the PURPOSE; flag clearly off-purpose findings rather than expanding into them.
 
-2. Run the Python command from the repo root (`/home/jpietrak/second_brain/`):
-   ```bash
-   uv run -m scripts.research.research_deep "<topic>"
-   ```
-   (The deep-research backend currently lives at `/home/jpietrak/second_brain/scripts/research/research_deep.py`.)
-   The script auto-selects its mode: if `PERPLEXITY_API_KEY` is set it runs the paid pipeline below; otherwise it falls back to free, key-less sources. Pass `--free` to force free mode, or `--academic` (free mode only) to restrict to scholarly sources. Phase 1 (vault scan) is identical in both modes, so OBSIDIAN_VAULT_PATH must be set either way.
+2. **Choose the research ENGINE.** Precedence: an explicit flag in `$ARGUMENTS`
+   (`--claude` | `--perplexity` | `--free`) > the vault default
+   (`python -m agents.vault_config engine`) > `claude`. Tell the user which engine ran.
 
-3. **Paid mode** - the script runs a 4-phase pipeline and finishes the work itself:
-   - **Phase 1** - vault scan: finds existing notes mentioning the topic (the baseline).
-   - **Phase 2** - gap analysis: Perplexity sonar-pro identifies what's missing/stale and emits 3-5 targeted queries (each tagged `web` or `x`).
-   - **Phase 3** - gap-fill: runs each query via Perplexity (web) or Grok+Live Search (X discourse).
-   - **Phase 4** - synthesis: Perplexity produces a delta report, the script saves it to `$VAULT_ROOT/research/deep/YYYY-MM-DD - <slug>.md`, then emits a JSON payload between `<<<RESEARCH_DEEP_PROPAGATION_PAYLOAD>>>` markers.
+   Phase 1 — **vault scan** — is the same for every engine: find existing notes mentioning the
+   topic (the baseline). Do it with Grep/Glob over `$VAULT_ROOT/wiki` + `$VAULT_ROOT/research`,
+   or via the Python script's free mode (which prints `vault_baseline_notes`).
 
-   Show the synthesis body verbatim, then do the propagation step (step 5).
+3. **`claude` engine (default — $0 on subscription / Agent SDK credit, no API key):** you run
+   the full vault-first pipeline yourself.
+   - **Gap analysis:** from the vault baseline + PURPOSE, list what's missing/stale → 3–6 targeted
+     queries.
+   - **Gap-fill:** run the queries with **WebSearch** (prefer current-year results; `allowed_domains`
+     to focus), then **WebFetch** the most relevant 4–10 results to read them in full. For maximum
+     rigor you may invoke the **`deep-research`** skill (fan-out + adversarial verification of claims)
+     and fold its cited report into the synthesis.
+   - Produce the delta (sections in step 4), save it, then propagate (step 5).
 
-4. **Free mode** - the script does Phase 1 (vault scan) plus free-source aggregation and prints a JSON block with `"mode": "free-sources-deep"`, containing `vault_baseline_notes` (path, score, excerpt of what the vault already knew), `sources` (fresh external results), `stats`, `warnings`, and an `instruction`. YOU are the synthesizer:
-   - Read the baseline excerpts and the source results. If `stats.success` is false (fewer than 3 sources returned), flag the thin coverage in Open Questions - do not pad.
-   - Produce a delta with exactly these sections: What's New Since Vault Baseline, What's Confirmed, Contradictions / Updates Needed (name the `[[vault path]]`), Synthesis, Recommended Vault Updates, Open Questions. Every external claim carries a recency marker and source domain; every vault reference uses `[[wikilinks]]`. Never invent facts to fill a section.
-   - Save it yourself to `$VAULT_ROOT/research/deep/YYYY-MM-DD - <slug>.md`, starting from `$VAULT_ROOT/wiki/synthesis/_template.md` and following `/home/jpietrak/second_brain/skills/references/ai-first-rules.md` (preamble; frontmatter with `type: research-deep`, `ai-first: true`, `created`, `updated`, `vault-baseline-notes`, and a `sources` list of every result URL verbatim).
-   - Show the synthesis to the user, then do the propagation step (step 5).
+4. **`perplexity` engine (metered — needs `PERPLEXITY_API_KEY`):**
+   `uv run -m scripts.research.research_deep "<topic>"` from the repo root runs a 4-phase pipeline
+   (vault scan → Perplexity sonar-pro gap analysis → Perplexity/Grok gap-fill → delta synthesis),
+   saves the report to `$VAULT_ROOT/research/deep/YYYY-MM-DD - <slug>.md`, and emits a JSON payload
+   between `<<<RESEARCH_DEEP_PROPAGATION_PAYLOAD>>>` markers. Show the synthesis verbatim, parse the
+   payload, then propagate (step 5). Cost: typically $0.20–$0.80.
 
-5. **Propagation (both modes):**
-   - In paid mode, parse the JSON payload; in free mode, use the note you just wrote and its synthesis.
+   **`free` engine (key-less — $0, shallow):** `uv run -m scripts.research.research_deep "<topic>" --free`
+   (add `--academic` to restrict to scholarly sources). It prints `"mode": "free-sources-deep"` with
+   `vault_baseline_notes`, `sources`, `stats`, `warnings`. YOU synthesize the delta from it.
+
+   **Delta sections (engines `claude` and `free`)** — save yourself to
+   `$VAULT_ROOT/research/deep/YYYY-MM-DD - <slug>.md`, starting from `$VAULT_ROOT/wiki/synthesis/_template.md`
+   and following `/home/jpietrak/second_brain/skills/references/ai-first-rules.md` (preamble; frontmatter
+   `type: research-deep`, `ai-first: true`, `created`, `updated`, `engine: <engine>`, `vault-baseline-notes`,
+   a `sources` list of every URL verbatim). Sections, exactly: What's New Since Vault Baseline, What's
+   Confirmed, Contradictions / Updates Needed (name the `[[vault path]]`), Synthesis, Recommended Vault
+   Updates, Open Questions. Every external claim carries a recency marker + source; every vault reference
+   uses `[[wikilinks]]`. If coverage is thin (<3 sources), flag it in Open Questions — never pad.
+
+5. **Propagation (all engines):**
+   - For the `perplexity` engine, parse the JSON payload; for `claude`/`free`, use the note you just wrote and its synthesis.
    - Treat the synthesis body as the "conversation context" input to `/obsidian-save`.
    - Run the standard `/obsidian-save` flow: spawn parallel subagents (People, Projects, Tasks, Decisions, Ideas) and update vault notes per the synthesis's "Recommended Vault Updates" bullets.
    - Apply the AI-first vault rule on every note created or updated (preamble, frontmatter, recency markers, wikilinks, sources).
@@ -45,9 +60,13 @@ Execute the following for `$ARGUMENTS`:
 
 6. Plain English triggers: "do deep research on [topic]", "research properly [topic]", "vault-aware research on [topic]", "research and update the vault on [topic]".
 
-7. If any source/phase fails (Grok unavailable in paid mode, or a free source times out), the run continues with what it has and flags the gap in the synthesis. Surface partial results - don't silently fail. The graceful degradation rule: a partial synthesis is better than no synthesis.
+7. If any source/phase fails (a WebFetch redirect/timeout, Grok unavailable in the perplexity
+   engine, or a free source times out), continue with what you have and flag the gap in the
+   synthesis. Surface partial results — don't silently fail. A partial synthesis beats none.
 
-8. Cost note: paid mode makes multiple API calls (Perplexity + Grok), typically $0.20-$0.80 depending on topic depth and gap count; the script logs Grok calls to the usage log automatically. Free mode costs nothing (key-less sources) - synthesis is done by the calling Claude.
+8. Cost: `claude` engine is $0 on the subscription / Agent SDK credit pool (WebSearch/WebFetch
+   draw from that pool, no API key); `perplexity` is metered (~$0.20–$0.80 per run, Perplexity +
+   Grok); `free` is $0 (key-less sources, synthesis by the calling Claude).
 
 ---
 

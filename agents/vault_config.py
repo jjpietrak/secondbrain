@@ -16,6 +16,7 @@ CLI (used by agents/commands to resolve paths without parsing YAML themselves):
   python -m agents.vault_config path        # active vault absolute path  ($VAULT_ROOT)
   python -m agents.vault_config purpose      # active vault PURPOSE one-liner
   python -m agents.vault_config notebook     # active vault NotebookLM notebook id/alias
+  python -m agents.vault_config engine       # default research engine (claude|perplexity|free)
   python -m agents.vault_config list         # all registered vault names
   python -m agents.vault_config env          # export lines: VAULT, VAULT_ROOT, VAULT_PATH
   ... add --vault <name> to any of the above to target a specific vault.
@@ -118,6 +119,12 @@ def notebooklm_notebook(name: str | None = None) -> str:
             or os.environ.get("NLM_SYNC_NOTEBOOK") or "").strip()
 
 
+def research_engine(name: str | None = None) -> str:
+    """Default research engine for /obsidian-research[-deep]: claude | perplexity | free."""
+    val = (load_vault(name).get("research_engine") or "claude").strip().lower()
+    return val if val in {"claude", "perplexity", "free"} else "claude"
+
+
 def _main(argv: list[str]) -> int:
     args = list(argv)
     name = None
@@ -135,6 +142,8 @@ def _main(argv: list[str]) -> int:
         print(purpose(name))
     elif cmd == "notebook":
         print(notebooklm_notebook(name))
+    elif cmd == "engine":
+        print(research_engine(name))
     elif cmd == "list":
         print("\n".join(registered_vaults()))
     elif cmd == "env":

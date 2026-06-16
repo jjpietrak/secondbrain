@@ -24,6 +24,14 @@ purpose: >
 
 methodology: PARA            # PARA | Zettelkasten | LYT | Generic
 
+# Default research engine for /obsidian-research[-deep]. Override per call with a flag
+# (--claude | --perplexity | --free).
+#   claude     — Claude's native WebSearch + WebFetch (+ deep-research skill). $0 on the
+#                subscription / Agent SDK credit pool. No API key needed. (recommended)
+#   perplexity — Perplexity Sonar / sonar-deep-research. Metered (needs PERPLEXITY_API_KEY).
+#   free       — key-less sources only (arXiv, HN, Reddit, Wikipedia…). $0 but shallow.
+research_engine: claude
+
 # Obsidian Local REST API (coddingtonbear plugin in Windows Obsidian).
 # HTTPS/27124 is the plugin default (self-signed cert). Switch to
 # http://127.0.0.1:27123 only if you enable non-encrypted mode.
