@@ -1,12 +1,30 @@
 ---
-description: Ingest a source into the vault - the vault rewrites itself around new knowledge. Every ingest updates entities, rewrites stale claims, synthesizes new concepts, and resolves contradictions.
+description: Ingest a source (file/url/text) into the vault - or batch-ingest every not-yet-ingested raw source (no arg, or --new/--all). The vault rewrites itself around new knowledge; a per-vault content-hash index dedupes so nothing is ingested twice.
 category: research
 triggers_en: ["ingest this source", "add this article", "import this", "absorb this"]
 ---
 
 Execute the following for `$ARGUMENTS`:
 
-The argument is a URL, file path, or pasted text. If no argument, ask what to ingest.
+The argument is a URL, file path, or pasted text — OR a batch directive (`--new` / `--all`,
+or empty). Resolve which mode:
+
+- **Single source** — `$ARGUMENTS` is a specific URL / file path / pasted text → ingest just that.
+- **Batch (no argument, or `--new` / `--all`)** — ingest every raw source not yet ingested.
+  Get the list from the per-vault ingest index (content-hash keyed, idempotent):
+  ```bash
+  python -m agents.ingest_index pending      # one raw relpath per line (new or changed files)
+  ```
+  If the list is empty, report "nothing new to ingest" and stop. Otherwise ingest each listed
+  file by running steps 1–8 for it (process them one at a time; `--all` re-ingests changed files
+  too — same list). Report a per-file summary at the end.
+
+For EACH source ingested (single or batch), run steps 1–9. After step 7 (structural files),
+**record it in the index** so it is not re-ingested next time:
+```bash
+python -m agents.ingest_index mark "<raw relpath>" --source-page "wiki/sources/<the page you wrote>"
+```
+(URLs/pasted text are saved into `raw/` first in step 5, so they get a raw relpath to mark too.)
 
 1. Read `$VAULT_ROOT/_CLAUDE.md` first if it exists. Load the
    **"## Vault purpose"** statement and hold it as a high-priority relevance filter for
@@ -101,6 +119,8 @@ The argument is a URL, file path, or pasted text. If no argument, ask what to in
 7. Update structural files:
    - REBUILD `$VAULT_ROOT/wiki/index.md` - don't just append. Regenerate the sections that changed so descriptions stay current with the rewritten pages.
    - Append to the operation log at `$VAULT_ROOT/wiki/log.md`: `## [YYYY-MM-DD] ingest | Source Title (type) — X created, Y rewritten, Z contradictions resolved`
+   - **Record the source in the ingest index** so it is not re-ingested:
+     `python -m agents.ingest_index mark "<raw relpath>" --source-page "wiki/sources/<page>"`
 
 8. Update today's daily note (`$VAULT_ROOT/daily/`) with:
    - What was ingested

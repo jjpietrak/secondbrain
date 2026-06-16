@@ -70,18 +70,19 @@ run_vault() {  # $1 = vault name
   echo "--- [1/5] Pull vault ($V) ---"
   [ "$DRY_RUN" = "1" ] || git -C "$VAULT_ROOT" pull --rebase --autostash 2>&1 || echo "WARN: pull failed"
 
-  # 2. Ingest new raw/ sources not yet summarised.
+  # 2. Ingest raw sources not yet ingested (content-hash index, idempotent).
   echo "--- [2/5] Ingest new raw sources ($V) ---"
   if [ "$SKIP_PAID" = "0" ]; then
-    local NEW
-    NEW=$(find "$VAULT_ROOT/raw" -name '*.md' -newer "$VAULT_ROOT/wiki/log.md" 2>/dev/null | head -5)
-    if [ -n "$NEW" ]; then
-      while IFS= read -r src; do
+    local PENDING
+    PENDING=$(cd "$CODE_PATH" && "$PY" -m agents.ingest_index pending)
+    if [ -n "$PENDING" ]; then
+      echo "$PENDING" | while IFS= read -r src; do
+        [ -z "$src" ] && continue
         echo "Ingesting: $src"
-        run_claude "Run the /obsidian-ingest command on the file: $src"
-      done <<< "$NEW"
+        run_claude "Run the /obsidian-ingest command on the file: $VAULT_ROOT/$src"
+      done
     else
-      echo "No new raw sources."
+      echo "No new raw sources (ingest index up to date)."
     fi
   fi
 

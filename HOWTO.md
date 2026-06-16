@@ -45,7 +45,8 @@ live in `<vault>/_CLAUDE.md`. The LiteLLM proxy and API keys (`.env`) are shared
 ### Capture & ingest
 | Command | What it does |
 |---------|--------------|
-| `/obsidian-ingest <file\|url\|text>` | Absorb a source — the vault rewrites itself: updates entities, rewrites stale claims, synthesises concepts, resolves contradictions. Raw saved to `raw/` (immutable). |
+| `/obsidian-ingest <file\|url\|text>` | Absorb one source — the vault rewrites itself: updates entities, rewrites stale claims, synthesises concepts, resolves contradictions. Raw saved to `raw/` (immutable). |
+| `/obsidian-ingest` *(no arg, or `--new` / `--all`)* | **Batch**: ingest every raw source not yet ingested. Deduped by a per-vault content-hash index — safe to re-run; only new/changed files are processed. |
 | `/obsidian-capture <idea>` | Zero-friction idea capture → `wiki/concepts/` + a mention in today's daily note. |
 | `/obsidian-save` | Save everything worth keeping from the current conversation into the vault. |
 | `/obsidian-daily` | Create/update today's daily note (calendar, overdue tasks, conversation context). |
@@ -116,6 +117,16 @@ uv run -m scripts.research.notebooklm_sync --notebook "$(python -m agents.vault_
 ```
 Folder: `<vault>/research/notebooklm/<notebook-slug>/` — `push/` (you → notebook),
 `notes/` (notebook → you), `.nlm-sync.json` (manifest). Conflicts back up to `.conflicts/`.
+
+### Ingest index — `agents/ingest_index.py`
+Per-vault content-hash ledger (`<vault>/meta/ingest_index.json`) of which `raw/` sources have
+been ingested. Powers batch `/obsidian-ingest` and the nightly ingest step (idempotent dedup).
+```bash
+python -m agents.ingest_index status            # raw_sources / ingested / pending counts
+python -m agents.ingest_index pending           # raw files new or changed since last ingest
+python -m agents.ingest_index mark <relpath> --source-page <wiki/sources/x.md>   # record ingested
+```
+A file is "pending" if new, or if its content hash changed since it was ingested (→ re-ingest).
 
 ### Cost & health — `agents/cost_tracker.py`, `agents/vault_health.py`
 ```bash
