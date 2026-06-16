@@ -45,11 +45,21 @@ topics:
     frequency: weekly
     output: research/daily/optical-accelerators
 
-  - name: Prefill-bound workloads and inference hardware landscape
+  - name: Specialised AI accelerators (heterogeneous hardware)
+    keywords: [Groq LPU, Cerebras wafer-scale, SambaNova RDU, Tenstorrent, Graphcore IPU,
+               Etched Sohu, d-Matrix Corsair, MatX, Furiosa RNGD, Untether AI, Positron,
+               Esperanto, Rebellions, Callosum, transformer ASIC, dataflow accelerator,
+               heterogeneous accelerator, inference chip startup]
+    sources: [arxiv, hackernews, reddit/r/LocalLLaMA, semantic_scholar]
+    frequency: weekly
+    output: research/daily/accelerators
+
+  - name: Prefill-bound workloads and compute characteristics
     keywords: [long-context inference, long context prefill, prefill-bound workloads,
-               Groq LPU, Cerebras inference, decode-oriented accelerator, prefill throughput]
+               prefill throughput, compute-bound vs memory-bound, arithmetic intensity,
+               prefill/decode roofline, decode-oriented accelerator]
     sources: [arxiv, hackernews, reddit/r/LocalLLaMA]
     frequency: weekly
-    output: research/daily/long-context-hw
+    output: research/daily/prefill-workloads
 
 # Add your own topics below — one entry per research area.
