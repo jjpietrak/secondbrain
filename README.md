@@ -1,23 +1,27 @@
 # Second Brain
 
 AI-maintained Obsidian knowledge base (Karpathy LLM-Wiki pattern). Agents ingest sources,
-rewrite cross-referenced wiki pages, lint, reconcile contradictions, and sync — routed across
-Claude, Ollama, and Gemini to keep marginal cost near zero.
+rewrite cross-referenced wiki pages, research topics, lint, reconcile contradictions, sync
+with real Google NotebookLM, and commit — routed across Claude, Ollama, and Gemini to keep
+marginal cost near zero. **Multi-vault**: each vault is a fully-encapsulated, PURPOSE-bound
+knowledge base.
 
 - **Code:** `/home/jpietrak/second_brain` (WSL)
-- **Vault:** `/mnt/c/Obsidian/Inference-Disagg` (shared between Windows Obsidian and WSL agents)
-- **Agent spec:** [`CLAUDE.md`](CLAUDE.md) · **Vault rules:** `/mnt/c/Obsidian/Inference-Disagg/_CLAUDE.md`
+- **Active vault:** `/mnt/c/Obsidian/Inference-Disagg` (selected by `VAULT`; one of possibly many)
+- **Agent spec:** [`CLAUDE.md`](CLAUDE.md) · **Vault rules:** `<vault>/_CLAUDE.md`
+- **Commands & automations:** [`HOWTO.md`](HOWTO.md) — full day-to-day reference
 
 ---
 
 ## Architecture
 
 ```
-Windows:  Obsidian (vault C:\Obsidian) + Local REST API (:27124) + Task Scheduler (nightly)
-                              │  /mnt/c/Obsidian/Inference-Disagg  (shared path)
+Windows:  Obsidian (vaults under C:\Obsidian\<name>) + Local REST API (:27124) + Task Scheduler
+                              │  /mnt/c/Obsidian/<active vault>  (shared path)
 WSL2:     Claude Code (agent) ─ LiteLLM proxy (:4000) ─┬─ Ollama (:11434, local/free)
-                                                       ├─ Gemini Flash (free tier)
-                                                       └─ Anthropic Haiku (metered)
+              │                                        ├─ Gemini Flash (free tier)
+              │                                        └─ Anthropic Haiku (metered)
+              └─ nlm CLI ─ Google NotebookLM (bidirectional sync, $0 via cookies)
 ```
 
 Three billing pools, cheapest-first:
@@ -51,8 +55,11 @@ npm install -g @anthropic-ai/claude-code      # claude CLI
 ollama pull llama3:8b      # bulk/local route (mistral optional, swap in config/litellm.yaml)
 ```
 
-**Obsidian (Windows):** install Obsidian; open `C:\Obsidian` as the vault (see Manual setup);
-install the **Local REST API** (coddingtonbear) and **Web Clipper** community plugins.
+**Obsidian (Windows):** install Obsidian; open the vault folder `C:\Obsidian\Inference-Disagg`
+(see Manual setup); install the **Local REST API** (coddingtonbear) and **Web Clipper** plugins.
+
+**`nlm` CLI** (for real NotebookLM sync — optional, $0): install the NotebookLM Tools CLI and
+authenticate with `nlm login` (opens a Chromium-family browser; sessions last ~20 min).
 
 **API keys / tokens** (put in `.env` — see below):
 
@@ -124,28 +131,26 @@ config/
 ## Usage
 
 ```bash
-cd /home/jpietrak/second_brain && claude     # interactive
+cd /home/jpietrak/second_brain && claude     # interactive; operates on the active vault ($VAULT)
 ```
+Most-used commands:
 | Command | Does |
 |---------|------|
 | `/obsidian-ingest <file\|url\|text>` | absorb a source → rewrites entities/concepts/synthesis |
+| `/obsidian-research[-deep] <topic>` | web/deep research (free key-less sources or Perplexity) |
+| `/obsidian-notebooklm-sync` | bidirectional sync with the vault's real NotebookLM notebook ($0) |
 | `/obsidian-query <q>` | smart vault search |
-| `/obsidian-lint` | health report → `meta/health_report.md` |
-| `/obsidian-reconcile` | find & resolve contradictions |
-| `/obsidian-research[-deep]` | web/deep research (free key-less sources or Perplexity) |
-| `/obsidian-sync` | commit + push the vault |
-| `/cost-report` | spend vs budget → `meta/cost_report.md` |
+| `/obsidian-lint` · `/obsidian-reconcile` | health report · resolve contradictions |
+| `/obsidian-sync` · `/cost-report` | commit+push the vault · spend vs budget |
 
-Helpers: `agents/vault_health.py` (structural audit), `agents/cost_tracker.py {record,report,check}`,
-`agents/nightly_run.sh` (Tier-2 nightly; `DRY_RUN=1` to rehearse).
+**See [`HOWTO.md`](HOWTO.md) for the full command list, the automation scripts, and recipes.**
 
 ---
 
 ## Manual setup steps (do these to go live)
 
-1. **Make `C:\Obsidian` the vault.** Close Obsidian (currently open on "LLM Inference"), then
-   *Open folder as vault → `C:\Obsidian`*. Delete the leftover `C:\Obsidian\LLM Inference\.obsidian`
-   (the real config now lives at the vault root).
+1. **Open the vault in Obsidian.** *Open folder as vault → `C:\Obsidian\Inference-Disagg`*
+   (each vault is its own folder under `C:\Obsidian`). Done for the current vault.
 2. **Local REST API plugin.** Install + enable in Obsidian; copy its key to `.env` `OBSIDIAN_API_KEY`.
    Test: `source scripts/obsidian_api.sh && obsidian_ping`. (HTTPS/27124, self-signed → `-k`.)
 3. **Anthropic Console — set a hard $5 spend limit** on the API key (console.anthropic.com).
@@ -153,25 +158,27 @@ Helpers: `agents/vault_health.py` (structural audit), `agents/cost_tracker.py {r
 4. **Agent SDK credit.** Claim the credit opt-in in account settings; `claude setup-token`
    (token already in `.env`; re-run if it expires).
 5. **Nightly automation (optional).**
-   - Tier-1 (cloud research, laptop can be off): create 3 Routines at code.claude.com pointing
+   - Tier-1 (cloud research, laptop can be off): create Routines at code.claude.com pointing
      at the vault repo, writing digests to `research/daily/<topic>/`.
    - Tier-2 (local): `bash scripts/setup_cron.sh` registers the 2 AM Windows Task Scheduler job.
-     Rehearse first: `DRY_RUN=1 bash agents/nightly_run.sh`.
-6. **NotebookLM (Phase 7, deferred).** Fragile browser automation — needs a dedicated Google
-   account + interactive auth via the unofficial `notebooklm-mcp`. `/obsidian-notebooklm` is
-   wired and waiting on that.
+     Rehearse first: `DRY_RUN=1 bash agents/nightly_run.sh` (or `VAULT=all DRY_RUN=1 …`).
+6. **NotebookLM sync (real, working, $0).** Authenticate once with `nlm login`, then set the
+   vault's notebook in `config/vaults/<vault>/vault.yaml` (`notebooklm_notebook:`). Use
+   `/obsidian-notebooklm-sync` (or the nightly step 4b). Uses Google cookies — no API pool.
+   (`/obsidian-notebooklm` is the separate ephemeral Gemini File-Search variant.)
 
 ---
 
 ## Layout
 
 ```
+CLAUDE.md  README.md  HOWTO.md   # agent spec · overview · day-to-day command/automation guide
 config/   secondbrain.yaml (global+registry), litellm.yaml (routing), vaults/<name>/{vault,topics,budget}.yaml
 .claude/  commands/ (16 slash commands), settings.json
 agents/   vault_config.py (active-vault resolver), cost_tracker.py, vault_health.py, nightly_run.sh, __init__.py
 services/litellm/  start.sh, litellm.service, cost_callback.py
 scripts/  claude_agent.sh (OAuth wrapper), obsidian_api.sh, setup_cron.sh,
-          research/ (vendored research toolkit incl. key-less sources), architect_scan.py
+          research/ (research toolkit + notebooklm.py, notebooklm_sync.py), architect_scan.py
 skills/references/  ai-first-rules.md, vault-schema.md, write-rules.md, ...
 tests/    test_routing.sh, test_ingest.sh, test_nightly.sh
 logs/     cost_ledger.jsonl, nightly-*.log   (gitignored)
@@ -179,6 +186,7 @@ logs/     cost_ledger.jsonl, nightly-*.log   (gitignored)
 
 ## Status
 
-Built & verified: 3-backend routing, cost ledger/report/budget gate, OAuth auth isolation,
-vault scaffold + templates, 16 commands, `vault_health.py`, nightly dry-run. Deferred:
-NotebookLM browser automation (Phase 7).
+Built & verified: multi-vault encapsulated config + active-vault resolver, 3-backend routing,
+cost ledger/report/budget gate, OAuth auth isolation, vault scaffold + templates, 16 commands,
+`vault_health.py`, nightly run (per-vault, `VAULT=all`), and **real NotebookLM bidirectional
+sync via the `nlm` CLI** (probe-validated, notes pulled live, $0). See [`HOWTO.md`](HOWTO.md).
