@@ -135,6 +135,14 @@ python -m agents.ingest_index report            # (re)write the meta/ingest_inde
 A source is "pending" if its id is new, or its content hash changed since ingest (→ re-ingest).
 IDs: `arxiv:2401.12345`, `doi:10.…`, `youtube:<id>`, `url:<canonical>`, `sha256:<hash>`.
 
+### PDF → Markdown — `scripts/pdf_extract.py`
+Used by `/obsidian-ingest` for PDFs (PyMuPDF via `pymupdf4llm`) — far cheaper and more reliable
+than vision-reading pages, especially multi-column papers. Text PDFs only (no OCR).
+```bash
+uv run -m scripts.pdf_extract <file.pdf>                 # clean Markdown to stdout
+uv run -m scripts.pdf_extract <file.pdf> --pages 0-15 --max-chars 80000 --out notes.md
+```
+
 ### Cost & health — `agents/cost_tracker.py`, `agents/vault_health.py`
 ```bash
 python agents/cost_tracker.py check            # exit 1 if today's paid spend ≥ daily cap

@@ -79,7 +79,16 @@ python -m agents.ingest_index mark "<raw relpath>" --source-page "wiki/sources/<
    Save the image description to `$VAULT_ROOT/raw/articles/` as a markdown summary with context.
 
    **For articles** - use WebFetch to pull the page content
-   **For PDFs** - read the file directly
+
+   **For PDFs** - extract to Markdown with PyMuPDF (do NOT vision-read the pages — it is slower,
+   token-heavy, and worse on multi-column academic papers):
+   ```bash
+   uv run -m scripts.pdf_extract "<file.pdf>"            # clean Markdown to stdout
+   # large papers: cap it — --pages 0-15  or  --max-chars 80000
+   ```
+   If the output is near-empty, the PDF is likely scanned/image-only — fall back to the Read
+   tool's PDF mode (vision) or OCR with `ocrmypdf` first.
+
    **For pasted text** - use as-is
 
 4. Extract and organize:
