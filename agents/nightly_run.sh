@@ -70,8 +70,11 @@ run_vault() {  # $1 = vault name
   echo "--- [1/5] Pull vault ($V) ---"
   [ "$DRY_RUN" = "1" ] || git -C "$VAULT_ROOT" pull --rebase --autostash 2>&1 || echo "WARN: pull failed"
 
-  # 2. Ingest raw sources not yet ingested (content-hash index, idempotent).
+  # 2. Ingest raw sources not yet ingested (source-id index, idempotent + rename/delete-aware).
   echo "--- [2/5] Ingest new raw sources ($V) ---"
+  # Reconcile the index against disk first (free): registers new sources, marks removed ones
+  # as 'deleted'. Runs even when paid steps are skipped so the index stays accurate.
+  ( cd "$CODE_PATH" && "$PY" -m agents.ingest_index scan ) || echo "WARN: index scan failed"
   if [ "$SKIP_PAID" = "0" ]; then
     local PENDING
     PENDING=$(cd "$CODE_PATH" && "$PY" -m agents.ingest_index pending)

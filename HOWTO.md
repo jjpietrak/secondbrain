@@ -125,14 +125,17 @@ Per-vault registry of which sources are ingested vs pending. Canonical store
 renamed file is never mistaken for a new source. Each row also keeps `filename`, `url`, title,
 type, and the `source_page` it produced. Powers batch `/obsidian-ingest` and the nightly step.
 ```bash
-python -m agents.ingest_index scan              # register raw/ sources as pending (no ingest)
-python -m agents.ingest_index status            # total / ingested / pending counts
+python -m agents.ingest_index scan              # reconcile vs disk: register new + mark deleted
+python -m agents.ingest_index status            # total / ingested / pending / deleted counts
 python -m agents.ingest_index pending           # raw files new or changed since last ingest
+python -m agents.ingest_index deleted           # sources whose file was removed from raw/
 python -m agents.ingest_index id <relpath>      # show the derived source id for one file
 python -m agents.ingest_index mark <relpath> --source-page <wiki/sources/x.md>   # record ingested
 python -m agents.ingest_index report            # (re)write the meta/ingest_index.md table
 ```
-A source is "pending" if its id is new, or its content hash changed since ingest (→ re-ingest).
+Status of a row: **pending** (id new, or content hash changed → re-ingest), **ingested**, or
+**deleted** (file removed from `raw/` — `scan` marks it, row kept for history; if the file
+reappears it flips back to pending). The nightly runs `scan` first, so deletions auto-reconcile.
 IDs: `arxiv:2401.12345`, `doi:10.…`, `youtube:<id>`, `url:<canonical>`, `sha256:<hash>`.
 
 ### PDF → Markdown — `scripts/pdf_extract.py`

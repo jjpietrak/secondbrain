@@ -12,12 +12,16 @@ explicit frontmatter id > arXiv > DOI > YouTube > canonical URL > content hash. 
 for the key (same paper) but the file's content hash is still tracked for change detection.
 
 A source is PENDING when its id is absent (new) or its content hash changed since the recorded
-ingest (re-ingest). This makes /obsidian-ingest idempotent and rename-proof.
+ingest (re-ingest). `scan` also reconciles deletions: a source whose id is no longer present in
+raw/ is marked `deleted` (the row is kept for history; rename-safe since renames keep the id).
+A deleted source whose file later reappears flips back to `pending`. This makes /obsidian-ingest
+idempotent, rename-proof, and deletion-aware.
 
 CLI (resolves the active vault via VAULT / default_vault):
   python -m agents.ingest_index pending [--json]      # raw files needing ingest (one path/line)
-  python -m agents.ingest_index status                 # counts: ingested / pending / total
-  python -m agents.ingest_index scan                   # register raw/ sources as pending (no ingest)
+  python -m agents.ingest_index status                 # counts: ingested / pending / deleted / total
+  python -m agents.ingest_index scan                   # reconcile: register new + mark deleted
+  python -m agents.ingest_index deleted                # list sources marked deleted
   python -m agents.ingest_index mark <raw-path> [--source-page <vault-relpath>]
   python -m agents.ingest_index id <raw-path>          # derived source id for one file
   python -m agents.ingest_index get [--id <id> | <raw-path>]
@@ -213,6 +217,9 @@ def _upsert(data: dict, vault: Path, p: Path, *, ingested: bool,
         row["content_hash"] = info["content_hash"]
         if info["url"] and not row.get("url"):
             row["url"] = info["url"]
+        if row.get("status") == "deleted":         # file came back → re-queue for ingest
+            row["status"] = "pending"
+            row.pop("deleted_at", None)
     if ingested:
         row["status"] = "ingested"
         row["ingested_at"] = _now()
@@ -241,18 +248,29 @@ def pending(name: str | None = None) -> list[Path]:
 
 
 def scan(name: str | None = None) -> dict:
-    """Register every raw/ source (as pending if new); update filenames for renames."""
+    """Reconcile the index against raw/ on disk:
+    - register new sources (pending) and update filenames for renames;
+    - mark sources whose id is no longer present on disk as `deleted` (kept for history).
+    Rename-safe: a renamed file keeps its id, so it stays in the present set."""
     data = _load(name)
     vault = _vault(name)
     added = 0
+    present_ids: set[str] = set()
     for p in _raw_files(name):
         before = len(data["sources"])
-        _upsert(data, vault, p, ingested=False)
+        row = _upsert(data, vault, p, ingested=False)
+        present_ids.add(row["id"])
         added += len(data["sources"]) - before
+    deleted = 0
+    for sid, row in data["sources"].items():
+        if sid not in present_ids and row.get("status") != "deleted":
+            row["status"] = "deleted"
+            row["deleted_at"] = _now()
+            deleted += 1
     _save(name, data)
     render_md(name)
-    pend = len(pending(name))
-    return {"added": added, "total": len(data["sources"]), "pending": pend}
+    return {"added": added, "deleted": deleted,
+            "total": len(data["sources"]), "pending": len(pending(name))}
 
 
 def mark(raw_path: str, source_page: str | None = None, name: str | None = None) -> str:
@@ -267,19 +285,25 @@ def mark(raw_path: str, source_page: str | None = None, name: str | None = None)
     return row["id"]
 
 
+_STATUS_RANK = {"pending": 0, "ingested": 1, "deleted": 2}
+_STATUS_MARK = {"pending": "⏳ pending", "ingested": "✅ ingested", "deleted": "🗑️ deleted"}
+
+
 def render_md(name: str | None = None) -> Path:
     data = _load(name)
     rows = sorted(data["sources"].values(),
-                  key=lambda r: (r.get("status") != "ingested", r.get("id", "")))
+                  key=lambda r: (_STATUS_RANK.get(r.get("status"), 0), r.get("id", "")))
     ing = sum(1 for r in rows if r.get("status") == "ingested")
-    pend = len(rows) - ing
+    pend = sum(1 for r in rows if r.get("status") == "pending")
+    dele = sum(1 for r in rows if r.get("status") == "deleted")
     L = [f"# Ingested sources — {data.get('vault', vc.active_vault(name))}\n",
          f"_Generated: {_now()}. Canonical store: `meta/ingest_index.json` (keyed by stable "
-         f"source id, not filename). **{ing} ingested, {pend} pending**, {len(rows)} total._\n",
+         f"source id, not filename). **{ing} ingested, {pend} pending, {dele} deleted**, "
+         f"{len(rows)} total._\n",
          "| Source ID | Status | Type | Title | File | URL | Wiki page |",
          "|-----------|--------|------|-------|------|-----|-----------|"]
     for r in rows:
-        mk = "✅ ingested" if r.get("status") == "ingested" else "⏳ pending"
+        mk = _STATUS_MARK.get(r.get("status"), r.get("status", ""))
         url = f"[link]({r['url']})" if r.get("url") else ""
         title = (r.get("title") or "")[:50].replace("|", "\\|")
         fn = (r.get("filename") or "").replace("|", "\\|")
@@ -315,10 +339,18 @@ def _main(argv: list[str]) -> int:
     elif cmd == "status":
         data = _load(name); rows = list(data["sources"].values())
         ing = sum(1 for r in rows if r.get("status") == "ingested")
-        print(f"vault={vc.active_vault(name)} total={len(rows)} ingested={ing} pending={len(pending(name))}")
+        dele = sum(1 for r in rows if r.get("status") == "deleted")
+        print(f"vault={vc.active_vault(name)} total={len(rows)} ingested={ing} "
+              f"deleted={dele} | pending(needs ingest)={len(pending(name))}")
     elif cmd == "scan":
         r = scan(name)
-        print(f"scanned: +{r['added']} new, {r['total']} total, {r['pending']} pending")
+        print(f"scanned: +{r['added']} new, {r['deleted']} newly-deleted, "
+              f"{r['total']} total, {r['pending']} pending")
+    elif cmd == "deleted":
+        data = _load(name)
+        for r in sorted(data["sources"].values(), key=lambda x: x.get("id", "")):
+            if r.get("status") == "deleted":
+                print(f"  {r['id']}\t{r.get('filename','')}\t(deleted {r.get('deleted_at','')})")
     elif cmd == "mark":
         if len(args) < 2:
             print("usage: mark <raw-path> [--source-page <vault-relpath>]", file=sys.stderr); return 2
