@@ -1,0 +1,7 @@
+{
+  "$comment": "Pins the interactive Second Brain agent model (config/litellm.yaml only controls routed sub-tasks; override per-session with `claude --model`). additionalDirectories grants the agent access to the Obsidian vault, which lives outside this repo.",
+  "model": "claude-opus-4-8",
+  "permissions": {
+    "additionalDirectories": ["/mnt/c/Obsidian"]
+  }
+}
