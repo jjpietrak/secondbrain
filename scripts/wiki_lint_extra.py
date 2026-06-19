@@ -37,7 +37,11 @@ except ImportError:  # run as a loose script: put repo root on the path
     from agents import vault_config as vc
 
 # Root-level files that legitimately live at the vault root (not stray).
-ROOT_ALLOW = {"_CLAUDE.md", "CLAUDE.md", "README.md", "index.md", "log.md", "hot.md"}
+# NOTE: _CLAUDE.md is intentionally excluded. Vault-level agent rules are a v0.1 pattern;
+# in v0.2 the PURPOSE lives in config/vaults/<v>/vault.yaml (agents.vault_config purpose)
+# and agent rules live in the CODE repo (CLAUDE.md / docs/ / .claude/).
+# wiki_init reconcile DELETES any vault _CLAUDE.md it finds.
+ROOT_ALLOW = {"CLAUDE.md", "README.md", "index.md", "log.md", "hot.md"}
 
 LINK_RE = re.compile(r"\[\[([^\]|#]+)")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")

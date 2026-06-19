@@ -35,7 +35,8 @@ def build_fixture(root: Path) -> None:
     # Stray root file (the live offender shape).
     (root / "stepfun-mfa.md").write_text(FM + "Stray at vault root. [[hub]].\n")
     # Allowed root files (must NOT be flagged stray).
-    (root / "_CLAUDE.md").write_text("# vault rules\n")
+    # NOTE: _CLAUDE.md is intentionally NOT created here. It is a v0.1 artefact;
+    # wiki_init reconcile deletes it and wiki_lint_extra flags it as stray (Change 2).
     (root / "index.md").write_text("# index\n")
 
     # Hub provides inbound links so most pages are not orphans.
@@ -78,7 +79,8 @@ def main() -> int:
 
         checks = [
             ("stray_root flags stepfun-mfa.md", "stepfun-mfa.md" in res["stray_root"]),
-            ("_CLAUDE.md not flagged stray", "_CLAUDE.md" not in res["stray_root"]),
+            # _CLAUDE.md is now a v0.1 artefact - wiki_init reconcile deletes it and
+            # wiki_lint_extra flags it as stray if found at vault root. No fixture file.
             ("index.md not flagged stray", "index.md" not in res["stray_root"]),
             ("empty_sections flags TODO", has("empty_sections", "TODO")),
             ("empty_sections skips Notes", not has("empty_sections", "'Notes'")),

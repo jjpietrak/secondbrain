@@ -52,6 +52,9 @@ def make_fixture(root: Path) -> None:
     (root / "meta").mkdir(parents=True)
     (root / "daily").mkdir(parents=True)     # to be dropped
     (root / "output").mkdir(parents=True)    # to be dropped
+    # templates/ = old Obsidian Templater dir; Change 1 drops it.
+    (root / "templates").mkdir(parents=True)
+    (root / "templates/Daily Note.md").write_text("# Daily Note\n", encoding="utf-8")
 
     # An existing custom template (so reconcile UPDATES it to the superset).
     (root / "wiki/entities/_template.md").write_text(
@@ -62,6 +65,9 @@ def make_fixture(root: Path) -> None:
     (root / "wiki/hot/hot.md").write_text("# Hot\nrecent\n", encoding="utf-8")
     # stray root page
     (root / "stepfun-mfa.md").write_text("# StepFun MFA\nstray page\n", encoding="utf-8")
+    # vault _CLAUDE.md = v0.1 artefact; Change 2 removes it.
+    (root / "_CLAUDE.md").write_text("# Vault rules\npurpose: disaggregated inference\n",
+                                     encoding="utf-8")
     # a real source page (must NOT be touched)
     (root / "wiki/sources/photons.md").write_text("# Photons\nkeep me\n", encoding="utf-8")
     # meta single-artifact files (must stay files)
@@ -108,17 +114,25 @@ def test_dry_run_makes_zero_source_changes() -> None:
         assert report is not None and report.exists()
         txt = report.read_text(encoding="utf-8")
         for needle in ("raw/opinions", "research/query", "daily", "output",
-                       "wiki/hot.md", "stepfun-mfa.md", "_template.md", "STOP"):
+                       "wiki/hot.md", "stepfun-mfa.md", "_template.md", "STOP",
+                       "templates", "_CLAUDE.md"):
             assert needle in txt, f"report missing mention of {needle!r}"
 
         # Plan reflects the expected actions.
         assert "daily" in plan.folders_dropped and "output" in plan.folders_dropped
+        assert "templates" in plan.folders_dropped
         assert plan.hot_collapsed is True
+        assert plan.vault_claude_deleted is True
         assert any("raw/opinions" in f for f in plan.folders_created)
         assert any(s == "stepfun-mfa.md" for s, _ in plan.files_moved)
         # entity template UPDATED (existed but differs), others ADDED.
         assert plan.template_actions.get("wiki/entities/_template.md") == "updated"
         assert plan.template_actions.get("wiki/concepts/_template.md") == "added"
+        # producer-folder templates added.
+        assert plan.template_actions.get("meta/health_report/_template.md") == "added"
+        assert plan.template_actions.get("meta/nightly_report/_template.md") == "added"
+        assert plan.template_actions.get("research/deep/_template.md") == "added"
+        assert plan.template_actions.get("research/query/_template.md") == "added"
     print("PASS test_dry_run_makes_zero_source_changes")
 
 
@@ -137,8 +151,12 @@ def test_apply_is_idempotent() -> None:
         assert not (vault / "wiki/hot").exists()
         assert not (vault / "daily").exists()
         assert not (vault / "output").exists()
+        # Change 1: templates/ dropped.
+        assert not (vault / "templates").exists()
         assert (vault / "wiki/concepts/stepfun-mfa.md").is_file()
         assert not (vault / "stepfun-mfa.md").exists()
+        # Change 2: vault _CLAUDE.md deleted.
+        assert not (vault / "_CLAUDE.md").exists()
         assert (vault / "raw/opinions").is_dir()
         assert (vault / "raw/code").is_dir()
         assert (vault / "raw/notebooklm").is_dir()
@@ -154,6 +172,12 @@ def test_apply_is_idempotent() -> None:
         ent = (vault / "wiki/entities/_template.md").read_text()
         assert "timeline:" in ent and "company" in ent and "last_interaction" in ent
         assert "ai-first: true" in ent and "For future Claude" in ent
+        # Change 1: producer-folder templates exist and have For future Claude preamble.
+        for prod in ("meta/health_report/_template.md", "meta/nightly_report/_template.md",
+                     "research/deep/_template.md", "research/query/_template.md"):
+            t = (vault / prod).read_text()
+            assert "For future Claude" in t, f"missing preamble in {prod}"
+            assert "ai-first: true" in t, f"missing ai-first in {prod}"
 
         after_first = tree_snapshot(vault)
 
