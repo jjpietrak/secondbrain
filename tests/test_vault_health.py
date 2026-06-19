@@ -55,6 +55,22 @@ def build_fixture(root: Path) -> None:
         "Created on <% tp.date.now() %> by the template. [[hub]] to avoid orphan flag.\n"
     )
 
+    # Path-qualified wikilinks: this vault links as [[sources/Foo]] / [[concepts/Bar]].
+    # The link target must resolve by BASENAME (regression: bare-stem matching falsely
+    # flagged every path-qualified link as a dead link and every linked-to page as orphan).
+    sources = root / "wiki" / "sources"
+    sources.mkdir(parents=True)
+    # A source page linked ONLY via a path-qualified [[sources/cited-src]] from the hub2
+    # page below. It must NOT be flagged orphan, and the link must NOT be dead.
+    (sources / "cited-src.md").write_text(
+        "---\ntype: source\ncreated: 2026-06-01\nupdated: 2026-06-18\nsources: []\n---\n"
+        "A cited source page. Reached only by a path-qualified wikilink. Long enough body.\n"
+    )
+    (wiki / "hub2.md").write_text(
+        "---\ntype: concept\ncreated: 2026-06-01\nupdated: 2026-06-18\nsources: []\n---\n"
+        "Cites [[sources/cited-src]] and [[concepts/target]] (path-qualified). [[hub]] too.\n"
+    )
+
     # Duplicate stems (normalized collide): "dupe thing" twice.
     (wiki / "dupe-thing.md").write_text(
         "---\ntype: concept\ncreated: 2026-06-01\nupdated: 2026-06-18\nsources: []\n---\n"
@@ -81,6 +97,12 @@ def main() -> int:
             ("unfilled_template flagged", has("unfilled_template", "unfilled.md")),
             ("orphan flagged", has("orphaned", "orphan.md")),
             ("dead_link flagged", has("dead_links", "ghost-page")),
+            # Path-qualified links resolve by basename: NOT dead, and they DO backlink.
+            ("path-qualified link not dead (sources/cited-src)",
+             not has("dead_links", "sources/cited-src")
+             and not has("dead_links", "cited-src")),
+            ("path-qualified link target not orphaned (cited-src)",
+             not has("orphaned", "cited-src.md")),
             ("duplicate flagged", has("duplicate", "dupe")),
             # fence-wrapped page must NOT also be reported as missing frontmatter
             ("fenced not double-reported as missing_fm",

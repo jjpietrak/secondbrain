@@ -50,8 +50,19 @@ def is_skippable(page: Path) -> bool:
     return page.name.startswith("_") or page.stem in SKIP_STEMS
 
 
+def _link_target(raw: str) -> str:
+    """Normalize a wikilink target to the page stem it resolves to.
+
+    Wikilinks in this vault are frequently path-qualified ([[sources/Foo]],
+    [[concepts/Bar]]). Pages are keyed by bare stem, so resolve a link to its
+    last path segment (and drop any leading/trailing whitespace). LINK_RE already
+    strips a trailing |alias and #heading.
+    """
+    return raw.strip().rsplit("/", 1)[-1].strip()
+
+
 def extract_wikilinks(content: str) -> list[str]:
-    return [m.strip() for m in LINK_RE.findall(content)]
+    return [_link_target(m) for m in LINK_RE.findall(content)]
 
 
 def extract_frontmatter(content: str) -> dict:

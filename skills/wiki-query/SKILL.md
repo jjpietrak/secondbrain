@@ -58,16 +58,17 @@ CONSUMES the pipeline; it does not build it.
 | Standard | default (no flag) | retrieve top-5 OR hot+index+3-5 pages | ~3,000 | most questions |
 | Deep | `query deep:` or "thorough"/"comprehensive" | retrieve + every relevant page | ~8,000+ | "compare A vs B across everything", gap analysis |
 
-The hot cache lives at the live path `wiki/hot/hot.md`. The master index is `wiki/index.md`.
+The hot cache lives at `wiki/hot.md` (a file; collapsed from the old `wiki/hot/hot.md`
+folder by wiki-init). The master index is `wiki/index.md`.
 
 ## Quick mode
-1. Read `wiki/hot/hot.md`. If it answers the question, respond immediately.
+1. Read `wiki/hot.md`. If it answers the question, respond immediately.
 2. Else read `wiki/index.md`; scan descriptions for the answer.
 3. If found in the index summary, respond without opening any page.
 4. If not, say: "Not in the quick cache. Run as a standard query?" Do not open pages.
 
 ## Standard mode
-1. Read `wiki/hot/hot.md` first (it may already hold the answer or direct context).
+1. Read `wiki/hot.md` first (it may already hold the answer or direct context).
 2. If retrieval is provisioned, run `scripts/retrieve.py` and Read the top candidate pages.
    Otherwise read `wiki/index.md` to pick 3-5 relevant pages, then Read those. Follow
    wikilinks to depth-2 for key entities; no deeper.
@@ -76,7 +77,7 @@ The hot cache lives at the live path `wiki/hot/hot.md`. The master index is `wik
 4. If the question reveals a GAP, say so (see Gap handling). Do NOT file the answer (P1).
 
 ## Deep mode
-1. Read `wiki/hot/hot.md` and `wiki/index.md`.
+1. Read `wiki/hot.md` and `wiki/index.md`.
 2. If retrieval is provisioned, run `scripts/retrieve.py --top 10`; also enumerate every
    relevant page across `wiki/{concepts,entities,sources,synthesis}/` (search completeness -
    do not sample).

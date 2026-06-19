@@ -22,7 +22,7 @@ These files are written by more than one agent/skill and MUST be locked:
 
 - `wiki/index.md`
 - `wiki/log.md`
-- `wiki/hot.md`   (live vault path during P1: `wiki/hot/hot.md`)
+- `wiki/hot.md`
 - `meta/ingest_index.json` and `meta/ingest_index.md`
 - (Phase 2) `objective/index*`
 

@@ -102,7 +102,7 @@ Trigger: a file in `raw/` is `pending`, or the user points at one source.
 1. **Read** the source completely (via the right handler above).
 2. **Discuss** (skip if the user said "just ingest it"): one line on what to emphasize and how
    granular. Editorial judgment is part of ingest.
-3. **Orient cheaply** (context-window discipline, below): read `wiki/hot/hot.md`, then
+3. **Orient cheaply** (context-window discipline, below): read `wiki/hot.md`, then
    `wiki/index.md`, then 3-5 existing pages that are plausibly affected. Do not read the whole
    wiki.
 4. **Create the source summary** in `wiki/sources/<Title>.md` using the sources `_template.md`
@@ -119,7 +119,7 @@ Trigger: a file in `raw/` is `pending`, or the user points at one source.
 8. **Bi-temporal updates (never overwrite).** When new info changes a fact about an entity or
    concept, APPEND an entry to that page's `timeline:` frontmatter (from/until/learned/source);
    do NOT overwrite the existing `role`, `status`, or prior facts. The page keeps its history.
-9. **Update the shared targets** - `wiki/index.md`, `wiki/hot/hot.md`, `wiki/log.md` - using the
+9. **Update the shared targets** - `wiki/index.md`, `wiki/hot.md`, `wiki/log.md` - using the
    locking snippet below (these are multi-writer append targets).
 10. **Check for contradictions** (below).
 11. **Record the ingest** in the index:
@@ -140,7 +140,7 @@ Trigger: several files pending, or "ingest all of these".
 3. **Cross-reference pass:** after all sources are in, look for connections among the newly
    ingested sources (shared entities, agreeing/conflicting claims). Add the links + contradiction
    callouts then.
-4. Update `wiki/index.md`, `wiki/hot/hot.md`, `wiki/log.md` ONCE at the end (single locked
+4. Update `wiki/index.md`, `wiki/hot.md`, `wiki/log.md` ONCE at the end (single locked
    write), not per source.
 5. Check in with the user every ~10 sources on large batches. Report: "Processed N sources,
    created X pages, updated Y pages; key connections: ...".
@@ -150,7 +150,7 @@ Trigger: several files pending, or "ingest all of these".
 ## Context-window discipline
 
 Token budget matters - keep ingest cheap:
-- Read `wiki/hot/hot.md` first. If it has the context you need, do not re-read full pages.
+- Read `wiki/hot.md` first. If it has the context you need, do not re-read full pages.
 - Read `wiki/index.md` to find existing pages before creating new ones (avoid duplicates).
 - Read only 3-5 existing pages per ingest. Needing 10+ means you are reading too broadly.
 - Edit surgically (PATCH a section), do not re-read and rewrite a whole file to change one field.
@@ -219,7 +219,7 @@ Frontmatter writes are `.get()`-safe and additive: never drop an existing field,
 
 ## Locking: shared append targets (REQUIRED)
 
-`wiki/index.md`, `wiki/log.md`, and `wiki/hot/hot.md` are written by multiple agents/skills. The
+`wiki/index.md`, `wiki/log.md`, and `wiki/hot.md` are written by multiple agents/skills. The
 ingest_index mirror (`meta/ingest_index.md`) is updated by `ingest_index.py` itself (which has
 its own atomic write); your skill only needs to lock the three wiki shared files. Per-page writes
 to a single owned note (one entity/concept/source page) do not strictly need a lock, but locking
@@ -239,7 +239,7 @@ acquire_or_skip() {            # $1 = vault-relative path; 0 = acquired, 1 = ski
 }
 
 # Multi-file shared write in sorted-path order:
-PATHS=$(printf '%s\n' wiki/hot/hot.md wiki/index.md wiki/log.md | sort)
+PATHS=$(printf '%s\n' wiki/hot.md wiki/index.md wiki/log.md | sort)
 held=(); ok=1
 for p in $PATHS; do
   if acquire_or_skip "$p"; then held+=("$p"); else ok=0; break; fi

@@ -73,7 +73,7 @@ VAULT_ROOT="$(.venv/bin/python -m agents.vault_config path)"
    write-rules Stub Notes).
 8. **Update the shared targets** under the locking snippet (below): add an entry to
    `wiki/index.md`, append a `save` line to the TOP of `wiki/log.md`, and refresh
-   `wiki/hot/hot.md`.
+   `wiki/hot.md`.
 9. **Confirm:** "Saved as [[Title]] in wiki/<folder>/."
 
 ---
@@ -123,7 +123,7 @@ with no lasting insight; anything already in the wiki (UPDATE the existing page 
 
 ## Locking: shared append targets (REQUIRED)
 
-`wiki/index.md`, `wiki/log.md`, and `wiki/hot/hot.md` are multi-writer targets. Follow
+`wiki/index.md`, `wiki/log.md`, and `wiki/hot.md` are multi-writer targets. Follow
 `skills/references/locking.md` exactly: acquire all three in sorted-path order, write, release.
 The new content page itself is a single owned note (lock optional but harmless).
 
@@ -139,7 +139,7 @@ acquire_or_skip() {            # $1 = vault-relative path; 0 = acquired, 1 = ski
   return 1
 }
 
-PATHS=$(printf '%s\n' wiki/hot/hot.md wiki/index.md wiki/log.md | sort)
+PATHS=$(printf '%s\n' wiki/hot.md wiki/index.md wiki/log.md | sort)
 held=(); ok=1
 for p in $PATHS; do
   if acquire_or_skip "$p"; then held+=("$p"); else ok=0; break; fi

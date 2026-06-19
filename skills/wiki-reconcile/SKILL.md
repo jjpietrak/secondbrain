@@ -81,7 +81,7 @@ human/later run decides. Never overwrite a fact on an unreachable judge.
    ```bash
    eval "$(python -m agents.vault_config env)"   # exports VAULT, VAULT_ROOT
    ```
-   Read `wiki/hot/hot.md` -> `wiki/index.md` first. An optional argument scopes the scan
+   Read `wiki/hot.md` -> `wiki/index.md` first. An optional argument scopes the scan
    to one topic/entity; with no argument, scan all of `wiki/`.
 2. Find candidate pairs (enumerate exhaustively, do not sample):
    - claims across `wiki/concepts/` that contradict each other,

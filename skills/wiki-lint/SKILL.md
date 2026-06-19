@@ -120,7 +120,7 @@ the canonical artifact - do not write a parallel `wiki/meta/` report (this schem
 
 Lint is READ-ONLY over `wiki/` and writes no shared target, so it takes no lock. If a
 fix is approved and it touches a shared append target (`wiki/index.md`, `wiki/log.md`,
-`wiki/hot/hot.md`), apply the canonical lock snippet from
+`wiki/hot.md`), apply the canonical lock snippet from
 [`skills/references/locking.md`](../references/locking.md) (acquire -> write -> release;
 sorted-path order for multi-file; on rc=75 retry once after 2s then log and skip).
 

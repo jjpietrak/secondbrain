@@ -34,7 +34,7 @@ on. Synthesis REASONING (deciding the pattern is real and worth a page) runs on 
 
 ## What it scans for
 
-Read `wiki/hot/hot.md` -> `wiki/index.md` -> the recent `wiki/log.md` tail first (context
+Read `wiki/hot.md` -> `wiki/index.md` -> the recent `wiki/log.md` tail first (context
 discipline), then look for:
 
 1. **Cross-source recurrence** - a concept appearing in 2+ UNRELATED sources (e.g. a
@@ -61,7 +61,7 @@ discipline), then look for:
    ```bash
    eval "$(python -m agents.vault_config env)"   # exports VAULT, VAULT_ROOT
    ```
-   Read `wiki/hot/hot.md`, `wiki/index.md`, and the last ~20 `wiki/log.md` entries.
+   Read `wiki/hot.md`, `wiki/index.md`, and the last ~20 `wiki/log.md` entries.
 2. Enumerate candidates exhaustively (every `wiki/**/*.md`, recent `raw/`), do not
    sample. For each candidate pattern, decide on the wiki credit pool whether it is a
    genuine, unnamed pattern (anti-fabrication: a thin coincidence is not a synthesis).
