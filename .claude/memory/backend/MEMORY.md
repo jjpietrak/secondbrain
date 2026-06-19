@@ -8,6 +8,11 @@ current; never store fact bodies here.
   `/home/jpietrak/second_brain`. Plan: `C:\Users\kubap\.claude\plans\elegant-juggling-sparrow.md`.
   Source-of-truth docs (frozen, read-only for agents): `docs/{requirements,agents,vault-schema,skills-description}.md`.
 
+## Build log
+- [phase0-build.md](phase0-build.md) — Quick Phase 0 SHIPPED 2026-06-19: claude_agent.sh
+  usage-capture contract, wiki-lock.sh (Layer-2) port, vault_lease.sh (Layer-1, wiring
+  deferred to P4), locking.md snippet, 5 hermetic tests (all green via tests/run_phase0.sh).
+
 ## Architecture
 - [retrieval-pipeline.md](retrieval-pipeline.md) — claude-obsidian hybrid retrieval
   (contextual-prefix + BM25 + ollama cosine rerank); copy whole into `scripts/`; drives
@@ -27,9 +32,19 @@ current; never store fact bodies here.
 ## Decisions
 - [reference-decision.md](reference-decision.md) — claude-obsidian chosen as the backend
   implementation model; what to Copy/Take/Build-new/Drop. Full report: `plans/reference-comparison.md`.
+- Two-layer write safety LOCKED (P0): Layer-2 wiki-lock.sh per-file (runtime, every skill via
+  the locking.md snippet) + Layer-1 vault_lease.sh whole-vault cross-host git lease (nightly
+  only, wired in P4). Lease policy: humans never block; only automated writers call acquire
+  (--mode auto defers with exit 75). Details: [phase0-build.md](phase0-build.md).
+- claude_agent.sh now CAPTURES usage (no longer `exec claude -p`): wraps --output-format json,
+  records a cost_tracker row (source=agent-sdk-credit), re-emits only .result. --agent tags
+  per-agent spend. Backward-compatible with nightly_run.sh. Details: phase0-build.md.
 - _(append architecture decisions as they are made)_
 
 ## Audits
+- Cost ledger now receives a row for EVERY agent-SDK claude call (P0.1). Per-agent attribution
+  available via `--agent <id>` -> action tag; P4 will tag all nightly call sites + add the
+  5h-window/window_tokens fields. No paid spend incurred building/testing Phase 0 (all hermetic).
 - _(append cost/health/window-budget baselines and trends)_
 
 ## Open structural proposals
