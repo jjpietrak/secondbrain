@@ -4,6 +4,8 @@ category: research
 triggers_en: ["deep research", "thorough research", "vault-first research", "research gaps"]
 ---
 
+> NOTE: v0.1; superseded by the `research-deep` skill in Phase 2. The `research-deep` skill is not yet built; this command remains available in the interim.
+
 Execute the following for `$ARGUMENTS`:
 
 1. Load the vault **PURPOSE** (`$VAULT_ROOT/_CLAUDE.md` → "## Vault

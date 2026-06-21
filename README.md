@@ -133,15 +133,16 @@ config/
 ```bash
 cd /home/jpietrak/second_brain && claude     # interactive; operates on the active vault ($VAULT)
 ```
-Most-used commands:
+Most-used commands (v0.2 skill names):
 | Command | Does |
 |---------|------|
-| `/obsidian-ingest <file\|url\|text>` | absorb a source → rewrites entities/concepts/synthesis |
-| `/obsidian-research[-deep] <topic>` | web/deep research; engine `--claude` (default, $0) / `--perplexity` / `--free` |
-| `/obsidian-notebooklm-sync` | bidirectional sync with the vault's real NotebookLM notebook ($0) |
-| `/obsidian-query <q>` | smart vault search |
-| `/obsidian-lint` · `/obsidian-reconcile` | health report · resolve contradictions |
+| `wiki-ingest <file\|url\|text>` | absorb a source → rewrites entities/concepts/synthesis |
+| `wiki-query <q>` | smart vault search with BM25 + rerank |
+| `wiki-lint` / `wiki-health` | structural lint / full health report with scoring |
+| `wiki-reconcile` | find and resolve contradictions |
 | `/obsidian-sync` · `/cost-report` | commit+push the vault · spend vs budget |
+| `/obsidian-research[-deep] <topic>` | v0.1; research skill arrives Phase 2 |
+| `/obsidian-notebooklm-sync` | v0.1; nlm skill arrives Phase 5 |
 
 **See [`HOWTO.md`](HOWTO.md) for the full command list, the automation scripts, and recipes.**
 
@@ -164,8 +165,9 @@ Most-used commands:
      Rehearse first: `DRY_RUN=1 bash agents/nightly_run.sh` (or `VAULT=all DRY_RUN=1 …`).
 6. **NotebookLM sync (real, working, $0).** Authenticate once with `nlm login`, then set the
    vault's notebook in `config/vaults/<vault>/vault.yaml` (`notebooklm_notebook:`). Use
-   `/obsidian-notebooklm-sync` (or the nightly step 4b). Uses Google cookies — no API pool.
-   (`/obsidian-notebooklm` is the separate ephemeral Gemini File-Search variant.)
+   `/obsidian-notebooklm-sync` (v0.1 command, still active; the `nlm` skill replaces it in Phase 5).
+   Uses Google cookies — no API pool.
+   (`/obsidian-notebooklm` is the separate ephemeral Gemini File-Search variant; also v0.1.)
 
 ---
 
@@ -174,7 +176,7 @@ Most-used commands:
 ```
 CLAUDE.md  README.md  HOWTO.md   # agent spec · overview · day-to-day command/automation guide
 config/   secondbrain.yaml (global+registry), litellm.yaml (routing), vaults/<name>/{vault,topics,budget}.yaml
-.claude/  commands/ (16 slash commands), settings.json
+.claude/  commands/ (13 commands: 5 deprecated->skills, 5 v0.1 with phase note, 3 kept), settings.json
 agents/   vault_config.py (active-vault resolver), cost_tracker.py, vault_health.py, nightly_run.sh, __init__.py
 services/litellm/  start.sh, litellm.service, cost_callback.py
 scripts/  claude_agent.sh (OAuth wrapper), obsidian_api.sh, setup_cron.sh,

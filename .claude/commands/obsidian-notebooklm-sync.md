@@ -4,6 +4,8 @@ category: research
 triggers_en: ["notebooklm sync", "sync notebook", "sync my notebook", "push to notebooklm", "pull from notebooklm", "share with notebooklm"]
 ---
 
+> NOTE: v0.1; superseded by the `nlm` skill in Phase 5. The `nlm` skill is not yet built; this command remains available in the interim.
+
 Bi-directionally sync a real Google NotebookLM notebook with the vault folder
 `$VAULT_ROOT/research/notebooklm/<notebook-slug>/`, using the installed `nlm` CLI.
 

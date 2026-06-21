@@ -13,6 +13,8 @@ description: >
 allowed-tools: Read Edit Write Glob Grep Bash
 ---
 
+**Ownership: `wiki` agent.** If you are NOT the `wiki` subagent (e.g. the main orchestrator or another agent loaded this skill), DISPATCH it: call the Task tool with `subagent_type: wiki`, pass the user's full request, let the wiki agent run the steps below, and relay its result. Do NOT run the steps yourself - running as the `wiki` agent is what activates the RBAC/write-scope boundary. If you ARE the `wiki` agent, proceed.
+
 # wiki-reconcile: keep the vault from disagreeing with itself
 
 Owner: **wiki**. Adapted from the OSB `obsidian-reconcile` command. The vault must never

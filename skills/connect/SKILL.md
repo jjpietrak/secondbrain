@@ -4,6 +4,8 @@ description: "Bridge two unrelated vault domains using the link graph to force c
 allowed-tools: Read, Grep, Glob, Bash
 ---
 
+**Shared thinking tool (`wiki` + `research`): dispatch to the subagent owning the task (`subagent_type: wiki` for vault-knowledge work, `research` for objective/research work); if already running as one of them, proceed.**
+
 # connect: bridge two unrelated vault domains
 
 Take two domains, topics, or notes that do not obviously relate and force a connection through

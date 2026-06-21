@@ -4,6 +4,8 @@ category: meta
 triggers_en: ["document this codebase", "architect this project", "map this code into my vault", "generate architecture notes", "refresh architecture docs"]
 ---
 
+> NOTE: v0.1; superseded by the `code` agent (backlog, Phase 7). Not yet built; this command remains available in the interim.
+
 Execute the following for `$ARGUMENTS`:
 
 Turns a software project into a maintained set of architecture notes in the vault, so future-you (and future-Claude) can answer "how does this project work and why" without re-reading the code. Re-running refreshes the notes in place.

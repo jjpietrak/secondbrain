@@ -4,6 +4,8 @@ description: "Apply the 10-principle thinking loop (OBSERVE-OBSERVE-LISTEN-THINK
 allowed-tools: Read, Grep, Glob, Bash
 ---
 
+**Shared thinking tool (`wiki` + `research`): dispatch to the subagent owning the task (`subagent_type: wiki` for vault-knowledge work, `research` for objective/research work); if already running as one of them, proceed.**
+
 # think: The 10-principle thinking loop
 
 A meditation, a discipline, and a checklist. Use this skill when a problem is non-trivial

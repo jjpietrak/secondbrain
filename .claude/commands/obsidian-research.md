@@ -4,6 +4,8 @@ category: research
 triggers_en: ["research this", "look up", "find information about", "perplexity research"]
 ---
 
+> NOTE: v0.1; superseded by the `research` skill in Phase 2. The `research` skill is not yet built; this command remains available in the interim.
+
 Execute the following for `$ARGUMENTS`:
 
 1. Load the vault **PURPOSE** (`$VAULT_ROOT/_CLAUDE.md` → "## Vault

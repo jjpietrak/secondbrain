@@ -90,13 +90,14 @@ try:
 except Exception:
     ct = None
 
-def record(in_tok, out_tok, cost, note=""):
+def record(in_tok, out_tok, cost, note="", model=""):
     if ct is None:
         return
     try:
         ct.record(action=agent, role=note, provider="anthropic",
                   input_tokens=in_tok or 0, output_tokens=out_tok or 0,
-                  cost_usd=cost or 0.0, source="agent-sdk-credit")
+                  cost_usd=cost or 0.0, source="agent-sdk-credit",
+                  model=model)
     except Exception:
         pass
 
@@ -109,7 +110,8 @@ try:
     in_tok += (usage.get("cache_creation_input_tokens", 0) or 0)
     in_tok += (usage.get("cache_read_input_tokens", 0) or 0)
     cost = data.get("total_cost_usd", 0.0) or 0.0
-    record(in_tok, out_tok, cost, note="")
+    model = data.get("model", "") or ""
+    record(in_tok, out_tok, cost, note="", model=model)
     result = data.get("result", "")
     sys.stdout.write(result if isinstance(result, str) else json.dumps(result))
     if not (isinstance(result, str) and result.endswith("\n")):

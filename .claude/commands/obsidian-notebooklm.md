@@ -4,7 +4,7 @@ category: research
 triggers_en: ["notebooklm", "research grounded", "ground research in vault", "ask my notebook", "source-grounded research"]
 ---
 
-> NOTE: research/NotebookLM/YouTube backend integration is deferred (Phase 7); this command may need its Python backend wired before it runs end-to-end.
+> NOTE: v0.1; superseded by the `nlm` skill in Phase 5. The `nlm` skill is not yet built; this command remains available in the interim.
 
 Execute the following for `$ARGUMENTS`:
 

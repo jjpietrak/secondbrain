@@ -10,6 +10,8 @@ description: >
 allowed-tools: Read, Bash, Grep, Glob
 ---
 
+**Ownership: `wiki` agent.** If you are NOT the `wiki` subagent (e.g. the main orchestrator or another agent loaded this skill), DISPATCH it: call the Task tool with `subagent_type: wiki`, pass the user's full request, let the wiki agent run the steps below, and relay its result. Do NOT run the steps yourself - running as the `wiki` agent is what activates the RBAC/write-scope boundary. If you ARE the `wiki` agent, proceed.
+
 # wiki-init
 
 Deterministic schema tool (no LLM cost). Two modes, both driven by `scripts/wiki_init.py`.
@@ -42,6 +44,13 @@ step that requires user approval: `--apply`.
    .venv/bin/python scripts/wiki_init.py reconcile --apply --vault-root "$(python -m agents.vault_config path)"
    ```
    Apply is additive and idempotent (a second run is a no-op).
+6. After --apply completes, rebuild `wiki/index.md` deterministically:
+   ```bash
+   VAULT_ROOT="$(.venv/bin/python -m agents.vault_config path)"
+   .venv/bin/python scripts/wiki_index.py --vault-root "$VAULT_ROOT"
+   ```
+   This replaces any ad-hoc index append with the canonical table (real Title + Ingest date
+   columns). `wiki_index.py` handles the Layer-2 lock on `wiki/index.md` internally.
 
 ## What reconcile changes (honoring the RESOLVED Phase-1 decisions)
 - **Folders created:** `raw/{opinions,code,notebooklm}`, `research/{deep,query}`,

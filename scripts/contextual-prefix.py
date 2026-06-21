@@ -82,6 +82,35 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
+# ---------------------------------------------------------------------------
+# Cost ledger integration (FU4).
+# Both tier-1 (Anthropic API) and tier-2 (claude CLI subprocess) are charged
+# / credited to the ledger after every successful prefix call so cost_tracker
+# has a complete picture. Import is lazy so the script still works in fully
+# isolated hermetic tests that have no agents/ on sys.path.
+# ---------------------------------------------------------------------------
+
+def _record_prefix_cost(model: str, input_tokens: int, output_tokens: int,
+                        cost_usd: float, source: str, action: str = "contextual-prefix") -> None:
+    """Append one row to cost_ledger.jsonl. Silent on any failure (never break chunking)."""
+    try:
+        _code = os.environ.get("CODE_PATH", str(Path(__file__).resolve().parent.parent))
+        if _code not in sys.path:
+            sys.path.insert(0, _code)
+        from agents import cost_tracker as _ct  # type: ignore
+        _ct.record(
+            action=action,
+            role="contextual-prefix",
+            provider="anthropic",
+            input_tokens=int(input_tokens or 0),
+            output_tokens=int(output_tokens or 0),
+            cost_usd=float(cost_usd or 0.0),
+            source=source,
+            model=model,
+        )
+    except Exception:
+        pass
+
 
 def _resolve_vault_root():
     """Resolve the active vault root (the .vault-meta and wiki/ live under it).
@@ -288,8 +317,20 @@ def anthropic_api_prefix(api_key, page_title, page_body, chunk_text):
             # actually firing given the Haiku floor (wrote>0 on chunk 0, read>0
             # on later chunks of the same page).
             usage = data.get("usage", {})
+            in_tok = (usage.get("input_tokens", 0) or 0)
+            in_tok += (usage.get("cache_creation_input_tokens", 0) or 0)
+            in_tok += (usage.get("cache_read_input_tokens", 0) or 0)
+            out_tok = usage.get("output_tokens", 0) or 0
             log(f"  cache: wrote={usage.get('cache_creation_input_tokens', 0)} "
                 f"read={usage.get('cache_read_input_tokens', 0)} tok")
+            # Record to the cost ledger (tier-1 uses the paid API key).
+            _record_prefix_cost(
+                model=ANTHROPIC_MODEL,
+                input_tokens=in_tok,
+                output_tokens=out_tok,
+                cost_usd=0.0,  # actual cost tracked by LiteLLM proxy / billing; estimated below
+                source="pay-as-you-go",
+            )
             for block in data.get("content", []):
                 if block.get("type") == "text":
                     return block["text"].strip().splitlines()[0]
@@ -300,7 +341,14 @@ def anthropic_api_prefix(api_key, page_title, page_body, chunk_text):
 
 
 def claude_cli_prefix(page_title, page_body, chunk_text):
-    """Tier-2 prefix: `claude -p` subprocess (uses CC subscription, no API key)."""
+    """Tier-2 prefix: `claude -p` subprocess (uses CC subscription, no API key).
+
+    NOTE: this bypasses claude_agent.sh (which would capture usage), so we
+    record a zero-cost row ourselves after a successful call. Token counts are
+    unavailable from plain `claude -p` stdout; we use 0 so at least the call is
+    logged. The estimated_cost_usd field in the ledger row will also be 0 (no
+    model name / token counts available from this path).
+    """
     prompt = (
         f"Wiki page \"{page_title}\":\n\n"
         f"---\n{page_body[:4000]}\n---\n\n"
@@ -317,6 +365,14 @@ def claude_cli_prefix(page_title, page_body, chunk_text):
             check=False,
         )
         if result.returncode == 0 and result.stdout.strip():
+            # Record to the cost ledger (tier-2 uses CC subscription credit).
+            _record_prefix_cost(
+                model="claude-cli",
+                input_tokens=0,
+                output_tokens=0,
+                cost_usd=0.0,
+                source="agent-sdk-credit",
+            )
             return result.stdout.strip().splitlines()[0]
         log(f"  claude-cli rc={result.returncode}: {result.stderr.strip()[:200]}")
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:

@@ -10,6 +10,8 @@ description: >
 allowed-tools: Read Bash Glob Grep
 ---
 
+**Ownership: `backend` agent.** If you are NOT the `backend` subagent (e.g. the main orchestrator or another agent loaded this skill), DISPATCH it: call the Task tool with `subagent_type: backend`, pass the user's full request, let the backend agent run the steps below, and relay its result. Do NOT run the steps yourself - running as the `backend` agent is what activates the RBAC/write-scope boundary. If you ARE the `backend` agent, proceed.
+
 # wiki-health: structural audit of the wiki
 
 Owner: **backend**. This skill is a thin wrapper over `agents/vault_health.py`. It runs

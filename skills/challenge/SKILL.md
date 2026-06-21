@@ -4,6 +4,8 @@ description: "Red-team a current idea, plan, or assumption against the vault's o
 allowed-tools: Read, Grep, Glob, Bash
 ---
 
+**Shared thinking tool (`wiki` + `research`): dispatch to the subagent owning the task (`subagent_type: wiki` for vault-knowledge work, `research` for objective/research work); if already running as one of them, proceed.**
+
 # challenge: red-team an idea against your own vault history
 
 Pressure-test a claim, plan, or assumption against the vault's accumulated record. The point is

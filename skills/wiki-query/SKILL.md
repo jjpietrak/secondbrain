@@ -12,6 +12,8 @@ description: >
 allowed-tools: Read Glob Grep Bash
 ---
 
+**Ownership: `wiki` agent.** If you are NOT the `wiki` subagent (e.g. the main orchestrator or another agent loaded this skill), DISPATCH it: call the Task tool with `subagent_type: wiki`, pass the user's full request, let the wiki agent run the steps below, and relay its result. Do NOT run the steps yourself - running as the `wiki` agent is what activates the RBAC/write-scope boundary. If you ARE the `wiki` agent, proceed.
+
 # wiki-query: answer questions from the wiki
 
 Owner: **wiki**. The wiki has already done the ingest/synthesis work - read strategically,

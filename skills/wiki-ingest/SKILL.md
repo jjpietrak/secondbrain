@@ -10,6 +10,8 @@ description: >
 allowed-tools: Read, Write, Edit, Grep, Glob, Bash
 ---
 
+**Ownership: `wiki` agent.** If you are NOT the `wiki` subagent (e.g. the main orchestrator or another agent loaded this skill), DISPATCH it: call the Task tool with `subagent_type: wiki`, pass the user's full request, let the wiki agent run the steps below, and relay its result. Do NOT run the steps yourself - running as the `wiki` agent is what activates the RBAC/write-scope boundary. If you ARE the `wiki` agent, proceed.
+
 # wiki-ingest: Source Ingestion
 
 > ## For future Claude
@@ -119,14 +121,19 @@ Trigger: a file in `raw/` is `pending`, or the user points at one source.
 8. **Bi-temporal updates (never overwrite).** When new info changes a fact about an entity or
    concept, APPEND an entry to that page's `timeline:` frontmatter (from/until/learned/source);
    do NOT overwrite the existing `role`, `status`, or prior facts. The page keeps its history.
-9. **Update the shared targets** - `wiki/index.md`, `wiki/hot.md`, `wiki/log.md` - using the
-   locking snippet below (these are multi-writer append targets).
+9. **Update the shared targets** - `wiki/hot.md`, `wiki/log.md` - using the locking snippet
+   below (these are multi-writer append targets). `wiki/index.md` is rebuilt deterministically
+   by step 11 instead of being appended to manually.
 10. **Check for contradictions** (below).
-11. **Record the ingest** in the index:
+11. **Record the ingest** in the index, then rebuild `wiki/index.md`:
     ```bash
     $PY -m agents.ingest_index mark "raw/papers/Foo.pdf" --source-page "wiki/sources/Foo.md"
+    # ^ flips the source to `ingested` and re-renders meta/ingest_index.md
+    $PY scripts/wiki_index.py --vault-root "$VAULT_ROOT"
+    # ^ rebuilds wiki/index.md deterministically (real Title + Ingest date columns)
     ```
-    This flips the source to `ingested` and re-renders `meta/ingest_index.md`.
+    `wiki_index.py` acquires the Layer-2 lock on `wiki/index.md` internally, so you do NOT
+    need to lock it manually here.
 
 ---
 
@@ -140,8 +147,9 @@ Trigger: several files pending, or "ingest all of these".
 3. **Cross-reference pass:** after all sources are in, look for connections among the newly
    ingested sources (shared entities, agreeing/conflicting claims). Add the links + contradiction
    callouts then.
-4. Update `wiki/index.md`, `wiki/hot.md`, `wiki/log.md` ONCE at the end (single locked
-   write), not per source.
+4. Update `wiki/hot.md` and `wiki/log.md` ONCE at the end (single locked write), not per
+   source. Then rebuild `wiki/index.md` once via `$PY scripts/wiki_index.py --vault-root
+   "$VAULT_ROOT"` (it locks internally; do NOT lock it manually here).
 5. Check in with the user every ~10 sources on large batches. Report: "Processed N sources,
    created X pages, updated Y pages; key connections: ...".
 
@@ -219,12 +227,13 @@ Frontmatter writes are `.get()`-safe and additive: never drop an existing field,
 
 ## Locking: shared append targets (REQUIRED)
 
-`wiki/index.md`, `wiki/log.md`, and `wiki/hot.md` are written by multiple agents/skills. The
-ingest_index mirror (`meta/ingest_index.md`) is updated by `ingest_index.py` itself (which has
-its own atomic write); your skill only needs to lock the three wiki shared files. Per-page writes
-to a single owned note (one entity/concept/source page) do not strictly need a lock, but locking
-is cheap and harmless. Follow `skills/references/locking.md` exactly. Acquire ALL the shared
-targets in sorted-path order (deadlock avoidance), write, release.
+`wiki/log.md` and `wiki/hot.md` are written by multiple agents/skills.
+`wiki/index.md` is rebuilt by `scripts/wiki_index.py` which handles its own locking - do NOT
+lock it manually here. The ingest_index mirror (`meta/ingest_index.md`) is updated by
+`ingest_index.py` itself (atomic write); your skill only needs to lock the two wiki shared
+files. Per-page writes to a single owned note do not strictly need a lock, but locking is cheap
+and harmless. Follow `skills/references/locking.md` exactly. Acquire targets in sorted-path
+order (deadlock avoidance), write, release.
 
 ```bash
 LOCK="scripts/wiki-lock.sh"
@@ -238,14 +247,14 @@ acquire_or_skip() {            # $1 = vault-relative path; 0 = acquired, 1 = ski
   return 1
 }
 
-# Multi-file shared write in sorted-path order:
-PATHS=$(printf '%s\n' wiki/hot.md wiki/index.md wiki/log.md | sort)
+# Multi-file shared write in sorted-path order (wiki/index.md handled by wiki_index.py):
+PATHS=$(printf '%s\n' wiki/hot.md wiki/log.md | sort)
 held=(); ok=1
 for p in $PATHS; do
   if acquire_or_skip "$p"; then held+=("$p"); else ok=0; break; fi
 done
 if [ "$ok" -eq 1 ]; then
-  # ... append the log entry, add index rows, refresh hot ...
+  # ... append the log entry, refresh hot ...
   :
 fi
 for p in "${held[@]}"; do bash "$LOCK" release "$p"; done

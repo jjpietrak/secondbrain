@@ -45,21 +45,20 @@ live in `<vault>/_CLAUDE.md`. The LiteLLM proxy and API keys (`.env`) are shared
 ### Capture & ingest
 | Command | What it does |
 |---------|--------------|
-| `/obsidian-ingest <file\|url\|text>` | Absorb one source — the vault rewrites itself: updates entities, rewrites stale claims, synthesises concepts, resolves contradictions. Raw saved to `raw/` (immutable). |
-| `/obsidian-ingest` *(no arg, or `--new` / `--all`)* | **Batch**: ingest every raw source not yet ingested. Deduped by a per-vault content-hash index — safe to re-run; only new/changed files are processed. |
-| `/obsidian-capture <idea>` | Zero-friction idea capture → `wiki/concepts/` + a mention in today's daily note. |
-| `/obsidian-save` | Save everything worth keeping from the current conversation into the vault. |
-| `/obsidian-daily` | Create/update today's daily note (calendar, overdue tasks, conversation context). |
-| `/obsidian-task <task>` | Add a task to the right kanban board with inferred priority + due date. |
+| `wiki-ingest <file\|url\|text>` | Absorb one source — the vault rewrites itself: updates entities, rewrites stale claims, synthesises concepts, resolves contradictions. Raw saved to `raw/` (immutable). |
+| `wiki-ingest` *(no arg, or `--new` / `--all`)* | **Batch**: ingest every raw source not yet ingested. Deduped by stable source-id index — safe to re-run; only new/changed files are processed. |
+| `wiki-save` | Save everything worth keeping from the current conversation into the vault. |
+
+> **Retired (v0.1 personal-PKM):** `/obsidian-capture`, `/obsidian-daily`, `/obsidian-task` are deleted. They referenced a `daily/` folder and kanban boards not present in the v0.2 vault schema.
 
 ### Research
 | Command | What it does |
 |---------|--------------|
-| `/obsidian-research <topic> [--claude\|--perplexity\|--free]` | Web research with citations. Saves a dossier. Engine selectable — see below. |
-| `/obsidian-research-deep <topic> [--claude\|--perplexity\|--free]` | Vault-first deep research: scans the vault, fills gaps, synthesises a delta, then propagates updates across the wiki. Engine selectable. |
-| `/obsidian-notebooklm <topic>` | Source-grounded synthesis via **Gemini File Search** (ephemeral, no real notebook, ~$0.01–0.05). |
-| `/obsidian-youtube <url>` | Pull a video's transcript, metadata, top comments → summarised into the vault. |
-| `/obsidian-architect <path>` | Scan a codebase → maintained architecture notes (overview, per-module, key decisions). Re-runnable. |
+| `/obsidian-research <topic> [--claude\|--perplexity\|--free]` | v0.1; superseded by `research` skill (Phase 2, not yet built). Still functional. |
+| `/obsidian-research-deep <topic> [--claude\|--perplexity\|--free]` | v0.1; superseded by `research-deep` skill (Phase 2, not yet built). Still functional. |
+| `/obsidian-notebooklm <topic>` | v0.1; superseded by `nlm` skill (Phase 5, not yet built). Still functional. |
+| `/obsidian-youtube <url>` | v0.1; superseded by `youtube` skill (Phase 5, not yet built). Still functional. |
+| `/obsidian-architect <path>` | v0.1; superseded by `code` agent (backlog, Phase 7). Still functional. |
 
 **Research engine** (`/obsidian-research[-deep]`). Precedence: a flag in the command >
 the vault default (`research_engine` in `config/vaults/<vault>/vault.yaml`, check with
@@ -77,14 +76,15 @@ citation-grounded shape, at $0 marginal cost. Change the default per vault by ed
 ### NotebookLM (real notebook, via `nlm` CLI — $0)
 | Command | What it does |
 |---------|--------------|
-| `/obsidian-notebooklm-sync [id\|alias]` | Bidirectional sync with the vault's real Google NotebookLM notebook. `push/` → notebook **sources**; notebook **notes** → `notes/`. Notebook resolved from `vault.yaml` if no arg. |
+| `/obsidian-notebooklm-sync [id\|alias]` | v0.1; superseded by `nlm` skill (Phase 5, not yet built). Still functional. Bidirectional sync with the vault's real Google NotebookLM notebook. |
 
 ### Search & maintenance
 | Command | What it does |
 |---------|--------------|
-| `/obsidian-query <q>` | Smart vault search — results with context, not just filenames. |
-| `/obsidian-lint` | Structural health report (orphans, dead links, contradictions, stale pages) → `meta/health_report.md`. |
-| `/obsidian-reconcile` | Find & resolve contradictions across the vault. |
+| `wiki-query <q>` | Smart vault search — BM25 + contextual-prefix + ollama cosine rerank. |
+| `wiki-lint` | Structural lint (orphans, dead links, missing frontmatter, stale pages, stubs). |
+| `wiki-health` | Full health report with scoring → `meta/health_report/`. |
+| `wiki-reconcile` | Find and resolve contradictions across the vault. |
 | `/obsidian-sync` | `git add/commit/push` the vault repo. Run after substantive changes. |
 | `/cost-report` | Today's spend per action/provider + remaining budget → `meta/cost_report.md`. |
 
@@ -123,7 +123,7 @@ Per-vault registry of which sources are ingested vs pending. Canonical store
 `<vault>/meta/ingest_index.json`; human-readable table `<vault>/meta/ingest_index.md`.
 **Keyed by a stable source id — arXiv/DOI/YouTube/URL/content-hash, NOT the filename** — so a
 renamed file is never mistaken for a new source. Each row also keeps `filename`, `url`, title,
-type, and the `source_page` it produced. Powers batch `/obsidian-ingest` and the nightly step.
+type, and the `source_page` it produced. Powers batch `wiki-ingest` and the nightly step.
 ```bash
 python -m agents.ingest_index scan              # reconcile vs disk: register new + mark deleted
 python -m agents.ingest_index status            # total / ingested / pending / deleted counts
@@ -139,7 +139,7 @@ reappears it flips back to pending). The nightly runs `scan` first, so deletions
 IDs: `arxiv:2401.12345`, `doi:10.…`, `youtube:<id>`, `url:<canonical>`, `sha256:<hash>`.
 
 ### PDF → Markdown — `scripts/pdf_extract.py`
-Used by `/obsidian-ingest` for PDFs (PyMuPDF via `pymupdf4llm`) — far cheaper and more reliable
+Used by `wiki-ingest` for PDFs (PyMuPDF via `pymupdf4llm`) — far cheaper and more reliable
 than vision-reading pages, especially multi-column papers. Text PDFs only (no OCR).
 ```bash
 uv run -m scripts.pdf_extract <file.pdf>                 # clean Markdown to stdout
@@ -178,14 +178,15 @@ source scripts/obsidian_api.sh && obsidian_ping      # also: obsidian_list / _ge
 
 **Ingest a paper and grow the wiki**
 ```
-/obsidian-ingest /mnt/c/Obsidian/Inference-Disagg/raw/papers/some-paper.pdf
-/obsidian-lint            # check structural health afterward
-/obsidian-sync            # commit + push
+wiki-ingest /mnt/c/Obsidian/Inference-Disagg/raw/papers/some-paper.pdf
+wiki-lint            # check structural health afterward
+/obsidian-sync       # commit + push
 ```
 
 **Research a topic, vault-aware**
 ```
 /obsidian-research-deep disaggregated prefill/decode KV-cache transfer
+# v0.1 command - still works; replaced by research-deep skill in Phase 2
 # scans the vault, fills gaps, synthesises a delta, propagates into the wiki
 ```
 
@@ -194,12 +195,12 @@ source scripts/obsidian_api.sh && obsidian_ping      # also: obsidian_list / _ge
 # 1. drop on-purpose notes into <vault>/research/notebooklm/<slug>/push/
 # 2. sync (pulls the notebook's notes down, pushes your push/ files up as sources):
 /obsidian-notebooklm-sync
+# v0.1 command - still works; replaced by nlm skill in Phase 5
 ```
 
 **Daily upkeep (or let the nightly do it)**
 ```
-/obsidian-daily
-/obsidian-lint
+wiki-lint
 /cost-report
 /obsidian-sync
 ```

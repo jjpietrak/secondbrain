@@ -38,6 +38,53 @@ REPORT = VAULT_PATH / "meta" / "cost_report.md"      # per-vault report
 
 METERED_PROVIDERS = {"anthropic", "gemini"}  # default; refined by budget.yaml
 
+# ---------------------------------------------------------------------------
+# Cost estimation (FU4): fills in estimated_cost_usd on rows where total_cost_usd
+# is 0 / absent (e.g. Agent SDK credit-pool calls where billing is not metered).
+# Rates are conservative public figures as of mid-2026 (USD per 1M tokens).
+# The field is informational only; budget cap checks always use cost_usd (paid $).
+# ---------------------------------------------------------------------------
+_MTok = 1_000_000
+
+# (model_substring -> (input_usd_per_mtok, output_usd_per_mtok))
+_RATE_TABLE: list[tuple[str, tuple[float, float]]] = [
+    # Anthropic - Haiku
+    ("haiku",            (0.80,   4.00)),
+    # Anthropic - Sonnet
+    ("sonnet",           (3.00,  15.00)),
+    # Anthropic - Opus
+    ("opus",             (15.00, 75.00)),
+    # Gemini Flash
+    ("flash",            (0.075,  0.30)),
+    # Gemini Pro / Ultra
+    ("gemini",           (1.25,   5.00)),
+    # Ollama / local: $0
+    ("ollama",           (0.0,    0.0)),
+]
+
+
+def estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
+    """Return an estimated cost in USD for a model call given token counts.
+
+    Looks up the model name (case-insensitive substring match) against a static
+    rate table and returns (input_tokens * input_rate + output_tokens * output_rate).
+    Returns 0.0 for unknown models (treats them as free/local).
+
+    This is used to populate ``estimated_cost_usd`` on rows where ``cost_usd`` is
+    0.0 because the call went through the Agent SDK credit pool or a free route.
+    The estimate is informational and does NOT affect budget-cap enforcement.
+    """
+    m = (model or "").lower()
+    in_rate, out_rate = 0.0, 0.0
+    for fragment, rates in _RATE_TABLE:
+        if fragment in m:
+            in_rate, out_rate = rates
+            break
+    return round(
+        (int(input_tokens or 0) * in_rate + int(output_tokens or 0) * out_rate) / _MTok,
+        8,
+    )
+
 
 def _load_budget() -> dict:
     try:
@@ -52,9 +99,20 @@ def daily_cap() -> float:
 
 def record(action: str, role: str, provider: str,
            input_tokens: int = 0, output_tokens: int = 0,
-           cost_usd: float = 0.0, source: str = "pay-as-you-go") -> None:
+           cost_usd: float = 0.0, source: str = "pay-as-you-go",
+           model: str = "", estimated_cost_usd: float | None = None) -> None:
+    """Append one row to the JSONL ledger.
+
+    If ``estimated_cost_usd`` is not supplied explicitly, it is computed via
+    ``estimate_cost(model, input_tokens, output_tokens)`` so every row carries an
+    informational cost figure even when ``cost_usd`` is 0 (credit-pool / free routes).
+    """
     LEDGER.parent.mkdir(parents=True, exist_ok=True)
     now = datetime.now()
+    in_tok = int(input_tokens or 0)
+    out_tok = int(output_tokens or 0)
+    if estimated_cost_usd is None:
+        estimated_cost_usd = estimate_cost(model or provider, in_tok, out_tok)
     row = {
         "ts": now.isoformat(timespec="seconds"),
         "date": now.date().isoformat(),
@@ -62,9 +120,11 @@ def record(action: str, role: str, provider: str,
         "action": action,
         "role": role,
         "provider": provider,
-        "input_tokens": int(input_tokens or 0),
-        "output_tokens": int(output_tokens or 0),
+        "model": model,
+        "input_tokens": in_tok,
+        "output_tokens": out_tok,
         "cost_usd": round(float(cost_usd or 0.0), 6),
+        "estimated_cost_usd": round(float(estimated_cost_usd), 8),
         "source": source,
     }
     with open(LEDGER, "a") as f:
@@ -174,12 +234,20 @@ def main() -> None:
     r.add_argument("--out", dest="out", type=int, default=0)
     r.add_argument("--cost", type=float, default=0.0)
     r.add_argument("--source", default="pay-as-you-go")
+    r.add_argument("--model", default="", help="Model name for cost estimation")
     sub.add_parser("report")
     sub.add_parser("check")
+    e = sub.add_parser("estimate-cost", help="Print estimated cost for given model+tokens")
+    e.add_argument("--model", required=True)
+    e.add_argument("--in", dest="inp", type=int, default=0)
+    e.add_argument("--out", dest="out", type=int, default=0)
     args = ap.parse_args()
 
     if args.cmd == "record":
-        record(args.action, args.role, args.provider, args.inp, args.out, args.cost, args.source)
+        record(args.action, args.role, args.provider, args.inp, args.out, args.cost, args.source,
+               model=args.model)
+    elif args.cmd == "estimate-cost":
+        print(estimate_cost(args.model, args.inp, args.out))
     elif args.cmd == "report":
         report()
     elif args.cmd == "check":

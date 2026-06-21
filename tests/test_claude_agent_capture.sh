@@ -49,10 +49,11 @@ echo 'CLAUDE_CODE_OAUTH_TOKEN=dummy-test-token' > "$SANDBOX/.env"
 
 # Mock `claude`: ignore args, print a fixed JSON payload (the shape claude -p
 # --output-format json emits). The .result text is "hello from mock".
+# model field is included so estimate_cost can pick the right rate (FU4).
 cat > "$SANDBOX/bin/claude" <<'MOCK'
 #!/usr/bin/env bash
 cat <<'JSON'
-{"type":"result","subtype":"success","is_error":false,"result":"hello from mock","session_id":"sess-abc123","total_cost_usd":0.0123,"num_turns":2,"usage":{"input_tokens":1500,"output_tokens":320,"cache_creation_input_tokens":40,"cache_read_input_tokens":10}}
+{"type":"result","subtype":"success","is_error":false,"result":"hello from mock","session_id":"sess-abc123","total_cost_usd":0.0123,"num_turns":2,"model":"claude-haiku-4-5-20251001","usage":{"input_tokens":1500,"output_tokens":320,"cache_creation_input_tokens":40,"cache_read_input_tokens":10}}
 JSON
 MOCK
 chmod +x "$SANDBOX/bin/claude"
@@ -94,6 +95,12 @@ ok = (
     # cache tokens fold into input: 1500 + 40 + 10 = 1550
     and r["input_tokens"] == 1550
     and r["output_tokens"] == 320
+    # FU4: estimated_cost_usd present and non-negative on every row
+    and "estimated_cost_usd" in r
+    and isinstance(r.get("estimated_cost_usd"), (int, float))
+    and r.get("estimated_cost_usd", -1) >= 0
+    # model field recorded from the JSON payload
+    and r.get("model") == "claude-haiku-4-5-20251001"
 )
 print("PASS" if ok else f"FAIL row={r}")
 PY
