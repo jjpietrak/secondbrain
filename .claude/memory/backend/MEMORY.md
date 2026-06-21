@@ -69,6 +69,9 @@ current; never store fact bodies here.
   /health + /v1/models 404 - probe the chat endpoint, not /health).
 
 ## Phase 2 plan
+- [phase2-objective-seed.md](phase2-objective-seed.md) — objective/ graph SEEDED 2026-06-21:
+  purpose + 8 topics + 7 RQs (merge+renumber) + D-0001. Vault commit baa3996. One-time
+  RBAC bypass audit trail recorded here. next_id: topic=9, rq=8, decision=2.
 - [phase2-plan.md](phase2-plan.md) — Phase 2 detailed action plan drafted 2026-06-21:
   objective/ node layout (7 types, id scheme Q-/T-/D-/DIR-/QP-/TODO-), objectives.py design
   (markdown-native scan/frontier/next_id/read_decisions), research agent def, 7 skills
