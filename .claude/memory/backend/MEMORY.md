@@ -68,6 +68,14 @@ current; never store fact bodies here.
   (~$5 paid Anthropic) untouched; LiteLLM proxy is reachable on /v1/chat/completions (but
   /health + /v1/models 404 - probe the chat endpoint, not /health).
 
+## Phase 2 plan
+- [phase2-plan.md](phase2-plan.md) — Phase 2 detailed action plan drafted 2026-06-21:
+  objective/ node layout (7 types, id scheme Q-/T-/D-/DIR-/QP-/TODO-), objectives.py design
+  (markdown-native scan/frontier/next_id/read_decisions), research agent def, 7 skills
+  (obj-query/obj-synth/obj-reconcile/deep-synthesis/wiki-gaps/question-promote/question-solve),
+  research/ layout + templates, seeding approach, 4-wave parallel plan, live demo, 8 open risks.
+  Full draft at plans/phase-2-objectives.md.
+
 ## Open structural proposals
 - [reference-conflicts.md](reference-conflicts.md) — conflicts between the reference architectures
   and our v0.2 plan (path remapping, concepts<->entities swap to flag, RBAC/cost greenfield,

@@ -26,6 +26,22 @@ The vault path is matched RELATIVE to the active vault root. We resolve the vaul
 $VAULT_ROOT if set, else from `agents.vault_config path` if importable, else fall back to a
 substring match on the known vault mount. Paths outside the vault (repo code edits) are not
 governed by this guard and are allowed (those have their own ownership rules).
+
+R4 user-proxy exception (research role only):
+  The `objective/research_question/` folder is user-only. The research agent may write there
+  ONLY when the $SB_SANCTIONED_SKILL environment variable equals "question-promote" or
+  "question-solve". These two skills are user-invoked, user-approved state transitions. The
+  variable MUST be set by the skill before any write and unset after. All other paths in the
+  user-only objective area (purpose/, topic/, decision/) remain denied always, regardless of
+  SB_SANCTIONED_SKILL.
+
+  Contract for Wave-3 skill authors:
+    - question-promote/SKILL.md: export SB_SANCTIONED_SKILL=question-promote before writing
+      to objective/research_question/; unset after.
+    - question-solve/SKILL.md: export SB_SANCTIONED_SKILL=question-solve before writing to
+      objective/research_question/; unset after.
+  The variable must be set in the same process environment that the PreToolUse hook reads
+  (i.e. the subagent's shell environment, not a child subprocess).
 """
 
 from __future__ import annotations
@@ -53,7 +69,28 @@ ALLOWLIST: dict[str, list[str]] = {
         "raw/notebooklm/",
         "meta/ingest_index",  # ingest_index.json / .md / ingest_index/ folder
     ],
+    # research role: research-owned objective/ nodes + research/ outputs + nightly report.
+    # objective/research_question/ is NOT listed here; it is handled by the R4 sanction check.
+    "research": [
+        "objective/research_question_proposal/",
+        "objective/direction/",
+        "objective/agent_todo/",
+        "objective/hot.md",
+        "objective/index.md",
+        "research/",
+        "meta/nightly_report/",
+    ],
 }
+
+# R4: paths that the research role may write ONLY when SB_SANCTIONED_SKILL is set to an
+# approved value. The value must be one of RESEARCH_SANCTIONED_SKILLS.
+# These paths are NOT in ALLOWLIST["research"] above; they are gated separately.
+RESEARCH_SANCTIONED_PATHS: list[str] = [
+    "objective/research_question/",
+]
+RESEARCH_SANCTIONED_SKILLS: frozenset[str] = frozenset(
+    {"question-promote", "question-solve"}
+)
 
 # Roles we actively enforce. Other roles are unknown -> not blocked by this guard.
 ENFORCED_ROLES = set(ALLOWLIST)
@@ -113,6 +150,20 @@ def _allowed(rel: str, role: str) -> bool:
     return any(rel == p.rstrip("/") or rel.startswith(p) for p in prefixes)
 
 
+def _r4_sanctioned(rel: str) -> bool:
+    """Return True iff the write is to a R4 research-sanctioned path AND SB_SANCTIONED_SKILL
+    is set to an approved value. Only called for role=research."""
+    rel_clean = rel.lstrip("/")
+    is_sanctioned_path = any(
+        rel_clean == p.rstrip("/") or rel_clean.startswith(p)
+        for p in RESEARCH_SANCTIONED_PATHS
+    )
+    if not is_sanctioned_path:
+        return False
+    skill = os.environ.get("SB_SANCTIONED_SKILL", "").strip()
+    return skill in RESEARCH_SANCTIONED_SKILLS
+
+
 def decide(event: dict) -> dict | None:
     tool = event.get("tool_name") or event.get("tool")
     if tool not in WRITE_TOOLS:
@@ -132,6 +183,10 @@ def decide(event: dict) -> dict | None:
 
     if _allowed(rel, role):
         return None  # explicitly permitted; defer to normal flow
+
+    # R4: research role may write to sanctioned paths when the sanction signal is present.
+    if role == "research" and _r4_sanctioned(rel):
+        return None  # user-proxy exception; defer to normal flow
 
     return {
         "hookSpecificOutput": {

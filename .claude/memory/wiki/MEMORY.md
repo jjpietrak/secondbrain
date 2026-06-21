@@ -5,7 +5,7 @@ file and link it here with a one-line pointer. Do not duplicate what is derivabl
 vault contents or the code.
 
 ## Index
-- (none yet - seeded in Phase 1, stream D)
+- [2026-06-21-ingest-map.md](2026-06-21-ingest-map.md) -- source->page map for arXiv 2602.09721 (Baidu AFD challenges); key AFD dead zone finding; optical bandwidth niche for Iris Tetra.
 
 ## Standing reminders
 - No web. Ingest only what is in `raw/` and approved; new-source discovery is the Research
