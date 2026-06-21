@@ -432,6 +432,81 @@ def reject(ident: str, reason: str = "", name: str | None = None) -> dict | None
     return row
 
 
+# --------------------------------------------------------------------------- #
+# Title resolution
+# --------------------------------------------------------------------------- #
+# Matches an arXiv-id-shaped stem like "2504.02263v4", "2602.09721v1", or a
+# bare arXiv id like "2504.02263" (with optional vN suffix and optional dashes).
+_STEM_ARXIV = re.compile(r"^\d{4}\.\d{4,5}(v\d+)?$")
+# Matches a filename stem that is just underscores/alphanumerics with no spaces
+# (i.e. a raw filename, not a human title). Examples: "Photons_to_Tokens".
+_STEM_FILENAME = re.compile(r"^[A-Za-z0-9_-]{3,80}$")
+
+
+def _is_stem_title(title: str) -> bool:
+    """Return True when *title* looks like an arXiv id or a raw filename stem.
+    These are the "bad" titles introduced by the filename-stem fallback in inspect()
+    for PDF files that have no embedded text/frontmatter title."""
+    if not title:
+        return True
+    t = title.strip()
+    if _STEM_ARXIV.match(t):
+        return True
+    # A filename stem has no spaces and matches the pattern above.
+    # A real human title almost always contains at least one space.
+    if " " not in t and _STEM_FILENAME.match(t):
+        return True
+    return False
+
+
+def _resolve_title(row: dict, vault_root: Path) -> str:
+    """Return the best available title for *row*, reading source_page frontmatter
+    when the stored title looks like a filename stem / arXiv id.
+
+    Fallback chain (first non-empty non-stem value wins):
+      1. source_page frontmatter ``title:``  (preferred -- set by the wiki agent)
+      2. existing row["title"]  if it is NOT stem-shaped
+      3. raw file frontmatter ``title:`` (for text-like raw files)
+      4. existing row["title"] as-is (the filename stem -- last resort)
+    """
+    stored = (row.get("title") or "").strip()
+
+    # Fast path: stored title is already a real human title.
+    if stored and not _is_stem_title(stored):
+        return stored
+
+    # Step 1: read source_page frontmatter.
+    sp = (row.get("source_page") or "").strip()
+    if sp:
+        # Some rows omit the .md suffix (e.g. "wiki/sources/astra-sim-3").
+        sp_path = vault_root / sp
+        if not sp_path.suffix:
+            sp_path = sp_path.with_suffix(".md")
+        try:
+            fm = _parse_frontmatter(sp_path.read_text(errors="ignore"))
+            t = fm.get("title", "").strip().strip("\"'")
+            if t and not _is_stem_title(t):
+                return t
+        except OSError:
+            pass
+
+    # Step 2: raw file frontmatter (text-like only; skip PDFs - too expensive).
+    fn = (row.get("filename") or "").strip()
+    if fn:
+        raw_path = vault_root / fn
+        if raw_path.suffix.lower() in _TEXTLIKE:
+            try:
+                fm = _parse_frontmatter(raw_path.read_text(errors="ignore"))
+                t = fm.get("title", "").strip()
+                if t and not _is_stem_title(t):
+                    return t
+            except OSError:
+                pass
+
+    # Last resort: return whatever is stored (may still be the filename stem).
+    return stored
+
+
 _STATUS_RANK = {"pending": 0, "waiting_approval": 1, "ingested": 2,
                 "rejected": 3, "deleted": 4}
 _STATUS_MARK = {"pending": "⏳ pending", "ingested": "✅ ingested", "deleted": "🗑️ deleted",
@@ -440,8 +515,20 @@ _STATUS_MARK = {"pending": "⏳ pending", "ingested": "✅ ingested", "deleted":
 
 def render_md(name: str | None = None) -> Path:
     data = _load(name)
+    vault = _vault(name)
     rows = sorted(data["sources"].values(),
                   key=lambda r: (_STATUS_RANK.get(r.get("status"), 0), r.get("id", "")))
+    # Resolve + backfill titles before rendering.  This corrects existing rows whose
+    # title is an arXiv id or filename stem, using the source_page frontmatter written
+    # by the wiki agent (the authoritative title source).
+    dirty = False
+    for r in rows:
+        resolved = _resolve_title(r, vault)
+        if resolved and resolved != r.get("title"):
+            r["title"] = resolved
+            dirty = True
+    if dirty:
+        _save(name, data)
     ing = sum(1 for r in rows if r.get("status") == "ingested")
     pend = sum(1 for r in rows if r.get("status") == "pending")
     dele = sum(1 for r in rows if r.get("status") == "deleted")
@@ -456,11 +543,11 @@ def render_md(name: str | None = None) -> Path:
     for r in rows:
         mk = _STATUS_MARK.get(r.get("status"), r.get("status", ""))
         url = f"[link]({r['url']})" if r.get("url") else ""
-        title = (r.get("title") or "")[:50].replace("|", "\\|")
+        title = (r.get("title") or "")[:80].replace("|", "\\|")
         fn = (r.get("filename") or "").replace("|", "\\|")
         sp = (r.get("source_page") or "").replace("|", "\\|")
         L.append(f"| `{r.get('id','')}` | {mk} | {r.get('source_type','')} | {title} | {fn} | {url} | {sp} |")
-    out = _vault(name) / MIRROR_REL
+    out = vault / MIRROR_REL
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("\n".join(L) + "\n")
     return out
