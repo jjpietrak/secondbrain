@@ -3,7 +3,7 @@
 #
 # Closes the latent multi-writer corruption bug in v1.6 where two parallel
 # sub-agents writing to the same wiki page could silently trample each other.
-# The README and skills/wiki-ingest/SKILL.md §259-264 documented "single-writer
+# The README and .claude/skills/wiki-ingest/SKILL.md §259-264 documented "single-writer
 # only" as a convention; this script makes it an enforceable guard.
 #
 # Design (age-based, not flock-style):
