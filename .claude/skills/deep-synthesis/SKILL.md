@@ -474,6 +474,18 @@ for p in "${held[@]}"; do bash "$LOCK" release "$p"; done
 - Cost: all synthesis runs on the research agent credit pool via Agent SDK ($0 marginal).
   No paid route is used by this skill.
 
+## Step 11 - relink objective nodes
+
+After all objective nodes have been written (steps 7 and 8), run relink to generate
+`## Links` edges and normalize `written_by` on every objective node:
+
+```bash
+wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.objectives relink --apply'
+```
+
+This (re)generates each node's `## Links` edges and normalizes `written_by` (full
+path-qualified wikilinks; no aliases).
+
 ## OSB adaptation notes (for maintainers)
 
 - KEPT: `vault_scan()` pattern - now `gather_local_context()` in `scripts/research_synthesis.py`

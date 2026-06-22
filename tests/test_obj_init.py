@@ -106,7 +106,7 @@ def test_apply_creates_structure() -> None:
         assert hot_path.exists(), "objective/hot.md not created"
         hot_text = hot_path.read_text(encoding="utf-8")
         assert "type: hot" in hot_text
-        assert "generated_by: research" in hot_text
+        assert "written_by: research" in hot_text
 
         # Plan recorded what was created.
         assert len(plan.folders_created) == len(EXPECTED_FOLDERS), (
@@ -222,18 +222,18 @@ def test_template_frontmatter_per_type() -> None:
             },
             "objective/research_question_proposal/_template.md": {
                 "must_contain": ["type: research_question_proposal", "id: QP-NNNN",
-                                 "generated_by: research", "from_gap:", "status: pending"],
+                                 "written_by: research", "from_gap:", "status: pending"],
             },
             "objective/direction/_template.md": {
                 "must_contain": ["type: direction", "id: DIR-NNNN",
-                                 "generated_by: research", "serves_question:",
+                                 "written_by: research", "serves_question:",
                                  "priority:", "status: open",
                                  "reasoning_pattern", "expected_evidence",
                                  "seed_queries", "solves_when"],
             },
             "objective/agent_todo/_template.md": {
                 "must_contain": ["type: agent_todo", "id: TODO-NNNN",
-                                 "generated_by: research", "status: open"],
+                                 "written_by: research", "status: open"],
             },
         }
 

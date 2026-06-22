@@ -157,7 +157,7 @@ def test_format_research_report_frontmatter_question_scope():
         today=TODAY,
     )
     assert "type: research_report" in fm
-    assert "generated_by: research" in fm
+    assert "written_by: research" in fm
     assert "serves_question: Q-0001" in fm
     assert f"created: {TODAY}" in fm
     assert "status: draft" in fm
@@ -217,7 +217,7 @@ def test_format_direction_frontmatter_required_fields():
     assert "type: direction" in fm
     assert "id: DIR-0001" in fm
     assert f"created: {TODAY}" in fm
-    assert "generated_by: research" in fm
+    assert "written_by: research" in fm
     assert "serves_question: Q-0001" in fm
     assert "topics: T-0001" in fm
     assert "status: open" in fm
@@ -267,7 +267,7 @@ def test_format_proposal_frontmatter_required_fields():
     assert "type: research_question_proposal" in fm
     assert "id: QP-0001" in fm
     assert f"created: {TODAY}" in fm
-    assert "generated_by: research" in fm
+    assert "written_by: research" in fm
     assert "from_gap: no TTFT floor measurement" in fm
     assert "status: pending" in fm
 

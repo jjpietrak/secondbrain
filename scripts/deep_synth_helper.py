@@ -154,7 +154,7 @@ def format_research_report_frontmatter(
 
     Fills the schema from plans/phase-2-objectives.md Section 6.2:
       type: research_report
-      generated_by: research
+      written_by: research
       topic: T-NNNN   (empty string if not provided)
       serves_question: Q-NNNN (empty string if not provided)
       created: YYYY-MM-DD
@@ -173,7 +173,7 @@ def format_research_report_frontmatter(
     lines = [
         "---",
         "type: research_report",
-        "generated_by: research",
+        "written_by: research",
         f"topic: {t}",
         f"serves_question: {q}",
         f"created: {today}",
@@ -224,7 +224,7 @@ def format_direction_frontmatter(
         f"id: {direction_id}",
         f"created: {today}",
         f"updated: {today}",
-        "generated_by: research",
+        "written_by: research",
         f"serves_question: {serves}",
         f"topics: {topics}",
         f"targets_gap: {targets_gap}",
@@ -261,7 +261,7 @@ def format_proposal_frontmatter(
         f"id: {proposal_id}",
         f"created: {today}",
         f"updated: {today}",
-        "generated_by: research",
+        "written_by: research",
         f"from_gap: {from_gap}",
         "status: pending",
         "---",

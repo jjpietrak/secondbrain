@@ -41,20 +41,25 @@ def build_wiki_fixture(root: Path) -> None:
 
     # A well-formed hub page that links to several others (provides backlinks).
     _write(wiki / "hub.md",
-        "---\ntype: concept\ncreated: 2026-06-01\nupdated: 2026-06-18\nsources: []\n---\n"
+        "---\ntype: concept\ncreated: 2026-06-01\nupdated: 2026-06-18\nsources: []\n"
+        "written_by: wiki\n---\n"
         "Links to [[target]] and [[ghost-page]] and [[dupe-thing]].\n"
         "Body is long enough to not count as a stub page here for sure yes.\n"
     )
 
     # A normal target page (linked from hub -> NOT orphan).
     _write(wiki / "target.md",
-        "---\ntype: concept\ncreated: 2026-06-01\nupdated: 2026-06-18\nsources: []\n---\n"
+        "---\ntype: concept\ncreated: 2026-06-01\nupdated: 2026-06-18\nsources: []\n"
+        "written_by: wiki\n---\n"
         "I am the target. [[hub]] points back. Plenty of words to clear the stub bar.\n"
     )
 
     # Orphan: no inbound links, but links out to hub so hub is not orphaned either.
+    # Wiki uses inbound-only orphan rule, so this IS still flagged orphaned even though
+    # it has outbound links. This verifies the back-compat wiki behaviour.
     _write(wiki / "orphan.md",
-        "---\ntype: concept\ncreated: 2026-06-01\nupdated: 2026-06-18\nsources: []\n---\n"
+        "---\ntype: concept\ncreated: 2026-06-01\nupdated: 2026-06-18\nsources: []\n"
+        "written_by: wiki\n---\n"
         "Nobody links to me. I link to [[hub]]. Enough text to avoid the stub flag here.\n"
     )
 
@@ -66,7 +71,8 @@ def build_wiki_fixture(root: Path) -> None:
 
     # Unfilled template syntax left in a real page.
     _write(wiki / "unfilled.md",
-        "---\ntype: concept\ncreated: 2026-06-01\nupdated: 2026-06-18\nsources: []\n---\n"
+        "---\ntype: concept\ncreated: 2026-06-01\nupdated: 2026-06-18\nsources: []\n"
+        "written_by: wiki\n---\n"
         "Created on <% tp.date.now() %> by the template. [[hub]] to avoid orphan flag.\n"
     )
 
@@ -74,21 +80,25 @@ def build_wiki_fixture(root: Path) -> None:
     sources = root / "wiki" / "sources"
     sources.mkdir(parents=True)
     _write(sources / "cited-src.md",
-        "---\ntype: source\ncreated: 2026-06-01\nupdated: 2026-06-18\nsources: []\n---\n"
+        "---\ntype: source\ncreated: 2026-06-01\nupdated: 2026-06-18\nsources: []\n"
+        "written_by: USER\n---\n"
         "A cited source page. Reached only by a path-qualified wikilink. Long enough body.\n"
     )
     _write(wiki / "hub2.md",
-        "---\ntype: concept\ncreated: 2026-06-01\nupdated: 2026-06-18\nsources: []\n---\n"
+        "---\ntype: concept\ncreated: 2026-06-01\nupdated: 2026-06-18\nsources: []\n"
+        "written_by: wiki\n---\n"
         "Cites [[sources/cited-src]] and [[concepts/target]] (path-qualified). [[hub]] too.\n"
     )
 
     # Duplicate stems (normalized collide): "dupe thing" twice.
     _write(wiki / "dupe-thing.md",
-        "---\ntype: concept\ncreated: 2026-06-01\nupdated: 2026-06-18\nsources: []\n---\n"
+        "---\ntype: concept\ncreated: 2026-06-01\nupdated: 2026-06-18\nsources: []\n"
+        "written_by: wiki\n---\n"
         "First dupe. [[hub]] link so it is not also an orphan in this fixture run here.\n"
     )
     _write(wiki / "Dupe_Thing.md",
-        "---\ntype: concept\ncreated: 2026-06-01\nupdated: 2026-06-18\nsources: []\n---\n"
+        "---\ntype: concept\ncreated: 2026-06-01\nupdated: 2026-06-18\nsources: []\n"
+        "written_by: wiki\n---\n"
         "Second dupe. [[hub]] link so it is not also an orphan in this fixture run here.\n"
     )
 
@@ -98,7 +108,8 @@ def build_objective_fixture(root: Path) -> None:
     # Well-formed research_question
     _write(root / "objective/research_question/Q-0001-good.md",
         "---\ntype: research_question\nid: Q-0001\ncreated: 2026-06-01\n"
-        "updated: 2026-06-18\nsolved: \"no\"\ntopic: T-0001\npriority: high\n---\n"
+        "updated: 2026-06-18\nsolved: \"no\"\ntopic: T-0001\npriority: high\n"
+        "written_by: USER\n---\n"
         "Can optical accelerators replace HBM? Links to [[wiki/concepts/hub]] "
         "and also more text here to make this page long enough body for the check.\n"
     )
@@ -106,22 +117,39 @@ def build_objective_fixture(root: Path) -> None:
     # research_question with missing required keys (missing solved, topic, priority)
     _write(root / "objective/research_question/Q-0002-bad.md",
         "---\ntype: research_question\nid: Q-0002\ncreated: 2026-06-01\n"
-        "updated: 2026-06-18\n---\n"
+        "updated: 2026-06-18\nwritten_by: USER\n---\n"
         "Missing several required keys. Enough body text here to avoid the stub check.\n"
     )
 
     # Well-formed decision
     _write(root / "objective/decision/D-0001-good.md",
         "---\ntype: decision\nid: D-0001\ncreated: 2026-06-01\nupdated: 2026-06-18\n"
-        "status: active\nscope: all\n---\n"
+        "status: active\nscope: all\nwritten_by: USER\n---\n"
         "Do not fetch web content. Enough text to clear stub check here.\n"
     )
 
     # direction with missing required key (missing serves_question)
     _write(root / "objective/direction/DIR-0001-bad.md",
         "---\ntype: direction\nid: DIR-0001\ncreated: 2026-06-01\nupdated: 2026-06-18\n"
-        "status: open\npriority: high\n---\n"
+        "status: open\npriority: high\nwritten_by: USER\n---\n"
         "A direction node missing serves_question. Enough text to pass the stub check.\n"
+    )
+
+    # Objective leaf: has outbound link but no inbound -- must NOT be flagged orphaned
+    # (degree-based rule: only truly isolated nodes are orphaned in objective area).
+    _write(root / "objective/direction/DIR-leaf-outbound.md",
+        "---\ntype: direction\nid: DIR-leaf\ncreated: 2026-06-01\nupdated: 2026-06-18\n"
+        "status: open\nserves_question: Q-0001\npriority: low\nwritten_by: backend\n---\n"
+        "This direction links [[Q-0001-good]] but nothing links back to it. "
+        "It is a DAG leaf, not an orphan. Enough text to pass the stub check here.\n"
+    )
+
+    # Objective isolate: no inbound AND no outbound -- MUST be flagged orphaned.
+    _write(root / "objective/direction/DIR-isolated.md",
+        "---\ntype: direction\nid: DIR-iso\ncreated: 2026-06-01\nupdated: 2026-06-18\n"
+        "status: open\nserves_question: Q-0001\npriority: low\nwritten_by: backend\n---\n"
+        "This direction has no links in or out. Truly isolated. "
+        "Enough text to clear the stub check here for sure.\n"
     )
 
 
@@ -130,14 +158,16 @@ def build_research_fixture(root: Path) -> None:
     # Well-formed research_report (snake_case type, as in real Q-NNNN files)
     _write(root / "research/Q-0001.md",
         "---\ntype: research_report\nid: Q-0001\ncreated: 2026-06-22\n"
-        "updated: 2026-06-22\ngenerated_by: research\nstatus: partial-answer\n---\n"
+        "updated: 2026-06-22\ngenerated_by: research\nstatus: partial-answer\n"
+        "written_by: research\n---\n"
         "Deep synthesis for Q-0001. Links to [[wiki/concepts/hub]] for cross-area.\n"
         "Lots of body text here to make sure it clears the empty/stub check here.\n"
     )
 
     # research_report missing required keys (missing id, status)
     _write(root / "research/Q-0002-bad.md",
-        "---\ntype: research_report\ncreated: 2026-06-22\nupdated: 2026-06-22\n---\n"
+        "---\ntype: research_report\ncreated: 2026-06-22\nupdated: 2026-06-22\n"
+        "written_by: research\n---\n"
         "Missing id and status. Enough body text to clear the stub check here.\n"
     )
 
@@ -505,6 +535,152 @@ def test_unknown_type_falls_back_to_generic() -> None:
         # unknown_typed SHOULD NOT be flagged at all (type, created, updated all present)
         assert not any("unknown-typed" in i for i in mf), \
             "unknown-typed with {type, created, updated} must not trigger missing_frontmatter"
+
+
+# ---------------------------------------------------------------------------
+# (f) Degree-based orphan detection for objective and research areas
+# ---------------------------------------------------------------------------
+
+def test_objective_leaf_outbound_not_orphaned() -> None:
+    """An objective page with outbound links but no inbound links must NOT be flagged orphaned.
+    (Degree-based rule: only truly isolated nodes -- degree 0 -- are orphaned in
+    the objective area.)
+    """
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        build_all_areas_fixture(root)
+        issues, total = vh.audit(root, areas=("wiki", "objective", "research"))
+        assert not any("DIR-leaf-outbound" in i for i in issues["orphaned"]), \
+            "DIR-leaf-outbound has outbound links so must NOT be flagged orphaned (degree-based rule)"
+
+
+def test_objective_isolated_node_orphaned() -> None:
+    """An objective page with NO inbound AND NO outbound links (degree 0) IS orphaned."""
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        build_all_areas_fixture(root)
+        issues, total = vh.audit(root, areas=("wiki", "objective", "research"))
+        assert any("DIR-isolated" in i for i in issues["orphaned"]), \
+            "DIR-isolated (no links either way) must be flagged orphaned"
+
+
+def test_wiki_outbound_only_still_orphaned() -> None:
+    """A wiki page with outbound links but no inbound IS still flagged orphaned.
+    This verifies the back-compat inbound-only rule is preserved for the wiki area.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        build_wiki_fixture(root)
+        issues, total = vh.audit(root, areas=("wiki",))
+        # orphan.md links to [[hub]] (outbound) but nobody links to it (no inbound).
+        # Under the wiki inbound-only rule it must still be flagged.
+        assert any("orphan.md" in i for i in issues["orphaned"]), \
+            "wiki orphan.md (outbound-only) must still be flagged orphaned (inbound-only rule)"
+
+
+# ---------------------------------------------------------------------------
+# (g) missing_written_by provenance check
+# ---------------------------------------------------------------------------
+
+def test_missing_written_by_flags_absent_key() -> None:
+    """A page with no written_by key must be flagged in missing_written_by."""
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        wiki = root / "wiki" / "concepts"
+        wiki.mkdir(parents=True)
+        _write(wiki / "no-wb.md",
+            "---\ntype: concept\ncreated: 2026-06-01\nupdated: 2026-06-18\nsources: []\n---\n"
+            "This page has no written_by key. Enough body text for the stub check.\n"
+        )
+        _write(wiki / "hub.md",
+            "---\ntype: concept\ncreated: 2026-06-01\nupdated: 2026-06-18\nsources: []\n"
+            "written_by: wiki\n---\n"
+            "[[no-wb]] gets a backlink here. Enough body text for all the checks here.\n"
+        )
+        issues, _ = vh.audit(root, areas=("wiki",))
+        assert any("no-wb" in i for i in issues["missing_written_by"]), \
+            "page with no written_by key must be flagged in missing_written_by"
+
+
+def test_missing_written_by_flags_bad_value() -> None:
+    """A page with an unrecognised written_by value must be flagged in missing_written_by."""
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        wiki = root / "wiki" / "concepts"
+        wiki.mkdir(parents=True)
+        _write(wiki / "bad-wb.md",
+            "---\ntype: concept\ncreated: 2026-06-01\nupdated: 2026-06-18\nsources: []\n"
+            "written_by: robot\n---\n"
+            "This page has an unrecognised written_by value. Enough body text here.\n"
+        )
+        _write(wiki / "hub.md",
+            "---\ntype: concept\ncreated: 2026-06-01\nupdated: 2026-06-18\nsources: []\n"
+            "written_by: wiki\n---\n"
+            "[[bad-wb]] gets a backlink. Enough body text for all the checks here.\n"
+        )
+        issues, _ = vh.audit(root, areas=("wiki",))
+        assert any("bad-wb" in i for i in issues["missing_written_by"]), \
+            "page with unrecognised written_by must be flagged in missing_written_by"
+        # The issue string must mention the invalid value
+        bad_items = [i for i in issues["missing_written_by"] if "bad-wb" in i]
+        assert any("robot" in i for i in bad_items), \
+            f"issue string must mention the invalid value 'robot'; got: {bad_items}"
+
+
+def test_valid_written_by_not_flagged() -> None:
+    """A page with a valid written_by value must NOT be flagged in missing_written_by."""
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        wiki = root / "wiki" / "concepts"
+        wiki.mkdir(parents=True)
+        for val in ("USER", "research", "wiki", "web", "backend"):
+            _write(wiki / f"wb-{val.lower()}.md",
+                f"---\ntype: concept\ncreated: 2026-06-01\nupdated: 2026-06-18\nsources: []\n"
+                f"written_by: {val}\n---\n"
+                f"This page has written_by: {val}. Enough body text for the stub check.\n"
+            )
+        _write(wiki / "hub.md",
+            "---\ntype: concept\ncreated: 2026-06-01\nupdated: 2026-06-18\nsources: []\n"
+            "written_by: wiki\n---\n"
+            "Links to [[wb-user]] [[wb-research]] [[wb-wiki]] [[wb-web]] [[wb-backend]].\n"
+            "Enough body text here to clear the stub check in this test fixture.\n"
+        )
+        issues, _ = vh.audit(root, areas=("wiki",))
+        for val in ("USER", "research", "wiki", "web", "backend"):
+            stem = f"wb-{val.lower()}"
+            assert not any(stem in i for i in issues["missing_written_by"]), \
+                f"written_by: {val!r} is valid; wb-{val.lower()}.md must not be flagged"
+
+
+def test_missing_written_by_in_json_counts() -> None:
+    """JSON output must include missing_written_by in the 'counts' dict."""
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        wiki = root / "wiki" / "concepts"
+        wiki.mkdir(parents=True)
+        _write(wiki / "no-wb.md",
+            "---\ntype: concept\ncreated: 2026-06-01\nupdated: 2026-06-18\nsources: []\n---\n"
+            "Page missing written_by. Enough body text here for the stub check.\n"
+        )
+        _write(wiki / "hub.md",
+            "---\ntype: concept\ncreated: 2026-06-01\nupdated: 2026-06-18\nsources: []\n"
+            "written_by: wiki\n---\n"
+            "[[no-wb]] backlink. Enough body text here for all the checks.\n"
+        )
+        buf = StringIO()
+        import sys as _sys
+        old_stdout = _sys.stdout
+        _sys.stdout = buf
+        try:
+            rc = vh._main(["--path", str(root), "--area", "wiki", "--json"])
+        finally:
+            _sys.stdout = old_stdout
+        assert rc == 0
+        data = json.loads(buf.getvalue())
+        assert "missing_written_by" in data["counts"], \
+            "JSON counts must include missing_written_by key"
+        assert data["counts"]["missing_written_by"] >= 1, \
+            "JSON counts['missing_written_by'] must be >= 1 for a page lacking the key"
 
 
 # ---------------------------------------------------------------------------

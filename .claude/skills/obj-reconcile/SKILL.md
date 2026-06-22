@@ -330,6 +330,18 @@ call to the cost tracker if available.
 The `PreToolUse` RBAC guard (`scripts/rbac_guard.py`) enforces this allowlist. Any
 denied write is a hard stop - do not attempt to work around it.
 
+## Step 7 - relink objective nodes
+
+After applying all resolutions and writing agent_todo flags (steps 3 and 4), run relink
+to generate `## Links` edges and normalize `written_by` on every objective node:
+
+```bash
+wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.objectives relink --apply'
+```
+
+This (re)generates each node's `## Links` edges and normalizes `written_by` (full
+path-qualified wikilinks; no aliases).
+
 ## Output report
 
 After all steps complete, print a summary:

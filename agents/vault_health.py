@@ -146,10 +146,18 @@ def _area_for(page: Path, vault: Path) -> str:
         return "unknown"
 
 
+# Areas that use degree-based orphan detection (no inbound AND no outbound = isolated).
+# The wiki area uses the legacy inbound-only definition (back-compat).
+DEGREE_ORPHAN_AREAS: frozenset[str] = frozenset({"objective", "research"})
+
+# Valid values for the written_by frontmatter key.
+VALID_WRITTEN_BY: frozenset[str] = frozenset({"USER", "research", "wiki", "web", "backend"})
+
 # Issue categories.
 ISSUE_KEYS = (
     "code_fence_wrapped",
     "missing_frontmatter",
+    "missing_written_by",
     "unfilled_template",
     "duplicate",
     "orphaned",
@@ -235,6 +243,15 @@ def audit(
                     f"{prefix}{rel} - missing: {', '.join(sorted(missing))}"
                 )
 
+        # written_by provenance check (all areas, all non-skippable pages).
+        written_by = fm.get("written_by")
+        if written_by is None:
+            issues["missing_written_by"].append(f"{prefix}{rel} - missing written_by")
+        elif written_by not in VALID_WRITTEN_BY:
+            issues["missing_written_by"].append(
+                f"{prefix}{rel} - invalid written_by: {written_by!r}"
+            )
+
         upd = fm.get("updated")
         if isinstance(upd, str):
             try:
@@ -250,9 +267,18 @@ def audit(
     for page in all_pages:
         if is_skippable(page):
             continue
-        if not backlinks.get(page.stem):
-            area = _area_for(page, vault)
-            issues["orphaned"].append(f"[{area}] {page.relative_to(vault)}")
+        area = _area_for(page, vault)
+        has_inbound = bool(backlinks.get(page.stem))
+        has_outbound = bool(all_links.get(page.stem))
+        if area in DEGREE_ORPHAN_AREAS:
+            # Degree-based: flag only if truly isolated (no inbound AND no outbound).
+            # DAG leaves (directions, decisions, proposals) with outbound links are fine.
+            if not has_inbound and not has_outbound:
+                issues["orphaned"].append(f"[{area}] {page.relative_to(vault)}")
+        else:
+            # Legacy inbound-only definition (wiki area + any unknown area).
+            if not has_inbound:
+                issues["orphaned"].append(f"[{area}] {page.relative_to(vault)}")
 
     for stem, links in all_links.items():
         for link in links:

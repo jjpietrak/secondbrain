@@ -366,6 +366,18 @@ obj-synth complete (YYYY-MM-DD):
   index.md updated     : yes | deferred (lock held)
 ```
 
+## Step 11 - relink objective nodes
+
+After all objective nodes have been written, run relink to generate `## Links` edges and
+normalize `written_by` on every objective node:
+
+```bash
+wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.objectives relink --apply'
+```
+
+This (re)generates each node's `## Links` edges and normalizes `written_by` (full
+path-qualified wikilinks; no aliases).
+
 ## Conventions
 
 - Follow [`skills/references/ai-first-rules.md`](../references/ai-first-rules.md) and

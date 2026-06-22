@@ -190,7 +190,7 @@ type: research_question_proposal
 id: QP-NNNN
 created: {{date}}
 updated: {{date}}
-generated_by: research
+written_by: research
 from_gap: ""
 status: pending
 ---
@@ -221,7 +221,7 @@ type: direction
 id: DIR-NNNN
 created: {{date}}
 updated: {{date}}
-generated_by: research
+written_by: research
 serves_question: Q-NNNN
 topics: []
 targets_gap: ""
@@ -260,7 +260,7 @@ type: agent_todo
 id: TODO-NNNN
 created: {{date}}
 updated: {{date}}
-generated_by: research
+written_by: research
 status: open
 ---
 
@@ -311,7 +311,7 @@ def _hot_seed(today: str) -> str:
 ---
 type: hot
 updated: {today}
-generated_by: research
+written_by: research
 ---
 
 ## For future Claude

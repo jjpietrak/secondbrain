@@ -215,7 +215,7 @@ def write_agent_todo(
         f"id: {todo_id}\n"
         f"created: {today}\n"
         f"updated: {today}\n"
-        f"generated_by: research\n"
+        f"written_by: research\n"
         f"status: open\n"
         f"---\n"
     )

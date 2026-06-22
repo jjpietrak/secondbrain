@@ -97,7 +97,7 @@ def build_gaps_frontmatter(vault_name: str, today: str) -> str:
     return (
         "---\n"
         "type: gaps_report\n"
-        "generated_by: wiki\n"
+        "written_by: wiki\n"
         f"updated: {today}\n"
         f"vault: {vault_name}\n"
         "ai-first: true\n"

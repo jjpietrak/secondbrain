@@ -22,7 +22,7 @@ Public functions:
 
 Frontmatter field references (from phase-2-objectives.md):
   research_question_proposal:
-    type, id, created, updated, generated_by, from_gap, status: pending|approved|rejected
+    type, id, created, updated, written_by, from_gap, status: pending|approved|rejected
   research_question:
     type, id, created, updated, solved: yes|no, topic, priority, answer_ref
 """

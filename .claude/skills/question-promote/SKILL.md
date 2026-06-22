@@ -205,7 +205,19 @@ Read the current `objective/index.md`. Append a row to the operation log table:
 
 Acquire lock, write, release (same pattern as above).
 
-## Step 7 - report success
+## Step 7 - relink objective nodes
+
+After writing the new research_question node and marking the proposal approved, run relink
+to generate `## Links` edges and normalize `written_by` on every objective node:
+
+```bash
+wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.objectives relink --apply'
+```
+
+This (re)generates each node's `## Links` edges and normalizes `written_by` (full
+path-qualified wikilinks; no aliases).
+
+## Step 8 - report success
 
 Display:
 ```

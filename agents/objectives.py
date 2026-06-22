@@ -533,7 +533,130 @@ def next_id(vault_root: Path, node_type: str) -> str:
 
 # ---------------------------------------------------------------------------
 # relink  -- add YAML aliases + written_by + ## Links body section
+# + hot.md prose linkify
 # ---------------------------------------------------------------------------
+
+# Regex matching bare objective-node ids (4-digit suffix).
+# Covers QP, DIR, Q, T, D, TODO.  Does NOT match TBD-N (different prefix).
+_HOT_ID_RE = re.compile(r"\b(QP|DIR|Q|T|D|TODO)-\d{4}\b")
+
+
+def _linkify_prose(text: str, id_relpath_map: dict[str, str]) -> str:
+    """Wrap bare objective-node ids in `text` with full path-qualified wikilinks.
+
+    Rules:
+    - Only matches ids of the form (QP|DIR|Q|T|D|TODO)-DDDD (4 digits).
+    - Ids already inside an existing [[...]] wikilink are left untouched.
+    - Ids not present in id_relpath_map are left bare.
+    - Idempotent: already-wrapped ids are skipped.
+
+    Strategy: split the text into wikilink spans and non-wikilink spans;
+    only run the replacement regex on the non-wikilink spans.
+    """
+    # Tokenise into alternating segments: wikilink tokens and plain text.
+    # [[...]] may contain pipes and path separators but not newlines (safe assumption).
+    wikilink_re = re.compile(r"\[\[[^\]]*\]\]")
+    result_parts: list[str] = []
+    last_end = 0
+    for m in wikilink_re.finditer(text):
+        # Process plain text segment before this wikilink.
+        plain = text[last_end:m.start()]
+        result_parts.append(_replace_bare_ids(plain, id_relpath_map))
+        # Keep the wikilink token verbatim.
+        result_parts.append(m.group(0))
+        last_end = m.end()
+    # Trailing plain text after the last wikilink.
+    result_parts.append(_replace_bare_ids(text[last_end:], id_relpath_map))
+    return "".join(result_parts)
+
+
+def _replace_bare_ids(segment: str, id_relpath_map: dict[str, str]) -> str:
+    """Replace bare ids in a plain-text segment (no wikilinks present)."""
+    def _sub(m: re.Match) -> str:
+        node_id = m.group(0)
+        relpath = id_relpath_map.get(node_id)
+        if relpath:
+            return f"[[{relpath}]]"
+        # Not in map -- leave bare.
+        return node_id
+
+    return _HOT_ID_RE.sub(_sub, segment)
+
+
+def _relink_hot_md(
+    vault_root: Path,
+    id_relpath_map: dict[str, str],
+    apply: bool = False,
+) -> dict | None:
+    """Process objective/hot.md:
+
+    1. Prose linkify: in the body, wrap bare objective-node ids with full
+       path-qualified wikilinks from id_relpath_map.
+    2. Frontmatter: rename generated_by -> written_by (if generated_by present
+       and written_by absent).
+
+    Returns a change dict (same schema as relink node records) or None if the
+    file does not exist.  If apply=False, the file is not written.
+    """
+    hot_path = vault_root / "objective" / "hot.md"
+    if not hot_path.exists():
+        return None
+
+    try:
+        original_text = hot_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+
+    fm_match = _FM_RE.match(original_text)
+    if not fm_match:
+        # No frontmatter -- just linkify the whole text.
+        new_text = _linkify_prose(original_text, id_relpath_map)
+        changed = new_text != original_text
+        record = {
+            "path": "objective/hot.md",
+            "aliases_cleaned": [],
+            "written_by": "",
+            "generated_by_removed": False,
+            "links_preview": None,
+            "changed": changed,
+        }
+        if apply and changed:
+            hot_path.write_text(new_text, encoding="utf-8")
+        return record
+
+    fm_block = fm_match.group(1)
+    body = original_text[fm_match.end():]
+    fm = _parse_fm(original_text)
+
+    # --- 1. Frontmatter: generated_by -> written_by rename ---
+    current_written_by = fm.get("written_by", "").strip()
+    current_generated_by = fm.get("generated_by", "").strip()
+
+    fm_updates: dict[str, object] = {}
+    if current_generated_by and not current_written_by:
+        # Rename: add written_by, remove generated_by.
+        fm_updates["written_by"] = current_generated_by
+        fm_updates["generated_by"] = None  # remove
+
+    new_fm_block = _serialize_fm(fm_block, fm_updates) if fm_updates else fm_block
+
+    # --- 2. Prose linkify body ---
+    new_body = _linkify_prose(body, id_relpath_map)
+
+    new_text = f"---\n{new_fm_block}\n---\n{new_body}"
+    changed = new_text != original_text
+
+    record = {
+        "path": "objective/hot.md",
+        "aliases_cleaned": [],
+        "written_by": fm_updates.get("written_by", current_written_by) or current_written_by,
+        "generated_by_removed": "generated_by" in fm_updates,
+        "links_preview": None,
+        "changed": changed,
+    }
+    if apply and changed:
+        hot_path.write_text(new_text, encoding="utf-8")
+    return record
 
 # Types where written_by = USER (user-authored nodes).
 _USER_AUTHORED_TYPES = {"purpose", "topic", "research_question", "decision"}
@@ -892,13 +1015,12 @@ def relink(
                 # Agent-authored: use existing generated_by or default to "research"
                 new_written_by = current_generated_by if current_generated_by else "research"
 
-            # generated_by migration: scan_objectives reads it but no code gates on it;
-            # however, write-side scripts (obj_reconcile_helper, deep_synth_helper,
-            # wiki_gaps_fill, obj_init) still EMIT generated_by when creating new nodes.
-            # The safe action is: set written_by AND keep generated_by on existing nodes
-            # so the scan_objectives dict field stays populated and future-created nodes
-            # continue to work with old scripts. We do NOT remove generated_by.
-            remove_generated_by = False  # keep for compatibility
+            # generated_by migration: write-side scripts no longer emit generated_by;
+            # but EXISTING nodes still carry it. We migrate to written_by and then REMOVE
+            # generated_by (no code reads it anymore; safe to drop).
+            # Order: ensure written_by is set first (if written_by absent but generated_by
+            # present, set written_by from generated_by per type), THEN drop generated_by.
+            remove_generated_by = current_generated_by != ""  # remove if present
 
             # -------------------------------------------------------------------
             # 3. ## Links body section
@@ -915,12 +1037,13 @@ def relink(
             if aliases_update != "SKIP":
                 fm_updates["aliases"] = aliases_update  # None = remove, list = rewrite
 
-            # written_by
+            # written_by: set if not already matching
             if current_written_by != new_written_by:
                 fm_updates["written_by"] = new_written_by
 
-            # generated_by (kept, not removed)
-            # no update needed unless the key is absent and we want to leave it
+            # generated_by: remove if present (after written_by migration is complete)
+            if remove_generated_by:
+                fm_updates["generated_by"] = None  # None = remove
 
             new_fm_block = _serialize_fm(fm_block, fm_updates) if fm_updates else fm_block
 
@@ -944,6 +1067,11 @@ def relink(
 
             if apply and changed:
                 md_path.write_text(new_text, encoding="utf-8")
+
+    # Handle objective/hot.md separately (prose linkify + frontmatter rename).
+    hot_record = _relink_hot_md(vault_root, id_relpath_map, apply=apply)
+    if hot_record is not None:
+        results.append(hot_record)
 
     return results
 
