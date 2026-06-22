@@ -29,8 +29,9 @@ current; never store fact bodies here.
 
 ## Synthesis decisions (updated 2026-06-22)
 
-- decisions() command does NOT support --json flag; use plain `decisions` subcommand.
-- frontier() command does NOT support --json flag; use plain `frontier` subcommand.
+- `--json` IS supported but it is a GLOBAL flag that must come BEFORE the verb:
+  `python -m agents.objectives --json frontier` / `--json decisions` (NOT `frontier --json`).
+  Post-verb `--json` errors with "unrecognized arguments" - that is placement, not absence.
 - next-id uses hyphen not underscore: `next-id direction`, `next-id research_question_proposal`.
 - Write files to vault via wsl.exe bash + python3 (Windows path EPERM blocks Write tool).
 - Heredoc in wsl.exe bash breaks on parentheses in content; use python3 inline or Write tool

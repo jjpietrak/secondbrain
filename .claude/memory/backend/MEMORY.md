@@ -78,6 +78,11 @@ current; never store fact bodies here.
   (obj-query/obj-synth/obj-reconcile/deep-synthesis/wiki-gaps/question-promote/question-solve),
   research/ layout + templates, seeding approach, 4-wave parallel plan, live demo, 8 open risks.
   Full draft at plans/phase-2-objectives.md.
+- [phase2-demo.md](phase2-demo.md) — Phase 2 LIVE DEMO 2026-06-22 (code 5544c70, vault e3ad8b3):
+  research+wiki subagents over the live vault validated dispatch+RBAC+reasoning end-to-end
+  (obj-synth→5 directions+QP-0001; deep-synthesis→research/Q-0001.md; wiki-gaps→wiki/gaps.md).
+  Fixed wiki_gaps_gather parenthetical-header bug (293 tests green). LEFT: question-promote/
+  solve + obj-reconcile/obj-query live exercise; legacy research/ reconcile (R8, Checkpoint B).
 
 ## Open structural proposals
 - [reference-conflicts.md](reference-conflicts.md) — conflicts between the reference architectures
