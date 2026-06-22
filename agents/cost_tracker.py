@@ -182,28 +182,52 @@ def report() -> None:
 
     rows = [r for r in rows if _in_active_vault(r)]   # per-vault encapsulation
     paid_today = sum(r["cost_usd"] for r in rows if r.get("date") == today_s)
+    est_today = sum(r.get("estimated_cost_usd", 0.0) for r in rows if r.get("date") == today_s)
     by_provider: dict[str, float] = {}
+    by_source: dict[str, dict] = {}
     by_action: dict[str, dict] = {}
     tok_in = tok_out = 0
     for r in rows:
         if r.get("date") != today_s:
             continue
         by_provider[r["provider"]] = by_provider.get(r["provider"], 0.0) + r["cost_usd"]
-        a = by_action.setdefault(r["action"], {"calls": 0, "in": 0, "out": 0, "cost": 0.0})
-        a["calls"] += 1; a["in"] += r["input_tokens"]; a["out"] += r["output_tokens"]; a["cost"] += r["cost_usd"]
-        tok_in += r["input_tokens"]; tok_out += r["output_tokens"]
+        src = r.get("source", "unknown")
+        s = by_source.setdefault(src, {"in": 0, "out": 0, "cost": 0.0, "est": 0.0})
+        s["in"] += r["input_tokens"]
+        s["out"] += r["output_tokens"]
+        s["cost"] += r["cost_usd"]
+        s["est"] += r.get("estimated_cost_usd", 0.0)
+        a = by_action.setdefault(r["action"], {"calls": 0, "in": 0, "out": 0, "cost": 0.0, "est": 0.0, "sources": set()})
+        a["calls"] += 1
+        a["in"] += r["input_tokens"]
+        a["out"] += r["output_tokens"]
+        a["cost"] += r["cost_usd"]
+        a["est"] += r.get("estimated_cost_usd", 0.0)
+        a["sources"].add(src)
+        tok_in += r["input_tokens"]
+        tok_out += r["output_tokens"]
 
     rolling = sum(r["cost_usd"] for r in rows
                   if r.get("date", "") >= week_ago.isoformat())
+    rolling_est = sum(r.get("estimated_cost_usd", 0.0) for r in rows
+                      if r.get("date", "") >= week_ago.isoformat())
     cap = daily_cap()
     remaining = max(0.0, cap - paid_today)
 
     L = [f"# Cost report — {VAULT_NAME}\n", f"_Generated: {datetime.now().isoformat(timespec='seconds')}_\n",
          f"**Today ({today_s})** — paid spend: **${paid_today:.4f}** / cap ${cap:.2f} "
-         f"(remaining ${remaining:.4f})",
-         f"**Rolling 7-day paid spend:** ${rolling:.4f}",
+         f"(remaining ${remaining:.4f}) | est. equivalent: **${est_today:.4f}**",
+         f"**Rolling 7-day paid spend:** ${rolling:.4f} | est. equivalent: ${rolling_est:.4f}",
          f"**Today tokens:** {tok_in:,} in / {tok_out:,} out\n",
-         "## By provider (today)"]
+         "## By source (today)"]
+    if by_source:
+        L.append("| Source | Tokens in | Tokens out | Paid $ | Est. $ |")
+        L.append("|--------|-----------|------------|--------|--------|")
+        for src, d in sorted(by_source.items(), key=lambda x: -(x[1]["cost"] + x[1]["est"])):
+            L.append(f"| {src} | {d['in']:,} | {d['out']:,} | {d['cost']:.4f} | {d['est']:.4f} |")
+    else:
+        L.append("- (no calls recorded today)")
+    L.append("\n## By provider (today)")
     if by_provider:
         for p, c in sorted(by_provider.items(), key=lambda x: -x[1]):
             L.append(f"- {p}: ${c:.4f}")
@@ -211,16 +235,17 @@ def report() -> None:
         L.append("- (no calls recorded today)")
     L.append("\n## By action (today)")
     if by_action:
-        L.append("| Action | Calls | Tokens in | Tokens out | Cost $ |")
-        L.append("|--------|-------|-----------|------------|--------|")
-        for act, d in sorted(by_action.items(), key=lambda x: -x[1]["cost"]):
-            L.append(f"| {act} | {d['calls']} | {d['in']:,} | {d['out']:,} | {d['cost']:.4f} |")
+        L.append("| Action | Source | Calls | Tokens in | Tokens out | Paid $ | Est. $ |")
+        L.append("|--------|--------|-------|-----------|------------|--------|--------|")
+        for act, d in sorted(by_action.items(), key=lambda x: -(x[1]["cost"] + x[1]["est"])):
+            srcs = ", ".join(sorted(d["sources"]))
+            L.append(f"| {act} | {srcs} | {d['calls']} | {d['in']:,} | {d['out']:,} | {d['cost']:.4f} | {d['est']:.4f} |")
     else:
         L.append("- (no calls recorded today)")
 
     REPORT.parent.mkdir(parents=True, exist_ok=True)
     REPORT.write_text("\n".join(L) + "\n")
-    print(f"[cost] today=${paid_today:.4f}/{cap:.2f} | 7d=${rolling:.4f} | report -> {REPORT}")
+    print(f"[cost] today=${paid_today:.4f}/{cap:.2f} (est ${est_today:.4f}) | 7d=${rolling:.4f} (est ${rolling_est:.4f}) | report -> {REPORT}")
 
 
 def main() -> None:

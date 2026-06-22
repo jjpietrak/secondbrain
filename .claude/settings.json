@@ -5,6 +5,16 @@
     "additionalDirectories": ["/mnt/c/Obsidian"]
   },
   "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd /home/jpietrak/second_brain && .venv/bin/python scripts/track_interactive_tokens.py"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Write|Edit|MultiEdit|NotebookEdit",

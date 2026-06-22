@@ -41,7 +41,7 @@ The matrix below is authoritative for v0.2. Permission values are preserved verb
 | meta/health_report/  | health check of the vault, most edited pages, category statistics, tag statistic | YES               | Backend Agent  | Backend Agent |
 | meta/cost_report/    | cost & token control                                                             | YES               | Backend Agent  | Backend Agent |
 | meta/ingest_index/   | structured json tracking ingested/deleted/todo raw sources with keys             | YES               | Wiki Agent     | Wiki Agent    |
-| meta/nightly_report/ | proposed new sources for User Only approval                                      | YES               | Research Agent | Wiki Agent    |
+| meta/nightly_report/ | proposed new sources for User Only approval                                      | YES               | Research Agent / Web Agent | Wiki Agent    |
 
 
 ### RAW

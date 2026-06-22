@@ -20,6 +20,12 @@ current; never store fact bodies here.
 - [ ] W3: skills question-promote, question-solve, obj-reconcile created.
 - [ ] W4: `objective/` scaffold applied to Inference-Disagg vault; user seeded purpose/topic/questions.
 
+## obj-reconcile run (2026-06-22)
+
+- All 5 passes clean: 0 stale dirs, 0 dup proposals, 0 no-topic Qs.
+- D-0001 (no-web) blocks validation proxy -> any future ambiguous-duplicate case must go to TODO, not adjudication.
+- No TODO nodes created; no direction or proposal files modified.
+
 ## Objective graph state (updated 2026-06-22)
 
 - Current open research questions: 7 (Q-0001..Q-0007), none solved.

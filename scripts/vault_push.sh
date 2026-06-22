@@ -21,7 +21,7 @@ set -uo pipefail
 # ── resolve vault root ────────────────────────────────────────────────────────
 if [ -z "${VAULT_ROOT:-}" ]; then
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-  eval "$( cd "$SCRIPT_DIR" && python -m agents.vault_config env )"
+  eval "$( cd "$SCRIPT_DIR" && .venv/bin/python -m agents.vault_config env )"
 fi
 
 if [ -z "${VAULT_ROOT:-}" ]; then

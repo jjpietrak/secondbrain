@@ -80,6 +80,12 @@ ALLOWLIST: dict[str, list[str]] = {
         "research/",
         "meta/nightly_report/",
     ],
+    # web role: writes ONLY the nightly digest via the Write tool.
+    # The ingest index enqueue is a Bash CLI call (agents.ingest_index enqueue), NOT a Write
+    # tool call, so it is not governed by this guard. Do NOT add meta/ingest_index here.
+    "web": [
+        "meta/nightly_report/",
+    ],
 }
 
 # R4: paths that the research role may write ONLY when SB_SANCTIONED_SKILL is set to an
