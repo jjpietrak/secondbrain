@@ -532,6 +532,334 @@ def next_id(vault_root: Path, node_type: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# relink  -- add YAML aliases + written_by + ## Links body section
+# ---------------------------------------------------------------------------
+
+# Types where written_by = USER (user-authored nodes).
+_USER_AUTHORED_TYPES = {"purpose", "topic", "research_question", "decision"}
+
+# Agent-authored types get written_by from generated_by (fallback: "research").
+_AGENT_AUTHORED_TYPES = {"direction", "research_question_proposal", "agent_todo"}
+
+# Sentinel comments that delimit the auto-generated links block.
+_LINKS_START = "<!-- links:auto -->"
+_LINKS_END = "<!-- /links:auto -->"
+
+
+def _parse_inline_list(raw: str) -> list[str]:
+    """Parse a YAML inline list '[A, B, C]' or a comma-separated 'A, B, C' into items.
+
+    Returns a list of stripped, non-empty strings.
+    """
+    raw = raw.strip()
+    if raw.startswith("[") and raw.endswith("]"):
+        raw = raw[1:-1]
+    return [s.strip() for s in raw.split(",") if s.strip()]
+
+
+def _extract_ids_from_text(text: str, pattern: str) -> list[str]:
+    """Return all distinct ids matching `pattern` found in `text`, in order of appearance."""
+    seen: set[str] = set()
+    result: list[str] = []
+    for m in re.finditer(pattern, text):
+        val = m.group(0)
+        if val not in seen:
+            seen.add(val)
+            result.append(val)
+    return result
+
+
+def _serialize_fm(fm_raw: str, updates: dict[str, object]) -> str:
+    """Apply `updates` to a frontmatter YAML block string (the text between --- delimiters).
+
+    Rules:
+    - If a key exists in `updates` with value None, remove that line entirely.
+    - If a key exists, replace the line's value.
+    - If a key is new, append before the closing line.
+    - Values that are lists are serialized as '[item1, item2]'.
+    - Values that are strings are emitted as-is.
+    Returns the updated frontmatter block (without the surrounding --- markers).
+    """
+    lines = fm_raw.splitlines()
+    used_keys: set[str] = set()
+    result: list[str] = []
+
+    for line in lines:
+        if ":" not in line or line.lstrip().startswith("#"):
+            result.append(line)
+            continue
+        k, _, _ = line.partition(":")
+        key = k.strip().lower()
+        if key in updates:
+            used_keys.add(key)
+            val = updates[key]
+            if val is None:
+                # Remove this line
+                continue
+            elif isinstance(val, list):
+                result.append(f"{k.strip()}: [{', '.join(str(v) for v in val)}]")
+            else:
+                result.append(f"{k.strip()}: {val}")
+        else:
+            result.append(line)
+
+    # Append any new keys not yet seen.
+    for key, val in updates.items():
+        if key not in used_keys and val is not None:
+            if isinstance(val, list):
+                result.append(f"{key}: [{', '.join(str(v) for v in val)}]")
+            else:
+                result.append(f"{key}: {val}")
+
+    return "\n".join(result)
+
+
+def _build_links_section(node_type: str, fm: dict[str, str], body: str) -> str | None:
+    """Return the content for the ## Links section (without the heading line itself),
+    or None if this node type should have no Links section.
+
+    The returned string includes the marker comments and the wikilinks, e.g.:
+      <!-- links:auto -->
+      - part of: [[PURPOSE]]
+      <!-- /links:auto -->
+    """
+    if node_type == "purpose":
+        return None
+
+    link_lines: list[str] = []
+
+    if node_type == "topic":
+        link_lines.append("- part of: [[PURPOSE]]")
+        rq_raw = fm.get("related_questions", "")
+        for qid in _parse_inline_list(rq_raw):
+            if re.match(r"^Q-\d{4}$", qid):
+                link_lines.append(f"- question: [[{qid}]]")
+
+    elif node_type == "research_question":
+        # Primary topic from frontmatter
+        topic_fm = fm.get("topic", "").strip()
+        if re.match(r"^T-\d{4}$", topic_fm):
+            link_lines.append(f"- topic: [[{topic_fm}]]")
+        # Secondary topics from body preamble: "Secondary topic: T-NNNN"
+        seen_topics: set[str] = {topic_fm}
+        for m in re.finditer(r"Secondary topic:\s*(T-\d{4})", body):
+            tid = m.group(1)
+            if tid not in seen_topics:
+                seen_topics.add(tid)
+                link_lines.append(f"- topic: [[{tid}]]")
+
+    elif node_type == "direction":
+        sq = fm.get("serves_question", "").strip()
+        if re.match(r"^Q-\d{4}$", sq):
+            link_lines.append(f"- serves: [[{sq}]]")
+        topics_raw = fm.get("topics", "")
+        for tid in _parse_inline_list(topics_raw):
+            if re.match(r"^T-\d{4}$", tid):
+                link_lines.append(f"- topic: [[{tid}]]")
+
+    elif node_type == "research_question_proposal":
+        from_gap = fm.get("from_gap", "")
+        combined_text = from_gap + "\n" + body
+        seen: set[str] = set()
+        for qid in _extract_ids_from_text(combined_text, r"Q-\d{4}"):
+            if qid not in seen:
+                seen.add(qid)
+                link_lines.append(f"- relates to: [[{qid}]]")
+        for tid in _extract_ids_from_text(combined_text, r"T-\d{4}"):
+            if tid not in seen:
+                seen.add(tid)
+                link_lines.append(f"- topic: [[{tid}]]")
+
+    elif node_type == "decision":
+        scope = fm.get("scope", "").strip()
+        # If scope is a node id, link it; else link PURPOSE for known generic scopes.
+        if re.match(r"^(T|Q|DIR)-\d{4}$", scope):
+            link_lines.append(f"- governs: [[{scope}]]")
+        else:
+            # all / research / wiki / web / empty -> governs PURPOSE
+            link_lines.append("- governs: [[PURPOSE]]")
+
+    elif node_type == "agent_todo":
+        # No specific links spec; emit empty block so section exists but is neutral.
+        pass
+
+    if not link_lines and node_type not in ("agent_todo",):
+        # Nothing to link -- still emit the markers so rerun is stable
+        pass
+
+    content = "\n".join([_LINKS_START] + link_lines + [_LINKS_END])
+    return content
+
+
+def _inject_links_section(body: str, links_block: str) -> str:
+    """Insert or replace the auto-links block in the body.
+
+    Placement: immediately after the `## For future Claude` block (its last non-blank
+    line), or at the top of the body if absent.
+
+    Re-running must replace, not duplicate: if the markers already exist, replace
+    the content between them (inclusive).
+    """
+    # If markers already exist, replace between them.
+    existing_re = re.compile(
+        r"<!-- links:auto -->.*?<!-- /links:auto -->",
+        re.DOTALL,
+    )
+    if existing_re.search(body):
+        return existing_re.sub(links_block, body, count=1)
+
+    # Find the end of the "## For future Claude" section.
+    # The section spans from the heading to the next heading (any level) or end of string.
+    ffc_re = re.compile(r"(## For future Claude\b.*?)(\n#{1,6} |\Z)", re.DOTALL)
+    m = ffc_re.search(body)
+    if m:
+        insert_pos = m.start(2)
+        return body[:insert_pos] + "\n" + links_block + "\n" + body[insert_pos:]
+
+    # No "## For future Claude" -- insert at the very beginning of the body.
+    return links_block + "\n" + body
+
+
+def relink(
+    vault_root: Path,
+    apply: bool = False,
+) -> list[dict]:
+    """Add graph EDGES + provenance to every objective node.
+
+    For each node file under objective/<type>/*.md (skipping _template*, index*, hot*):
+      1. Ensure aliases list contains the node id.
+      2. Set written_by (and handle generated_by migration).
+      3. (Re)generate the ## Links body section.
+
+    Returns a list of per-file change dicts:
+      {"path": str, "aliases_added": list, "written_by": str,
+       "generated_by_removed": bool, "links_preview": str | None,
+       "changed": bool}
+
+    If apply=False (dry-run), files are NOT written.
+    If apply=True, files are written only when content actually changed.
+    """
+    obj_dir = vault_root / "objective"
+    if not obj_dir.exists():
+        return []
+
+    results: list[dict] = []
+
+    for subdir in sorted(obj_dir.iterdir()):
+        if not subdir.is_dir():
+            continue
+        node_type = subdir.name
+
+        for md_path in sorted(subdir.rglob("*.md")):
+            # Skip templates and management files.
+            if md_path.name.startswith("_"):
+                continue
+            if md_path.stem in ("index", "hot"):
+                continue
+
+            try:
+                original_text = md_path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+
+            fm_match = _FM_RE.match(original_text)
+            if not fm_match:
+                continue
+
+            fm_block = fm_match.group(1)  # raw YAML between the --- markers
+            body = original_text[fm_match.end():]
+            fm = _parse_fm(original_text)
+
+            node_id = fm.get("id", "").strip()
+            # Determine the canonical id for this type.
+            if node_type == "purpose":
+                canonical_id = "purpose"
+            else:
+                canonical_id = node_id
+
+            if not canonical_id:
+                continue  # No id, skip.
+
+            # -------------------------------------------------------------------
+            # 1. aliases
+            # -------------------------------------------------------------------
+            aliases_raw = fm.get("aliases", "")
+            existing_aliases = _parse_inline_list(aliases_raw) if aliases_raw else []
+            aliases_added: list[str] = []
+            if canonical_id not in existing_aliases:
+                existing_aliases.append(canonical_id)
+                aliases_added.append(canonical_id)
+            new_aliases = existing_aliases
+
+            # -------------------------------------------------------------------
+            # 2. written_by + generated_by migration
+            # -------------------------------------------------------------------
+            current_written_by = fm.get("written_by", "").strip()
+            current_generated_by = fm.get("generated_by", "").strip()
+
+            if node_type in _USER_AUTHORED_TYPES:
+                new_written_by = "USER"
+            else:
+                # Agent-authored: use existing generated_by or default to "research"
+                new_written_by = current_generated_by if current_generated_by else "research"
+
+            # generated_by migration: scan_objectives reads it but no code gates on it;
+            # however, write-side scripts (obj_reconcile_helper, deep_synth_helper,
+            # wiki_gaps_fill, obj_init) still EMIT generated_by when creating new nodes.
+            # The safe action is: set written_by AND keep generated_by on existing nodes
+            # so the scan_objectives dict field stays populated and future-created nodes
+            # continue to work with old scripts. We do NOT remove generated_by.
+            remove_generated_by = False  # keep for compatibility
+
+            # -------------------------------------------------------------------
+            # 3. ## Links body section
+            # -------------------------------------------------------------------
+            links_block = _build_links_section(node_type, fm, body)
+            links_preview = links_block
+
+            # -------------------------------------------------------------------
+            # Build the new file content
+            # -------------------------------------------------------------------
+            fm_updates: dict[str, object] = {}
+
+            # aliases
+            if aliases_added:
+                fm_updates["aliases"] = new_aliases
+
+            # written_by
+            if current_written_by != new_written_by:
+                fm_updates["written_by"] = new_written_by
+
+            # generated_by (kept, not removed)
+            # no update needed unless the key is absent and we want to leave it
+
+            new_fm_block = _serialize_fm(fm_block, fm_updates) if fm_updates else fm_block
+
+            # Links body section
+            new_body = body
+            if links_block is not None:
+                new_body = _inject_links_section(body, links_block)
+
+            new_text = f"---\n{new_fm_block}\n---\n{new_body}"
+            changed = new_text != original_text
+
+            record: dict = {
+                "path": str(md_path.relative_to(vault_root)).replace("\\", "/"),
+                "aliases_added": aliases_added,
+                "written_by": new_written_by,
+                "generated_by_removed": remove_generated_by,
+                "links_preview": links_preview,
+                "changed": changed,
+            }
+            results.append(record)
+
+            if apply and changed:
+                md_path.write_text(new_text, encoding="utf-8")
+
+    return results
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -619,6 +947,42 @@ def _verb_next_id(vault_root: Path, args: argparse.Namespace) -> int:
         return 1
 
 
+def _verb_relink(vault_root: Path, args: argparse.Namespace) -> int:
+    """Dry-run or apply the relink verb."""
+    apply = getattr(args, "apply", False)
+    results = relink(vault_root, apply=apply)
+
+    changed_count = sum(1 for r in results if r["changed"])
+    mode = "APPLY" if apply else "DRY-RUN"
+    print(f"relink [{mode}]: {len(results)} nodes scanned, {changed_count} would change")
+    print()
+
+    for r in results:
+        if not r["changed"] and not apply:
+            # In dry-run, only print nodes that would change (verbose would be noisy).
+            pass
+        status = "CHANGED" if r["changed"] else "ok"
+        aliases_str = (
+            f"  aliases_added: {r['aliases_added']}" if r["aliases_added"] else ""
+        )
+        print(f"  [{status}] {r['path']}")
+        print(f"    written_by: {r['written_by']}{aliases_str}")
+        if r["links_preview"]:
+            preview_lines = r["links_preview"].splitlines()
+            preview = "\n      ".join(preview_lines[:6])
+            if len(preview_lines) > 6:
+                preview += f"\n      ... ({len(preview_lines) - 6} more lines)"
+            print(f"    links:\n      {preview}")
+
+    if apply:
+        written = sum(1 for r in results if r["changed"])
+        print(f"\nrelink: wrote {written} files")
+    else:
+        print("\n(dry-run: pass --apply to write changes)")
+
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description="Markdown-native objective store for Second Brain v0.2."
@@ -636,6 +1000,16 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("status", help="Count nodes per type")
     ni = sub.add_parser("next-id", help="Emit + increment next id for a node type")
     ni.add_argument("node_type", help="Node type: topic|research_question|decision|etc.")
+    rl = sub.add_parser(
+        "relink",
+        help="Add aliases + written_by + ## Links sections to objective nodes",
+    )
+    rl.add_argument(
+        "--apply",
+        action="store_true",
+        default=False,
+        help="Write changes (default: dry-run)",
+    )
 
     args = ap.parse_args(argv)
 
@@ -667,6 +1041,7 @@ def main(argv: list[str] | None = None) -> int:
         "decisions": _verb_decisions,
         "status": _verb_status,
         "next-id": _verb_next_id,
+        "relink": _verb_relink,
     }
     fn = dispatch.get(args.verb)
     if fn is None:
