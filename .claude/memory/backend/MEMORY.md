@@ -23,6 +23,10 @@ current; never store fact bodies here.
   Change1 (templates/ drop + 4 producer _template.md) + Change2 (vault _CLAUDE.md delete)
   applied to Inference-Disagg. SCHEMA_VERSION 1->2. All 15 on-disk checks pass.
   Vault commit df2c5df; code commit (see wiki-init-v2.md). Not pushed.
+- [vault-ops-skills.md](vault-ops-skills.md) — vault-push + vault-health added 2026-06-22 (commit
+  664ef1d): vault-push commits+pushes the vault repo (formalizes obsidian-sync); vault-health
+  generalizes vault_health.py to all areas (--area, per-type FM, cross-area links). Docs updated.
+  319 tests green. written_by/edge-orphan checks deferred to land WITH Phase 2.5.
 
 ## Architecture
 - [retrieval-pipeline.md](retrieval-pipeline.md) — claude-obsidian hybrid retrieval
