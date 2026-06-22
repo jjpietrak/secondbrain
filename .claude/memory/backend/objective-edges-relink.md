@@ -35,4 +35,17 @@ edge backfill and PUSHED the vault.
 - wiki/ + research/ `written_by` backfill; full `generated_by`→`written_by` unify (update write-side
   scripts: deep_synth_helper, obj_reconcile_helper, wiki_gaps_fill, obj_init).
 - vault-health alias-aware + degree-based checks (above), then re-verify orphans→0.
-- The user's truncated 3rd request ("I also want each h…") is still unanswered.
+- The user's truncated 3rd request was a typo — dropped (2026-06-22).
+
+## UPDATE 2026-06-22 — aliases REVERSED → full path-qualified wikilinks (user feedback)
+User found per-node `aliases:` too noisy. Changed `relink`: (a) STOP adding aliases + remove the
+auto-added own-id alias; (b) emit FULL path-qualified wikilinks in `## Links`, e.g.
+`[[objective/topic/T-0004-layer-expert-disaggregation]]` (id->relpath map across all nodes; purpose ->
+`[[objective/purpose/PURPOSE]]`; dangling ids fall back to `[[<id>]]`). Re-applied + PUSHED
+(code 72d012c not pushed; vault 7fed0ee -> origin/master). 14 relink tests, full suite 333 green.
+RESOLVES the dead-link false-positives — vault_health resolves full wikilinks by last-path-segment
+stem, so objective dead-links 62->2 (--area all). vault_health NO LONGER needs alias-awareness.
+ONLY remaining vault_health objective upgrade = degree-based (not inbound-only) orphan detection: the
+9 "orphaned" under --area objective are DAG leaves (outbound-but-no-inbound), not true orphans.
+2 genuine dangling refs remain (low priority, agent-written body content, NOT relink): DIR-0004 +
+QP-0001 bodies link `[[hot.md]]` (skippable/ambiguous) — clean via a wiki-lint/research pass.
