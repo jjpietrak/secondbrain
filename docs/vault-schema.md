@@ -72,6 +72,13 @@ The matrix below is authoritative for v0.2. Permission values are preserved verb
 | wiki/hot.md     | last ingest session context, current focus, blind spots, proposed new research directions, open work threads (next sessions) | YES               | Wiki Agent   | Wiki Agent & Research Agent |
 
 
+## Backend audit & version-control capabilities (v0.2)
+
+These backend-owned operations span the whole vault and are not folder-scoped content writes:
+
+- **Read-all for auditing.** The `backend` agent reads ALL markdown vault areas (`wiki/`, `objective/`, `research/`, `meta/`) READ-ONLY to run health/stats audits (`vault-health`, `wiki-health`, `wiki-stats`). It still WRITES only `meta/health_report/` + `meta/cost_report/` (per the matrix above). `vault-health` is the all-area superset of the wiki-only `wiki-health` (`--area` scopes it).
+- **Version control.** `vault-push` performs `git pull --rebase --autostash` + `add -A` + commit + push over the entire vault git repository. This is a version-control action, NOT content editing — it never creates or modifies note content. Cross-host lease coordination (Layer 1, `vault_lease.sh`) is wired in Phase 4.
+
 ## Frontmatter schemas
 
 The schemas below are carried over from the reference schema. Where a schema references folders that do not exist in the v0.2 matrix above, an inline note flags the divergence; the schema content is preserved as-is.

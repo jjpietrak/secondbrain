@@ -12,12 +12,17 @@ allowed-tools: Read Bash Glob Grep
 
 **Ownership: `backend` agent.** If you are NOT the `backend` subagent (e.g. the main orchestrator or another agent loaded this skill), DISPATCH it: call the Task tool with `subagent_type: backend`, pass the user's full request, let the backend agent run the steps below, and relay its result. Do NOT run the steps yourself - running as the `backend` agent is what activates the RBAC/write-scope boundary. If you ARE the `backend` agent, proceed.
 
-# wiki-health: structural audit of the wiki
+# wiki-health: structural audit of the wiki (wiki-scoped subset)
 
-Owner: **backend**. This skill is a thin wrapper over `agents/vault_health.py`. It runs
-no model and costs nothing - it is a deterministic file walk that reports structural
-problems for a human (or the wiki agent) to fix. It NEVER edits vault knowledge content;
-it only writes its own report under the backend-owned `meta/health_report/` folder.
+Owner: **backend**. This skill is a thin wrapper over `agents/vault_health.py` scoped to
+`--area wiki`. It runs no model and costs nothing - it is a deterministic file walk that
+reports structural problems for a human (or the wiki agent) to fix. It NEVER edits vault
+knowledge content; it only writes its own report under the backend-owned
+`meta/health_report/` folder.
+
+> **Full-vault scan:** use the `vault-health` skill (runs all areas: wiki, objective,
+> research). This skill (`wiki-health`) is the wiki-only subset and is equivalent to
+> running `python -m agents.vault_health --area wiki`.
 
 ## What it checks
 
@@ -41,13 +46,13 @@ fence-wrapped page is reported once with the correct fix.
    ```bash
    eval "$(python -m agents.vault_config env)"   # exports VAULT, VAULT_ROOT
    ```
-2. Run the auditor. It writes `meta/health_report/health-<date>.md` (a folder, so
-   dated reports accumulate):
+2. Run the auditor (wiki-scoped). It writes `meta/health_report/health-<date>.md` (a
+   folder, so dated reports accumulate):
    ```bash
-   python -m agents.vault_health                 # writes the dated report
-   python -m agents.vault_health --print-only    # preview without writing
-   python -m agents.vault_health --json          # machine-readable for tooling
-   python -m agents.vault_health --vault <name>  # target a specific vault
+   python -m agents.vault_health --area wiki                 # writes the dated report
+   python -m agents.vault_health --area wiki --print-only    # preview without writing
+   python -m agents.vault_health --area wiki --json          # machine-readable for tooling
+   python -m agents.vault_health --area wiki --vault <name>  # target a specific vault
    ```
 3. Summarize the score and the top issues for the user. Point at the report path.
 4. Do NOT fix anything here. Hand fixes to the wiki agent (wiki-lint / wiki-reconcile)
@@ -58,3 +63,4 @@ fence-wrapped page is reported once with the correct fix.
 - Backend-owned. Writes ONLY `meta/health_report/`. Reads `wiki/` read-only.
 - $0: no model call, no network, no API key.
 - Does not take vault locks (read-only over content; its own report dir is uncontended).
+- Runs `--area wiki` only. For a full-vault scan use the `vault-health` skill.
