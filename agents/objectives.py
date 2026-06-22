@@ -614,14 +614,33 @@ def _serialize_fm(fm_raw: str, updates: dict[str, object]) -> str:
     return "\n".join(result)
 
 
-def _build_links_section(node_type: str, fm: dict[str, str], body: str) -> str | None:
+def _wikilink(node_id: str, id_relpath_map: dict[str, str]) -> str:
+    """Return a full path-qualified wikilink for node_id.
+
+    Uses id_relpath_map to resolve the path. Falls back to bare [[<id>]] if
+    the id has no matching file (dangling reference).
+    """
+    relpath = id_relpath_map.get(node_id)
+    if relpath:
+        return f"[[{relpath}]]"
+    return f"[[{node_id}]]"
+
+
+def _build_links_section(
+    node_type: str,
+    fm: dict[str, str],
+    body: str,
+    id_relpath_map: dict[str, str],
+) -> str | None:
     """Return the content for the ## Links section (without the heading line itself),
     or None if this node type should have no Links section.
 
-    The returned string includes the marker comments and the wikilinks, e.g.:
+    All wikilinks are FULL path-qualified using id_relpath_map, e.g.:
       <!-- links:auto -->
-      - part of: [[PURPOSE]]
+      - part of: [[objective/purpose/PURPOSE]]
       <!-- /links:auto -->
+
+    Falls back to bare [[<id>]] for dangling references (id not in map).
     """
     if node_type == "purpose":
         return None
@@ -629,33 +648,33 @@ def _build_links_section(node_type: str, fm: dict[str, str], body: str) -> str |
     link_lines: list[str] = []
 
     if node_type == "topic":
-        link_lines.append("- part of: [[PURPOSE]]")
+        link_lines.append(f"- part of: {_wikilink('purpose', id_relpath_map)}")
         rq_raw = fm.get("related_questions", "")
         for qid in _parse_inline_list(rq_raw):
             if re.match(r"^Q-\d{4}$", qid):
-                link_lines.append(f"- question: [[{qid}]]")
+                link_lines.append(f"- question: {_wikilink(qid, id_relpath_map)}")
 
     elif node_type == "research_question":
         # Primary topic from frontmatter
         topic_fm = fm.get("topic", "").strip()
         if re.match(r"^T-\d{4}$", topic_fm):
-            link_lines.append(f"- topic: [[{topic_fm}]]")
+            link_lines.append(f"- topic: {_wikilink(topic_fm, id_relpath_map)}")
         # Secondary topics from body preamble: "Secondary topic: T-NNNN"
         seen_topics: set[str] = {topic_fm}
         for m in re.finditer(r"Secondary topic:\s*(T-\d{4})", body):
             tid = m.group(1)
             if tid not in seen_topics:
                 seen_topics.add(tid)
-                link_lines.append(f"- topic: [[{tid}]]")
+                link_lines.append(f"- topic: {_wikilink(tid, id_relpath_map)}")
 
     elif node_type == "direction":
         sq = fm.get("serves_question", "").strip()
         if re.match(r"^Q-\d{4}$", sq):
-            link_lines.append(f"- serves: [[{sq}]]")
+            link_lines.append(f"- serves: {_wikilink(sq, id_relpath_map)}")
         topics_raw = fm.get("topics", "")
         for tid in _parse_inline_list(topics_raw):
             if re.match(r"^T-\d{4}$", tid):
-                link_lines.append(f"- topic: [[{tid}]]")
+                link_lines.append(f"- topic: {_wikilink(tid, id_relpath_map)}")
 
     elif node_type == "research_question_proposal":
         from_gap = fm.get("from_gap", "")
@@ -664,20 +683,20 @@ def _build_links_section(node_type: str, fm: dict[str, str], body: str) -> str |
         for qid in _extract_ids_from_text(combined_text, r"Q-\d{4}"):
             if qid not in seen:
                 seen.add(qid)
-                link_lines.append(f"- relates to: [[{qid}]]")
+                link_lines.append(f"- relates to: {_wikilink(qid, id_relpath_map)}")
         for tid in _extract_ids_from_text(combined_text, r"T-\d{4}"):
             if tid not in seen:
                 seen.add(tid)
-                link_lines.append(f"- topic: [[{tid}]]")
+                link_lines.append(f"- topic: {_wikilink(tid, id_relpath_map)}")
 
     elif node_type == "decision":
         scope = fm.get("scope", "").strip()
         # If scope is a node id, link it; else link PURPOSE for known generic scopes.
         if re.match(r"^(T|Q|DIR)-\d{4}$", scope):
-            link_lines.append(f"- governs: [[{scope}]]")
+            link_lines.append(f"- governs: {_wikilink(scope, id_relpath_map)}")
         else:
             # all / research / wiki / web / empty -> governs PURPOSE
-            link_lines.append("- governs: [[PURPOSE]]")
+            link_lines.append(f"- governs: {_wikilink('purpose', id_relpath_map)}")
 
     elif node_type == "agent_todo":
         # No specific links spec; emit empty block so section exists but is neutral.
@@ -720,6 +739,57 @@ def _inject_links_section(body: str, links_block: str) -> str:
     return links_block + "\n" + body
 
 
+def _build_id_relpath_map(vault_root: Path) -> dict[str, str]:
+    """Build a map of node id -> vault-root-relative path WITHOUT .md extension.
+
+    Scans all objective node files (same exclusions as relink) and maps each
+    node's canonical id to its relpath from vault_root, forward-slashes, no .md.
+
+    Example: "Q-0001" -> "objective/research_question/Q-0001-afd-dead-zone-optical-bw-target"
+             "purpose" -> "objective/purpose/PURPOSE"
+    """
+    obj_dir = vault_root / "objective"
+    if not obj_dir.exists():
+        return {}
+
+    id_map: dict[str, str] = {}
+
+    for subdir in sorted(obj_dir.iterdir()):
+        if not subdir.is_dir():
+            continue
+        node_type = subdir.name
+
+        for md_path in sorted(subdir.rglob("*.md")):
+            if md_path.name.startswith("_"):
+                continue
+            if md_path.stem in ("index", "hot"):
+                continue
+
+            try:
+                text = md_path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+
+            fm = _parse_fm(text)
+            node_id = fm.get("id", "").strip()
+            if node_type == "purpose":
+                canonical_id = "purpose"
+            else:
+                canonical_id = node_id
+
+            if not canonical_id:
+                continue
+
+            # relpath from vault_root, forward slashes, strip .md extension
+            relpath = str(md_path.relative_to(vault_root)).replace("\\", "/")
+            if relpath.endswith(".md"):
+                relpath = relpath[:-3]
+
+            id_map[canonical_id] = relpath
+
+    return id_map
+
+
 def relink(
     vault_root: Path,
     apply: bool = False,
@@ -727,12 +797,13 @@ def relink(
     """Add graph EDGES + provenance to every objective node.
 
     For each node file under objective/<type>/*.md (skipping _template*, index*, hot*):
-      1. Ensure aliases list contains the node id.
+      1. Clean up aliases: remove own-id alias if present; drop the key when empty.
+         Preserve any other pre-existing aliases.
       2. Set written_by (and handle generated_by migration).
-      3. (Re)generate the ## Links body section.
+      3. (Re)generate the ## Links body section using FULL path-qualified wikilinks.
 
     Returns a list of per-file change dicts:
-      {"path": str, "aliases_added": list, "written_by": str,
+      {"path": str, "aliases_cleaned": list, "written_by": str,
        "generated_by_removed": bool, "links_preview": str | None,
        "changed": bool}
 
@@ -742,6 +813,10 @@ def relink(
     obj_dir = vault_root / "objective"
     if not obj_dir.exists():
         return []
+
+    # Build the id->relpath map once for all nodes so _build_links_section can
+    # emit full path-qualified wikilinks.
+    id_relpath_map = _build_id_relpath_map(vault_root)
 
     results: list[dict] = []
 
@@ -781,15 +856,29 @@ def relink(
                 continue  # No id, skip.
 
             # -------------------------------------------------------------------
-            # 1. aliases
+            # 1. aliases -- remove own-id alias; preserve other aliases
             # -------------------------------------------------------------------
             aliases_raw = fm.get("aliases", "")
             existing_aliases = _parse_inline_list(aliases_raw) if aliases_raw else []
-            aliases_added: list[str] = []
-            if canonical_id not in existing_aliases:
-                existing_aliases.append(canonical_id)
-                aliases_added.append(canonical_id)
-            new_aliases = existing_aliases
+            # Remove exactly the own canonical_id from the aliases list.
+            cleaned_aliases = [a for a in existing_aliases if a != canonical_id]
+            aliases_cleaned: list[str] = (
+                [canonical_id] if len(cleaned_aliases) < len(existing_aliases) else []
+            )
+
+            # Determine what to write for the aliases key:
+            #   - no original aliases at all -> no update needed (don't add the key)
+            #   - had aliases but after cleaning the list is empty -> remove the key (None)
+            #   - had aliases and some remain after cleaning -> write the cleaned list
+            if not aliases_raw:
+                # Key was absent; do not add it.
+                aliases_update: object = "SKIP"
+            elif not cleaned_aliases:
+                # All aliases were just the own id; remove the key entirely.
+                aliases_update = None
+            else:
+                # Some other aliases remain.
+                aliases_update = cleaned_aliases
 
             # -------------------------------------------------------------------
             # 2. written_by + generated_by migration
@@ -814,7 +903,7 @@ def relink(
             # -------------------------------------------------------------------
             # 3. ## Links body section
             # -------------------------------------------------------------------
-            links_block = _build_links_section(node_type, fm, body)
+            links_block = _build_links_section(node_type, fm, body, id_relpath_map)
             links_preview = links_block
 
             # -------------------------------------------------------------------
@@ -822,9 +911,9 @@ def relink(
             # -------------------------------------------------------------------
             fm_updates: dict[str, object] = {}
 
-            # aliases
-            if aliases_added:
-                fm_updates["aliases"] = new_aliases
+            # aliases: only update if the key was present and needs changing
+            if aliases_update != "SKIP":
+                fm_updates["aliases"] = aliases_update  # None = remove, list = rewrite
 
             # written_by
             if current_written_by != new_written_by:
@@ -845,7 +934,7 @@ def relink(
 
             record: dict = {
                 "path": str(md_path.relative_to(vault_root)).replace("\\", "/"),
-                "aliases_added": aliases_added,
+                "aliases_cleaned": aliases_cleaned,
                 "written_by": new_written_by,
                 "generated_by_removed": remove_generated_by,
                 "links_preview": links_preview,
@@ -963,7 +1052,7 @@ def _verb_relink(vault_root: Path, args: argparse.Namespace) -> int:
             pass
         status = "CHANGED" if r["changed"] else "ok"
         aliases_str = (
-            f"  aliases_added: {r['aliases_added']}" if r["aliases_added"] else ""
+            f"  aliases_cleaned: {r['aliases_cleaned']}" if r["aliases_cleaned"] else ""
         )
         print(f"  [{status}] {r['path']}")
         print(f"    written_by: {r['written_by']}{aliases_str}")
@@ -1002,7 +1091,7 @@ def main(argv: list[str] | None = None) -> int:
     ni.add_argument("node_type", help="Node type: topic|research_question|decision|etc.")
     rl = sub.add_parser(
         "relink",
-        help="Add aliases + written_by + ## Links sections to objective nodes",
+        help="Add written_by + ## Links sections to objective nodes; clean up own-id aliases",
     )
     rl.add_argument(
         "--apply",

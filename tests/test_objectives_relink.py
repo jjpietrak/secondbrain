@@ -46,7 +46,7 @@ def make_relink_fixture(vault: Path) -> None:
     """Create one node of each relevant type for relink testing.
 
     Uses plain-id frontmatter fields exactly as the live vault does.
-    Does NOT pre-populate aliases or written_by (relink must add them).
+    Does NOT pre-populate aliases or written_by (relink must NOT add aliases).
     """
     obj_init.run_apply(vault)
 
@@ -255,10 +255,11 @@ def test_relink_dryrun_no_writes() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test (a): aliases contain the node id after apply
+# Test (a): relink does NOT add aliases to nodes that had none
 # ---------------------------------------------------------------------------
 
-def test_relink_aliases_contain_id() -> None:
+def test_relink_no_aliases_added() -> None:
+    """relink must NOT add an aliases key to nodes that did not already have one."""
     with tempfile.TemporaryDirectory() as td:
         vault = Path(td) / "vault"
         vault.mkdir()
@@ -266,37 +267,118 @@ def test_relink_aliases_contain_id() -> None:
 
         objectives.relink(vault, apply=True)
 
-        # purpose -> aliases: [purpose]
-        purpose_fm = _read_fm(vault / "objective/purpose/PURPOSE.md")
-        aliases = _read_inline_list(purpose_fm.get("aliases", ""))
-        assert "purpose" in aliases, f"purpose aliases: {aliases}"
+        for rel_path in (
+            "objective/purpose/PURPOSE.md",
+            "objective/topic/T-0001-test-topic.md",
+            "objective/research_question/Q-0001-test-rq.md",
+            "objective/direction/DIR-0001-test-dir.md",
+            "objective/research_question_proposal/QP-0001-test-prop.md",
+            "objective/decision/D-0001-test-decision.md",
+        ):
+            fm = _read_fm(vault / rel_path)
+            assert "aliases" not in fm, (
+                f"{rel_path}: relink must NOT add an aliases key, but got {fm.get('aliases')!r}"
+            )
 
-        # topic -> aliases: [T-0001]
-        topic_fm = _read_fm(vault / "objective/topic/T-0001-test-topic.md")
-        aliases = _read_inline_list(topic_fm.get("aliases", ""))
-        assert "T-0001" in aliases, f"T-0001 aliases: {aliases}"
+    print("PASS test_relink_no_aliases_added")
 
-        # research_question -> aliases: [Q-0001]
-        rq_fm = _read_fm(vault / "objective/research_question/Q-0001-test-rq.md")
-        aliases = _read_inline_list(rq_fm.get("aliases", ""))
-        assert "Q-0001" in aliases, f"Q-0001 aliases: {aliases}"
 
-        # direction -> aliases: [DIR-0001]
-        dir_fm = _read_fm(vault / "objective/direction/DIR-0001-test-dir.md")
-        aliases = _read_inline_list(dir_fm.get("aliases", ""))
-        assert "DIR-0001" in aliases, f"DIR-0001 aliases: {aliases}"
+# ---------------------------------------------------------------------------
+# Test (a2): node that starts with aliases:[<id>] has own-id alias removed
+# ---------------------------------------------------------------------------
 
-        # proposal -> aliases: [QP-0001]
-        qp_fm = _read_fm(vault / "objective/research_question_proposal/QP-0001-test-prop.md")
-        aliases = _read_inline_list(qp_fm.get("aliases", ""))
-        assert "QP-0001" in aliases, f"QP-0001 aliases: {aliases}"
+def test_relink_own_id_alias_removed() -> None:
+    """A node whose aliases list contains exactly its own id has that entry removed.
 
-        # decision -> aliases: [D-0001]
-        d_fm = _read_fm(vault / "objective/decision/D-0001-test-decision.md")
-        aliases = _read_inline_list(d_fm.get("aliases", ""))
-        assert "D-0001" in aliases, f"D-0001 aliases: {aliases}"
+    If the list becomes empty after removal, the aliases key is dropped entirely.
+    Any OTHER pre-existing aliases are preserved.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        vault = Path(td) / "vault"
+        vault.mkdir()
+        obj_init.run_apply(vault)
 
-    print("PASS test_relink_aliases_contain_id")
+        # Case 1: aliases = [T-0001] only -> key should be removed entirely.
+        _write(vault / "objective/topic/T-0001-only-self-alias.md", """\
+---
+type: topic
+id: T-0001
+created: 2026-06-21
+updated: 2026-06-21
+status: active
+aliases: [T-0001]
+related_questions: []
+---
+
+## For future Claude
+Node with only own-id alias.
+
+# Topic: Self-alias only
+""")
+
+        # Case 2: aliases = [T-0002, some-other-alias] -> T-0002 removed, other preserved.
+        _write(vault / "objective/topic/T-0002-mixed-aliases.md", """\
+---
+type: topic
+id: T-0002
+created: 2026-06-21
+updated: 2026-06-21
+status: active
+aliases: [T-0002, some-other-alias]
+related_questions: []
+---
+
+## For future Claude
+Node with mixed aliases.
+
+# Topic: Mixed aliases
+""")
+
+        # Case 3: aliases = [some-other-alias] (no own id) -> completely unchanged.
+        _write(vault / "objective/topic/T-0003-no-self-alias.md", """\
+---
+type: topic
+id: T-0003
+created: 2026-06-21
+updated: 2026-06-21
+status: active
+aliases: [some-other-alias]
+related_questions: []
+---
+
+## For future Claude
+Node with no own-id alias.
+
+# Topic: No self alias
+""")
+
+        objectives.relink(vault, apply=True)
+
+        # Case 1: aliases key must be gone.
+        fm1 = _read_fm(vault / "objective/topic/T-0001-only-self-alias.md")
+        assert "aliases" not in fm1, (
+            f"T-0001: aliases key should be removed when only own-id was present, "
+            f"got {fm1.get('aliases')!r}"
+        )
+
+        # Case 2: T-0002 removed; some-other-alias preserved.
+        fm2 = _read_fm(vault / "objective/topic/T-0002-mixed-aliases.md")
+        aliases2 = _read_inline_list(fm2.get("aliases", ""))
+        assert "T-0002" not in aliases2, (
+            f"T-0002: own-id alias should be removed, aliases={aliases2}"
+        )
+        assert "some-other-alias" in aliases2, (
+            f"T-0002: other alias 'some-other-alias' must be preserved, aliases={aliases2}"
+        )
+
+        # Case 3: aliases key unchanged (no own-id to remove).
+        fm3 = _read_fm(vault / "objective/topic/T-0003-no-self-alias.md")
+        aliases3 = _read_inline_list(fm3.get("aliases", ""))
+        assert "some-other-alias" in aliases3, (
+            f"T-0003: 'some-other-alias' must be preserved unchanged, aliases={aliases3}"
+        )
+
+    print("PASS test_relink_own_id_alias_removed")
 
 
 # ---------------------------------------------------------------------------
@@ -384,10 +466,11 @@ Do something.
 
 
 # ---------------------------------------------------------------------------
-# Test (c): ## Links section contains expected wikilinks per type
+# Test (c): ## Links section contains FULL path-qualified wikilinks
 # ---------------------------------------------------------------------------
 
-def test_relink_links_section_content() -> None:
+def test_relink_links_section_full_paths() -> None:
+    """The ## Links block must use full path-qualified wikilinks, not bare ids."""
     with tempfile.TemporaryDirectory() as td:
         vault = Path(td) / "vault"
         vault.mkdir()
@@ -401,49 +484,142 @@ def test_relink_links_section_content() -> None:
             "purpose must NOT get a Links section"
         )
 
-        # topic: part of PURPOSE + question links.
+        # topic: part of PURPOSE (full path) + question links (full paths).
         topic_body = _read_body(vault / "objective/topic/T-0001-test-topic.md")
-        assert "[[PURPOSE]]" in topic_body, "topic: missing [[PURPOSE]] link"
-        assert "[[Q-0001]]" in topic_body, "topic: missing [[Q-0001]] link"
-        assert "[[Q-0002]]" in topic_body, "topic: missing [[Q-0002]] link"
+        assert "[[objective/purpose/PURPOSE]]" in topic_body, (
+            "topic: missing full-path [[objective/purpose/PURPOSE]] link"
+        )
+        # bare [[PURPOSE]] must NOT appear (it must be the full path)
+        assert "[[PURPOSE]]" not in topic_body, (
+            "topic: bare [[PURPOSE]] must not appear; use full path"
+        )
+        # Q-0001 full path present
+        assert "[[objective/research_question/Q-0001-test-rq]]" in topic_body, (
+            "topic: missing full-path [[objective/research_question/Q-0001-test-rq]] link"
+        )
+        # bare [[Q-0001]] must not appear
+        assert "[[Q-0001]]" not in topic_body, (
+            "topic: bare [[Q-0001]] must not appear; use full path"
+        )
+        # Q-0002 is dangling (no fixture file) -> fallback bare [[Q-0002]] is acceptable
+        assert "Q-0002" in topic_body, "topic: Q-0002 reference missing entirely"
 
-        # research_question: primary topic + secondary topic.
+        # research_question: primary topic + secondary topic with full paths.
         rq_body = _read_body(vault / "objective/research_question/Q-0001-test-rq.md")
-        assert "[[T-0001]]" in rq_body, "rq: missing primary topic [[T-0001]]"
-        assert "[[T-0002]]" in rq_body, "rq: missing secondary topic [[T-0002]]"
+        assert "[[objective/topic/T-0001-test-topic]]" in rq_body, (
+            "rq: missing full-path [[objective/topic/T-0001-test-topic]] for primary topic"
+        )
+        assert "[[T-0001]]" not in rq_body, (
+            "rq: bare [[T-0001]] must not appear; use full path"
+        )
+        # T-0002 is dangling -> fallback bare [[T-0002]]
+        assert "T-0002" in rq_body, "rq: T-0002 secondary topic reference missing"
 
         # direction: serves Q-0001, topics T-0001 + T-0002.
         dir_body = _read_body(vault / "objective/direction/DIR-0001-test-dir.md")
-        assert "[[Q-0001]]" in dir_body, "direction: missing [[Q-0001]] serves link"
-        assert "[[T-0001]]" in dir_body, "direction: missing [[T-0001]] topic link"
-        assert "[[T-0002]]" in dir_body, "direction: missing [[T-0002]] topic link"
+        assert "[[objective/research_question/Q-0001-test-rq]]" in dir_body, (
+            "direction: missing full-path serves link for Q-0001"
+        )
+        assert "[[Q-0001]]" not in dir_body, (
+            "direction: bare [[Q-0001]] must not appear; use full path"
+        )
+        assert "[[objective/topic/T-0001-test-topic]]" in dir_body, (
+            "direction: missing full-path [[objective/topic/T-0001-test-topic]]"
+        )
+        assert "[[T-0001]]" not in dir_body, (
+            "direction: bare [[T-0001]] must not appear; use full path"
+        )
+        # T-0002 dangling -> fallback bare [[T-0002]]
+        assert "T-0002" in dir_body, "direction: T-0002 topic reference missing"
         assert "- serves:" in dir_body, "direction: missing 'serves' relation label"
         assert "- topic:" in dir_body, "direction: missing 'topic' relation label"
 
-        # research_question_proposal: Q-0001, Q-0002, T-0003 from from_gap; T-0001 from body.
+        # research_question_proposal: ids from from_gap + body
         qp_body = _read_body(vault / "objective/research_question_proposal/QP-0001-test-prop.md")
-        assert "[[Q-0001]]" in qp_body, "QP-0001: missing [[Q-0001]]"
-        assert "[[Q-0002]]" in qp_body, "QP-0001: missing [[Q-0002]]"
-        assert "[[T-0003]]" in qp_body, "QP-0001: missing [[T-0003]] from from_gap"
-        assert "[[T-0001]]" in qp_body, "QP-0001: missing [[T-0001]] from body"
+        # Q-0001 has a fixture file -> full path
+        assert "[[objective/research_question/Q-0001-test-rq]]" in qp_body, (
+            "QP-0001: missing full-path Q-0001 link"
+        )
+        # Q-0002 dangling -> fallback bare
+        assert "Q-0002" in qp_body, "QP-0001: Q-0002 reference missing"
+        # T-0003 dangling -> fallback bare [[T-0003]]
+        assert "T-0003" in qp_body, "QP-0001: missing T-0003 from from_gap"
+        # T-0001 from body -> full path
+        assert "[[objective/topic/T-0001-test-topic]]" in qp_body, (
+            "QP-0001: missing full-path T-0001 link from body"
+        )
 
-        # decision scope=all -> governs PURPOSE.
+        # decision scope=all -> governs PURPOSE full path.
         d_body = _read_body(vault / "objective/decision/D-0001-test-decision.md")
-        assert "[[PURPOSE]]" in d_body, "D-0001: missing [[PURPOSE]] governs link"
+        assert "[[objective/purpose/PURPOSE]]" in d_body, (
+            "D-0001: missing full-path [[objective/purpose/PURPOSE]] governs link"
+        )
+        assert "[[PURPOSE]]" not in d_body, (
+            "D-0001: bare [[PURPOSE]] must not appear; use full path"
+        )
         assert "- governs:" in d_body, "D-0001: missing 'governs' relation"
 
-        # decision scope=Q-0001 -> governs Q-0001.
+        # decision scope=Q-0001 -> governs Q-0001 full path.
         d2_body = _read_body(vault / "objective/decision/D-0002-scoped-decision.md")
-        assert "[[Q-0001]]" in d2_body, "D-0002: missing [[Q-0001]] governs link"
+        assert "[[objective/research_question/Q-0001-test-rq]]" in d2_body, (
+            "D-0002: missing full-path governs link for Q-0001"
+        )
         assert "[[PURPOSE]]" not in d2_body, (
             "D-0002 scope=Q-0001 must NOT link PURPOSE"
         )
+        assert "[[objective/purpose/PURPOSE]]" not in d2_body, (
+            "D-0002 scope=Q-0001 must NOT link PURPOSE (full path either)"
+        )
 
-    print("PASS test_relink_links_section_content")
+    print("PASS test_relink_links_section_full_paths")
 
 
 # ---------------------------------------------------------------------------
-# Test (d): plain-id frontmatter fields are UNCHANGED
+# Test (d): idempotency -- second run writes nothing
+# ---------------------------------------------------------------------------
+
+def test_relink_idempotent() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        vault = Path(td) / "vault"
+        vault.mkdir()
+        make_relink_fixture(vault)
+
+        # First apply.
+        results1 = objectives.relink(vault, apply=True)
+        changed1 = [r for r in results1 if r["changed"]]
+        assert changed1, "first relink should change at least some files"
+
+        # Snapshot content after first run.
+        content_after_first: dict[str, str] = {}
+        for r in results1:
+            path = vault / r["path"]
+            if path.exists():
+                content_after_first[r["path"]] = path.read_text(encoding="utf-8")
+
+        # Second apply.
+        results2 = objectives.relink(vault, apply=True)
+        changed2 = [r for r in results2 if r["changed"]]
+
+        # No file should report changed on second run.
+        assert not changed2, (
+            f"relink is not idempotent: these files changed on 2nd run: "
+            f"{[r['path'] for r in changed2]}"
+        )
+
+        # File content must be identical.
+        for r in results2:
+            path = vault / r["path"]
+            if path.exists() and r["path"] in content_after_first:
+                current = path.read_text(encoding="utf-8")
+                assert current == content_after_first[r["path"]], (
+                    f"file content changed on 2nd run: {r['path']}"
+                )
+
+    print("PASS test_relink_idempotent")
+
+
+# ---------------------------------------------------------------------------
+# Test (e): plain-id frontmatter fields are UNCHANGED
 # ---------------------------------------------------------------------------
 
 def test_relink_plain_id_fields_unchanged() -> None:
@@ -494,51 +670,45 @@ def test_relink_plain_id_fields_unchanged() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test (e): idempotency -- second run writes nothing
+# Test (f): written_by is set per type (USER vs agent)
 # ---------------------------------------------------------------------------
 
-def test_relink_idempotent() -> None:
+def test_relink_written_by_set() -> None:
+    """written_by must be USER for user-authored types and agent name for agent types."""
     with tempfile.TemporaryDirectory() as td:
         vault = Path(td) / "vault"
         vault.mkdir()
         make_relink_fixture(vault)
 
-        # First apply.
-        results1 = objectives.relink(vault, apply=True)
-        changed1 = [r for r in results1 if r["changed"]]
-        assert changed1, "first relink should change at least some files"
+        objectives.relink(vault, apply=True)
 
-        # Snapshot content after first run.
-        content_after_first: dict[str, str] = {}
-        for r in results1:
-            path = vault / r["path"]
-            if path.exists():
-                content_after_first[r["path"]] = path.read_text(encoding="utf-8")
+        # USER types.
+        for path, node_id in [
+            (vault / "objective/purpose/PURPOSE.md", "purpose"),
+            (vault / "objective/topic/T-0001-test-topic.md", "T-0001"),
+            (vault / "objective/research_question/Q-0001-test-rq.md", "Q-0001"),
+            (vault / "objective/decision/D-0001-test-decision.md", "D-0001"),
+        ]:
+            fm = _read_fm(path)
+            assert fm.get("written_by") == "USER", (
+                f"{node_id}: expected written_by=USER, got {fm.get('written_by')!r}"
+            )
 
-        # Second apply.
-        results2 = objectives.relink(vault, apply=True)
-        changed2 = [r for r in results2 if r["changed"]]
-
-        # No file should report changed on second run.
-        assert not changed2, (
-            f"relink is not idempotent: these files changed on 2nd run: "
-            f"{[r['path'] for r in changed2]}"
+        # Agent-authored: direction + proposal -> written_by from generated_by.
+        dir_fm = _read_fm(vault / "objective/direction/DIR-0001-test-dir.md")
+        assert dir_fm.get("written_by") == "research", (
+            f"DIR-0001 written_by: expected 'research', got {dir_fm.get('written_by')!r}"
+        )
+        qp_fm = _read_fm(vault / "objective/research_question_proposal/QP-0001-test-prop.md")
+        assert qp_fm.get("written_by") == "research", (
+            f"QP-0001 written_by: expected 'research', got {qp_fm.get('written_by')!r}"
         )
 
-        # File content must be identical.
-        for r in results2:
-            path = vault / r["path"]
-            if path.exists() and r["path"] in content_after_first:
-                current = path.read_text(encoding="utf-8")
-                assert current == content_after_first[r["path"]], (
-                    f"file content changed on 2nd run: {r['path']}"
-                )
-
-    print("PASS test_relink_idempotent")
+    print("PASS test_relink_written_by_set")
 
 
 # ---------------------------------------------------------------------------
-# Test (f): purpose gets no Links section
+# Test: purpose gets no Links section
 # ---------------------------------------------------------------------------
 
 def test_relink_purpose_no_links_section() -> None:
@@ -561,16 +731,17 @@ def test_relink_purpose_no_links_section() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test: existing aliases are merged, not duplicated
+# Test: existing OTHER aliases are preserved, not dropped
 # ---------------------------------------------------------------------------
 
-def test_relink_aliases_no_duplicate() -> None:
+def test_relink_other_aliases_preserved() -> None:
+    """Aliases that are NOT the node's own id must survive relink."""
     with tempfile.TemporaryDirectory() as td:
         vault = Path(td) / "vault"
         vault.mkdir()
         obj_init.run_apply(vault)
 
-        # Node with an alias already set.
+        # Node with an alias already set to own id + an extra alias.
         _write(vault / "objective/topic/T-0001-pre-aliased.md", """\
 ---
 type: topic
@@ -592,15 +763,16 @@ Pre-aliased topic.
 
         fm = _read_fm(vault / "objective/topic/T-0001-pre-aliased.md")
         aliases = _read_inline_list(fm.get("aliases", ""))
-        assert aliases.count("T-0001") == 1, (
-            f"T-0001 alias duplicated: {aliases}"
+        # Own-id T-0001 must be removed.
+        assert "T-0001" not in aliases, (
+            f"T-0001 own-id alias should have been removed, aliases={aliases}"
         )
-        # The other existing alias must be preserved.
+        # Other alias must be preserved.
         assert "some-other-alias" in aliases, (
             f"existing alias 'some-other-alias' was lost: {aliases}"
         )
 
-    print("PASS test_relink_aliases_no_duplicate")
+    print("PASS test_relink_other_aliases_preserved")
 
 
 # ---------------------------------------------------------------------------
@@ -625,10 +797,10 @@ def test_relink_cli_dryrun() -> None:
         assert "DRY-RUN" in output, "dry-run output must say DRY-RUN"
         assert "dry-run: pass --apply" in output, "dry-run hint missing"
 
-        # Files must not have been written (aliases still absent).
+        # Files must not have been written (written_by still absent, no links section).
         topic_fm = _read_fm(vault / "objective/topic/T-0001-test-topic.md")
-        assert "aliases" not in topic_fm, (
-            "dry-run must not write aliases to topic file"
+        assert "written_by" not in topic_fm, (
+            "dry-run must not write written_by to topic file"
         )
 
     print("PASS test_relink_cli_dryrun")
@@ -655,10 +827,20 @@ def test_relink_cli_apply() -> None:
         output = buf.getvalue()
         assert "APPLY" in output, "apply output must say APPLY"
 
-        # Aliases now present.
+        # written_by now present; aliases NOT added.
         topic_fm = _read_fm(vault / "objective/topic/T-0001-test-topic.md")
-        aliases = _read_inline_list(topic_fm.get("aliases", ""))
-        assert "T-0001" in aliases, f"after --apply, T-0001 alias missing: {aliases}"
+        assert topic_fm.get("written_by") == "USER", (
+            f"after --apply, T-0001 written_by should be USER, got {topic_fm.get('written_by')!r}"
+        )
+        assert "aliases" not in topic_fm, (
+            f"after --apply, aliases must NOT be added to topic, got {topic_fm.get('aliases')!r}"
+        )
+
+        # Links section is present and uses full paths.
+        topic_body = _read_body(vault / "objective/topic/T-0001-test-topic.md")
+        assert "[[objective/purpose/PURPOSE]]" in topic_body, (
+            "after --apply, topic links must contain full-path PURPOSE"
+        )
 
     print("PASS test_relink_cli_apply")
 
@@ -721,14 +903,16 @@ Some content here that must not be disrupted.
 
 def _run_all() -> int:
     test_relink_dryrun_no_writes()
-    test_relink_aliases_contain_id()
+    test_relink_no_aliases_added()
+    test_relink_own_id_alias_removed()
     test_relink_written_by_per_type()
     test_relink_written_by_agent_todo_default()
-    test_relink_links_section_content()
-    test_relink_plain_id_fields_unchanged()
+    test_relink_links_section_full_paths()
     test_relink_idempotent()
+    test_relink_plain_id_fields_unchanged()
+    test_relink_written_by_set()
     test_relink_purpose_no_links_section()
-    test_relink_aliases_no_duplicate()
+    test_relink_other_aliases_preserved()
     test_relink_cli_dryrun()
     test_relink_cli_apply()
     test_relink_links_placed_after_ffc()
