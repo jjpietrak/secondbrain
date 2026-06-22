@@ -271,6 +271,17 @@ def _harvest_target(
     candidates: list[dict] = []
     seen_engines: set[str] = set()  # avoid duplicate forum calls per target
 
+    # Dedup harvest calls within this target: track (engine, key) pairs already
+    # executed.  key = query string for query_papers/query_forum, feed URL for
+    # poll_rss, repo URL for poll_github_releases.
+    # Example: arxiv_cs_ar / arxiv_cs_dc / arxiv_cs_lg all collapse to
+    # engine="arxiv", so 3 routed sources + 5 seed queries -> 5 unique arXiv
+    # calls instead of 15.
+    # NOTE (future): passing the arXiv CATEGORY (cs.AR / cs.DC / cs.LG) as a
+    # query parameter would make those meaningfully distinct calls; for now they
+    # are generic arxiv queries so deduping is strictly correct.
+    _executed_calls: set[tuple[str, str]] = set()
+
     # For trace: track each engine call
     _trace_queries: list[dict] = []
 
@@ -286,8 +297,13 @@ def _harvest_target(
         c["origin_ids"] = list(origin_ids)
         return c
 
-    # -- safe call wrapper with trace recording --
+    # -- safe call wrapper with trace recording and per-target dedup --
     def _call(fn, engine_label: str, query_str: str, *args, **kwargs) -> list[dict]:
+        call_key = (engine_label, query_str)
+        if call_key in _executed_calls:
+            # Duplicate (engine, key) within this target -- skip silently.
+            return []
+        _executed_calls.add(call_key)
         try:
             results = fn(*args, **kwargs) or []
             if trace is not None:

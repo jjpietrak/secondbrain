@@ -1497,3 +1497,219 @@ class TestDecisionTrace:
         assert len(error_entries) >= 1, (
             "Expected at least one error-marked query in harvest trace records"
         )
+
+
+# ===========================================================================
+# Tests: duplicate-harvest-call dedup within a target
+# ===========================================================================
+
+# Three arxiv-category registry sources that all map to engine="arxiv".
+# In the old code, 3 sources x 2 queries = 6 query_papers calls.
+# With the dedup fix, (engine, query) uniqueness -> exactly 2 calls.
+_THREE_ARXIV_SOURCES_REG = {
+    "sources": [
+        {
+            "id": "arxiv_cs_ar",
+            "name": "arXiv cs.AR",
+            "url": "https://arxiv.org/list/cs.AR/recent",
+            "rss_feed": "https://arxiv.org/list/cs.AR/rss",
+            "api_endpoint": "https://api.arxiv.org/query",
+            "category": "preprint_repository",
+            "focus": "Hardware architectures",
+            "relevance": 5,
+            "priority": "critical",
+        },
+        {
+            "id": "arxiv_cs_dc",
+            "name": "arXiv cs.DC",
+            "url": "https://arxiv.org/list/cs.DC/recent",
+            "rss_feed": "https://arxiv.org/list/cs.DC/rss",
+            "api_endpoint": "https://api.arxiv.org/query",
+            "category": "preprint_repository",
+            "focus": "Distributed computing",
+            "relevance": 5,
+            "priority": "critical",
+        },
+        {
+            "id": "arxiv_cs_lg",
+            "name": "arXiv cs.LG",
+            "url": "https://arxiv.org/list/cs.LG/recent",
+            "rss_feed": "https://arxiv.org/list/cs.LG/rss",
+            "api_endpoint": "https://api.arxiv.org/query",
+            "category": "preprint_repository",
+            "focus": "Machine learning",
+            "relevance": 5,
+            "priority": "critical",
+        },
+    ]
+}
+
+
+class TestHarvestCallDedup:
+    """Duplicate (engine, query) pairs within a single target fire ONCE, not N times.
+
+    Scenario: 3 arxiv-category registry sources (cs.AR, cs.DC, cs.LG) all collapse
+    to engine="arxiv" + same query string.  With 2 seed queries that gives 2 unique
+    arXiv calls, not 3 x 2 = 6.
+    """
+
+    def _make_three_arxiv_registry(self) -> dict:
+        return {
+            "paper-publisher": _THREE_ARXIV_SOURCES_REG,
+            "blog-newsfeed": {"sources": []},
+            "github-repos": {"repositories": []},
+        }
+
+    def test_three_arxiv_sources_two_queries_fires_exactly_two_calls(self):
+        """3 arxiv registry sources + 2 seed queries -> exactly 2 query_papers calls."""
+        registry = self._make_three_arxiv_registry()
+        target = {
+            "target_id": "GAP-01",
+            "lane": "gap",
+            "origin_ids": ["GAP-01"],
+            "queries": ["disaggregated LLM inference", "prefill decode GPU scheduling"],
+            "fillable_by": ["arxiv"],
+            "routed_sources": ["arxiv_cs_ar", "arxiv_cs_dc", "arxiv_cs_lg"],
+        }
+
+        call_log: list[tuple] = []
+
+        class _SpyHarvest:
+            def query_papers(self, q, *, engine, limit):
+                call_log.append((engine, q))
+                return list(CANNED_ARXIV)
+
+            def poll_rss(self, *a, **kw):
+                return []
+
+            def query_forum(self, *a, **kw):
+                return []
+
+            def poll_github_releases(self, *a, **kw):
+                return []
+
+        spy = _SpyHarvest()
+        web_crawl._harvest_target(
+            target, registry, _PURPOSE_TEXT, per_source_limit=5, _harvest_mod=spy
+        )
+
+        assert len(call_log) == 2, (
+            f"Expected exactly 2 query_papers calls (one per unique query), "
+            f"got {len(call_log)}: {call_log}"
+        )
+        assert call_log[0] == ("arxiv", "disaggregated LLM inference")
+        assert call_log[1] == ("arxiv", "prefill decode GPU scheduling")
+
+    def test_trace_has_no_duplicate_engine_query_rows(self):
+        """The harvest/target trace record has no duplicate (engine, query) entries."""
+        from web_decision import DecisionTrace
+
+        registry = self._make_three_arxiv_registry()
+        target = {
+            "target_id": "GAP-01",
+            "lane": "gap",
+            "origin_ids": ["GAP-01"],
+            "queries": ["disaggregated LLM inference", "prefill decode GPU scheduling"],
+            "fillable_by": ["arxiv"],
+            "routed_sources": ["arxiv_cs_ar", "arxiv_cs_dc", "arxiv_cs_lg"],
+        }
+
+        class _NopHarvest:
+            def query_papers(self, q, *, engine, limit):
+                return list(CANNED_ARXIV)
+
+            def poll_rss(self, *a, **kw):
+                return []
+
+            def query_forum(self, *a, **kw):
+                return []
+
+            def poll_github_releases(self, *a, **kw):
+                return []
+
+        trace = DecisionTrace()
+        web_crawl._harvest_target(
+            target, registry, _PURPOSE_TEXT,
+            per_source_limit=5, _harvest_mod=_NopHarvest(), trace=trace
+        )
+
+        harvest_recs = trace.find("harvest", "target")
+        assert len(harvest_recs) == 1
+        queries_in_trace = harvest_recs[0]["data"]["queries"]
+
+        # Build (engine, query) pairs from the trace and check for duplicates.
+        pairs = [(q["engine"], q["query"]) for q in queries_in_trace]
+        assert len(pairs) == len(set(pairs)), (
+            f"Duplicate (engine, query) rows in trace: {pairs}"
+        )
+        # Exactly 2 unique calls recorded.
+        assert len(pairs) == 2, (
+            f"Expected 2 trace entries, got {len(pairs)}: {pairs}"
+        )
+
+    def test_distinct_feed_urls_are_not_deduped(self):
+        """Two different RSS feed URLs for the same lane are two distinct calls."""
+        registry = {
+            "paper-publisher": {"sources": []},
+            "blog-newsfeed": {
+                "sources": [
+                    {
+                        "id": "feed_a",
+                        "name": "Feed A",
+                        "url": "https://feed-a.example.com/",
+                        "rss_feed": "https://feed-a.example.com/rss",
+                        "category": "vendor_blogs",
+                        "focus": "topic",
+                        "relevance": 5,
+                        "priority": "critical",
+                    },
+                    {
+                        "id": "feed_b",
+                        "name": "Feed B",
+                        "url": "https://feed-b.example.com/",
+                        "rss_feed": "https://feed-b.example.com/rss",
+                        "category": "vendor_blogs",
+                        "focus": "topic",
+                        "relevance": 5,
+                        "priority": "critical",
+                    },
+                ]
+            },
+            "github-repos": {"repositories": []},
+        }
+        target = {
+            "target_id": "news",
+            "lane": "news",
+            "origin_ids": ["news"],
+            "queries": [],
+            "fillable_by": ["web"],
+            "routed_sources": ["feed_a", "feed_b"],
+        }
+
+        rss_call_log: list[str] = []
+
+        class _SpyHarvest:
+            def poll_rss(self, feed_url, *, source_id, limit):
+                rss_call_log.append(feed_url)
+                return list(CANNED_RSS)
+
+            def query_papers(self, *a, **kw):
+                return []
+
+            def query_forum(self, *a, **kw):
+                return []
+
+            def poll_github_releases(self, *a, **kw):
+                return []
+
+        web_crawl._harvest_target(
+            target, registry, _PURPOSE_TEXT, per_source_limit=5,
+            _harvest_mod=_SpyHarvest()
+        )
+
+        # Two DIFFERENT feed URLs -> two RSS calls (no dedup across distinct URLs)
+        assert len(rss_call_log) == 2, (
+            f"Expected 2 distinct poll_rss calls for different feed URLs, "
+            f"got {len(rss_call_log)}: {rss_call_log}"
+        )
+        assert rss_call_log[0] != rss_call_log[1]

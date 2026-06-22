@@ -85,6 +85,25 @@ forwards to the ranker; `--limit N` bounds per-source harvest.
    `meta/nightly_report/<date>.md` (title, source_id, lane, origin, score, url, snippet). The
    enqueue/dedup key is the per-ITEM identity (arXiv id / DOI / url), NOT the feed `source_id`.
 
+## Explain / debug (decision trace)
+
+Every run records a full decision trace internally (merge scoring, routing, harvest
+queries, rank scores, selection). Access it via:
+
+- `web_crawl.py --explain` -- prints the rendered trace to stderr after the run
+  (stdout is the normal summary/JSON). Combine with `--dry-run` to inspect without
+  writing anything.
+- `web_crawl.py --trace-out <file.md>` -- exports the trace to a markdown file;
+  works with `--dry-run`.
+- `web_decision.py plan --explain` / `--trace-out <file.md>` -- shows the planning
+  trace (merge scoring + routing) without harvesting; fast pre-flight check.
+- Every `meta/nightly_report/<date>.md` embeds a `## Decision trace` section (merge
+  scoring + selection tables) so each live crawl is self-explaining in the vault.
+
+NOTE: arXiv-category registry sources (cs.AR, cs.DC, cs.LG, ...) all map to the same
+`engine="arxiv"` and are deduplicated per (engine, query) within each target. A future
+enhancement could pass the arXiv category so those become meaningfully distinct calls.
+
 ## Approval flow (user-driven)
 
 The user reviews `meta/nightly_report/<date>.md` and picks **0-5**:
