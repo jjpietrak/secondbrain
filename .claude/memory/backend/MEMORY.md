@@ -32,6 +32,12 @@ current; never store fact bodies here.
   664ef1d): vault-push commits+pushes the vault repo (formalizes obsidian-sync); vault-health
   generalizes vault_health.py to all areas (--area, per-type FM, cross-area links). Docs updated.
   319 tests green. written_by/edge-orphan checks deferred to land WITH Phase 2.5.
+- [phase3a-web.md](phase3a-web.md) — Phase 3A (web agent, FREE) COMPLETE 2026-06-22 (954dbc1/a548a75/
+  b1948e3): web agent + RBAC + .claude/web config/registry + web_harvest (Tier-0) + web_decision
+  (gaps+dirs -> one-to-one merge -> lanes -> typed budget 3 gap/1 research/1 news + spillover) +
+  web_rank + web_crawl orchestrator + web-scrape/web-rank skills. Live $0 demo passed (real arXiv+RSS
+  -> 5 waiting_approval + digest; reject->sticky). 625 tests. Quality: enable `nomic-embed-text` for
+  semantic rerank (RSS noisy on fallback). 3B paid + P4 nightly/agent-learn deferred. Restart to register.
 
 ## Architecture
 - [retrieval-pipeline.md](retrieval-pipeline.md) — claude-obsidian hybrid retrieval
