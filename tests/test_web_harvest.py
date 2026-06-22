@@ -653,6 +653,118 @@ class TestDedupSeen:
 
 
 # ===========================================================================
+# candidate_ident
+# ===========================================================================
+
+class TestCandidateIdent:
+    """candidate_ident returns per-item identity, NOT the feed-level source_id."""
+
+    def test_two_rss_candidates_same_source_id_different_url_produce_different_idents(self):
+        """Core regression: two posts from the same feed must have distinct idents."""
+        wh = _import_web_harvest()
+        c1 = {
+            "title": "HuggingFace Post 1",
+            "url": "https://huggingface.co/blog/post-one",
+            "source_id": "huggingface_blog",
+            "id_type": "url",
+            "published": "2026-06-01",
+            "snippet": "snippet 1",
+            "engine": "rss",
+        }
+        c2 = {
+            "title": "HuggingFace Post 2",
+            "url": "https://huggingface.co/blog/post-two",
+            "source_id": "huggingface_blog",
+            "id_type": "url",
+            "published": "2026-06-02",
+            "snippet": "snippet 2",
+            "engine": "rss",
+        }
+        ident1 = wh.candidate_ident(c1)
+        ident2 = wh.candidate_ident(c2)
+        assert ident1 != ident2, (
+            "Two posts from the same feed but different URLs must have different idents"
+        )
+        # Idents are the per-item URLs, not the shared source_id
+        assert ident1 == "https://huggingface.co/blog/post-one"
+        assert ident2 == "https://huggingface.co/blog/post-two"
+        # source_id is still the feed registry id (unchanged)
+        assert c1["source_id"] == "huggingface_blog"
+        assert c2["source_id"] == "huggingface_blog"
+
+    def test_arxiv_source_id_returned_directly(self):
+        """arxiv: prefixed source_id is already per-item; return it unchanged."""
+        wh = _import_web_harvest()
+        c = {
+            "title": "Some Paper",
+            "url": "https://arxiv.org/abs/2606.08635",
+            "source_id": "arxiv:2606.08635v1",
+            "id_type": "arxiv",
+            "published": "2026-06-01",
+            "snippet": "abstract",
+            "engine": "arxiv",
+        }
+        assert wh.candidate_ident(c) == "arxiv:2606.08635v1"
+
+    def test_doi_source_id_returned_directly(self):
+        wh = _import_web_harvest()
+        c = {
+            "title": "A Paper",
+            "url": "https://doi.org/10.1234/test",
+            "source_id": "doi:10.1234/test",
+            "id_type": "doi",
+            "published": "2026-06-01",
+            "snippet": "",
+            "engine": "crossref",
+        }
+        assert wh.candidate_ident(c) == "doi:10.1234/test"
+
+    def test_rss_url_trailing_slash_stripped(self):
+        """Trailing slashes on URLs are normalised away."""
+        wh = _import_web_harvest()
+        c = {
+            "title": "Some Blog Post",
+            "url": "https://example.com/post/",
+            "source_id": "some_feed",
+            "id_type": "url",
+            "published": "2026-06-01",
+            "snippet": "",
+            "engine": "rss",
+        }
+        assert wh.candidate_ident(c) == "https://example.com/post"
+
+    def test_github_uses_html_url_not_repo_source_id(self):
+        """GitHub candidates: ident is the per-release html_url, not owner/repo."""
+        wh = _import_web_harvest()
+        c = {
+            "title": "vllm: v0.9.0",
+            "url": "https://github.com/vllm-project/vllm/releases/tag/v0.9.0",
+            "source_id": "vllm-project/vllm",
+            "id_type": "github",
+            "published": "2026-06-01",
+            "snippet": "",
+            "engine": "github",
+        }
+        ident = wh.candidate_ident(c)
+        assert ident == "https://github.com/vllm-project/vllm/releases/tag/v0.9.0"
+        assert ident != "vllm-project/vllm"
+
+    def test_fallback_to_source_id_when_url_empty(self):
+        """When url is empty, fall back to source_id."""
+        wh = _import_web_harvest()
+        c = {
+            "title": "No URL",
+            "url": "",
+            "source_id": "some_fallback_id",
+            "id_type": "url",
+            "published": "",
+            "snippet": "",
+            "engine": "rss",
+        }
+        assert wh.candidate_ident(c) == "some_fallback_id"
+
+
+# ===========================================================================
 # _parse_repo_url (internal helper, smoke tests)
 # ===========================================================================
 

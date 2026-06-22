@@ -909,11 +909,14 @@ class TestSelectCandidates:
         assert all(c["source_id"] != "arxiv:9999.9999" for c in result)
 
     def test_ingest_dedup_rejected_sticky(self):
-        # rejected = sticky, should also be dropped
+        # rejected = sticky, should also be dropped.
+        # The ingest row id is the candidate_ident (per-item URL), not source_id.
         pool = [_make_candidate("c3", "gap", 9, source_id="url:https://example.com/c3")]
-        ingest_rows = [{"id": "url:https://example.com/c3", "status": "rejected", "url": ""}]
+        # candidate_ident returns the url ("https://example.com/c3"), so the row
+        # id must match that per-item ident for the dedup to fire.
+        ingest_rows = [{"id": "https://example.com/c3", "status": "rejected", "url": ""}]
         result = select_candidates(pool, CONFIG_FIXTURE, ingest_rows=ingest_rows)
-        assert all(c["source_id"] != "url:https://example.com/c3" for c in result)
+        assert all(c.get("url", "").rstrip("/") != "https://example.com/c3" for c in result)
 
     def test_ingest_dedup_by_url(self):
         pool = [_make_candidate("c4", "gap", 9, url="https://example.com/paper")]
@@ -953,6 +956,86 @@ class TestSelectCandidates:
         pool = [_make_candidate("c1", "gap", 9)]
         result = select_candidates(pool, CONFIG_FIXTURE, ingest_rows=None)
         assert len(result) == 1
+
+    # ------------------------------------------------------------------
+    # New: intra-pool dedup via candidate_ident
+    # ------------------------------------------------------------------
+
+    def test_intra_pool_dedup_collapses_same_ident_keeps_higher_score(self):
+        """Two candidates with the same candidate_ident -> only the higher-score one survives."""
+        # Both point to the same URL (same per-item identity)
+        url = "https://arxiv.org/abs/2401.12345"
+        c_low = {
+            "id": "dup_low",
+            "source_id": "arxiv:2401.12345",
+            "url": url,
+            "title": "Paper (low score copy)",
+            "lane": "gap",
+            "score": 3.0,
+            "id_type": "arxiv",
+        }
+        c_high = {
+            "id": "dup_high",
+            "source_id": "arxiv:2401.12345",
+            "url": url,
+            "title": "Paper (high score copy)",
+            "lane": "gap",
+            "score": 9.0,
+            "id_type": "arxiv",
+        }
+        config = dict(CONFIG_FIXTURE)
+        config["lanes"] = {"gap": {"quota": 3}, "research": {"quota": 0}, "news": {"quota": 0}}
+        config["new_sources_total"] = 3
+        result = select_candidates([c_low, c_high], config)
+        # Must collapse to exactly 1 candidate
+        assert len(result) == 1
+        assert result[0]["score"] == 9.0
+
+    def test_ingest_dedup_by_candidate_ident_not_source_id(self):
+        """A candidate is dropped when its candidate_ident matches an ingest row's id
+        (the new per-item key), even if source_id differs from the row id."""
+        # RSS candidate: source_id is the feed id, url is per-item
+        c = {
+            "id": "blog_post",
+            "source_id": "nvidia_developer_blog",  # feed-level id
+            "url": "https://developer.nvidia.com/blog/some-post",
+            "title": "Some post",
+            "lane": "news",
+            "score": 0.7,
+            "id_type": "url",
+        }
+        # Ingest row keyed by candidate_ident (the per-item URL)
+        ingest_rows = [
+            {"id": "https://developer.nvidia.com/blog/some-post", "status": "ingested", "url": ""}
+        ]
+        config = dict(CONFIG_FIXTURE)
+        config["lanes"] = {"gap": {"quota": 0}, "research": {"quota": 0}, "news": {"quota": 1}}
+        config["new_sources_total"] = 1
+        result = select_candidates([c], config, ingest_rows=ingest_rows)
+        assert result == [], "Candidate whose per-item URL is ingested must be dropped"
+
+    def test_same_feed_different_url_rss_candidates_both_retained(self):
+        """Two RSS posts from the same feed (same source_id) but different URLs must
+        BOTH survive intra-pool dedup (they are distinct per-item identities)."""
+        base = {
+            "id_type": "url",
+            "published": "2026-06-01",
+            "snippet": "snippet",
+            "engine": "rss",
+        }
+        c1 = dict(base, id="hf_1", source_id="huggingface_blog",
+                   url="https://huggingface.co/blog/post-alpha",
+                   title="HF Post Alpha", lane="news", score=0.8)
+        c2 = dict(base, id="hf_2", source_id="huggingface_blog",
+                   url="https://huggingface.co/blog/post-beta",
+                   title="HF Post Beta", lane="news", score=0.7)
+        config = dict(CONFIG_FIXTURE)
+        config["lanes"] = {"gap": {"quota": 0}, "research": {"quota": 0}, "news": {"quota": 2}}
+        config["new_sources_total"] = 2
+        result = select_candidates([c1, c2], config)
+        assert len(result) == 2, (
+            "Two posts from the same feed with different URLs must both be retained"
+        )
 
 
 # ---------------------------------------------------------------------------

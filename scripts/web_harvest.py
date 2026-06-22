@@ -448,6 +448,30 @@ def poll_github_releases(
 
 
 # ---------------------------------------------------------------------------
+# candidate_ident -- stable PER-ITEM identity for dedup + enqueue
+# ---------------------------------------------------------------------------
+
+
+def candidate_ident(cand: dict) -> str:
+    """Stable per-ITEM identity for dedup + enqueue (NOT the feed-level source_id).
+
+    Rules:
+    - arxiv / doi source_ids are already globally unique per item -> return them.
+    - For everything else (RSS, GitHub, forum) use the per-item URL (stripped of
+      trailing slash) because source_id on those candidates holds the FEED-level
+      registry id (e.g. "huggingface_blog"), not the individual post.
+    - Fall back to source_id only when url is absent/empty.
+    """
+    sid = (cand.get("source_id") or "")
+    if sid.startswith(("arxiv:", "doi:")):
+        return sid
+    url = (cand.get("url") or "").rstrip("/")
+    if url:
+        return url
+    return sid
+
+
+# ---------------------------------------------------------------------------
 # dedup_seen
 # ---------------------------------------------------------------------------
 

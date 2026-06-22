@@ -27,6 +27,23 @@ from pathlib import Path
 from typing import Any
 
 # ---------------------------------------------------------------------------
+# Import candidate_ident from web_harvest (lazy to stay monkeypatch-safe)
+# ---------------------------------------------------------------------------
+
+
+def _candidate_ident(cand: dict) -> str:
+    """Delegate to web_harvest.candidate_ident; imported lazily."""
+    try:
+        from web_harvest import candidate_ident
+        return candidate_ident(cand)
+    except ImportError:
+        # Fallback (should not happen in production): use source_id
+        sid = (cand.get("source_id") or "")
+        if sid.startswith(("arxiv:", "doi:")):
+            return sid
+        return (cand.get("url") or "").rstrip("/") or sid
+
+# ---------------------------------------------------------------------------
 # Merge threshold
 # ---------------------------------------------------------------------------
 
@@ -784,35 +801,55 @@ def select_candidates(
     """Pick <=5 final candidates by typed budget.
 
     Steps:
-    1. ingest-dedup: drop candidates whose source_id/url/id is ingested/pending/rejected.
-    2. Group by lane, sort each lane by score desc.
-    3. Fill each lane up to its quota.
-    4. Spillover: underfill donates spare slots to the next lane in spillover_order.
-    5. Cap total at config.new_sources_total.
+    1. intra-pool dedup: collapse candidates with the same candidate_ident (keep
+       the one with the higher score) BEFORE quota filling, so the same paper
+       found via two queries / two feeds doesn't take two slots.
+    2. ingest-dedup: drop candidates whose candidate_ident matches an ingest row
+       id (web-enqueued rows are keyed by candidate_ident) OR whose url matches
+       a row url, for rows with status in {ingested, pending, rejected}.
+    3. Group by lane, sort each lane by score desc.
+    4. Fill each lane up to its quota.
+    5. Spillover: underfill donates spare slots to the next lane in spillover_order.
+    6. Cap total at config.new_sources_total.
 
     Each returned candidate is tagged with its lane.
     """
-    # Build dedup sets
-    dedup_source_ids: set[str] = set()
+    # --- Step 1: intra-pool dedup by candidate_ident (keep highest score) ---
+    seen_idents: dict[str, dict] = {}  # ident -> best candidate so far
+    for c in candidates:
+        ident = _candidate_ident(c)
+        if not ident:
+            # No stable ident: cannot dedup reliably; keep as-is under a unique key
+            seen_idents[id(c)] = c  # type: ignore[assignment]
+            continue
+        existing = seen_idents.get(ident)
+        if existing is None or float(c.get("score", 0.0)) > float(existing.get("score", 0.0)):
+            seen_idents[ident] = c
+    deduped_pool = list(seen_idents.values())
+
+    # --- Step 2: ingest-dedup ---
+    dedup_idents: set[str] = set()
     dedup_urls: set[str] = set()
 
     if ingest_rows:
         for row in ingest_rows:
             status = row.get("status", "")
             if status in ("ingested", "pending", "rejected"):
+                # Rows enqueued by the new pipeline carry candidate_ident as their id;
+                # rows from older pipelines may carry source_id -- match both.
                 sid = row.get("id") or row.get("source_id") or ""
                 url = row.get("url") or ""
                 if sid:
-                    dedup_source_ids.add(sid)
+                    dedup_idents.add(sid)
                 if url:
                     dedup_urls.add(url.rstrip("/"))
 
     def _is_duped(c: dict) -> bool:
-        sid = c.get("source_id") or c.get("id") or ""
+        ident = _candidate_ident(c)
         url = (c.get("url") or "").rstrip("/")
-        return sid in dedup_source_ids or (url and url in dedup_urls)
+        return ident in dedup_idents or (url and url in dedup_urls)
 
-    filtered = [c for c in candidates if not _is_duped(c)]
+    filtered = [c for c in deduped_pool if not _is_duped(c)]
 
     # Group by lane, sort by score desc
     lanes_map: dict[str, list[dict]] = {}
