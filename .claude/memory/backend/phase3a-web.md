@@ -24,3 +24,10 @@ Commits (NOT pushed): `954dbc1` W1, `a548a75` W2, `b1948e3` W3. 625 tests green.
 - NEW skills `/web-scrape` `/web-rank` + the `web` agent need a **CLI restart** to register (same as every prior new-skill batch).
 - Deferred: Phase 3B paid adapters; nightly_run.sh integration + `agent-learn` feedback persistence (Phase 4); newsletter GUI approval (Phase 5); the WebFetch/WebSearch augmentation of research-lane targets is described in the skill but executed by the agent, not the script.
 - Built by the `backend` orchestrator fanning out parallel Sonnet/Haiku sub-agents per guideline #4; I (Opus) integrated + verified every test claim + ran the live demo.
+
+## UPDATE — explainable DecisionTrace (user request, commits c939dce + 3c9b8a5)
+User: "no black box — log the gap↔direction merges with scoring tables; export the full debug log on request." Added:
+- `web_decision.DecisionTrace` + `render_trace_markdown` (scoring tables): threaded through parse/merge/lanes/route/select. `merge/scores` logs EVERY (gap,direction) pair (jaccard|topic_bonus|total|threshold|decision); `select` logs per-lane considered/selected/rejected with reasons (over-quota|intra-pool-dedup|ingest-dedup:<status>) + spillover.
+- `web_crawl` threads one trace through the whole run, records **harvest queries** (engine|query|n_returned|error) + **rank** (path embedding/fallback + scores), embeds the full trace as a `## Decision trace` section in EVERY `nightly_report`, and exposes `--explain` (stderr) + `--trace-out PATH` (export). `web_decision.py plan --explain/--trace-out` shows the planning trace.
+- The trace **immediately exposed a bug**: arXiv-category sources (cs.AR/dc/lg) all map to `engine=arxiv`, so identical queries fired ~3x/target. FIXED: `_harvest_target` dedups calls by (engine, query/feed/repo) — each unique call once (live: 3x→1x). Future enhancement (noted, not done): pass the arXiv category so cs.AR/dc/lg become meaningfully distinct calls.
+- 677 tests. To tweak selection logic, edit `scripts/web_decision.py` (MERGE_THRESHOLD, lane quotas via `.claude/web/web-config.json`, route_to_sources, select_candidates) and inspect via `--explain`.
