@@ -16,12 +16,14 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT / "scripts"))
 
 from web_decision import (
+    DecisionTrace,
     assign_lanes,
     build_plan,
     merge_targets,
     news_target,
     parse_directions,
     parse_gaps,
+    render_trace_markdown,
     route_to_sources,
     select_candidates,
 )
@@ -1187,3 +1189,588 @@ class TestNewsTarget:
         t = news_target(REGISTRY_FIXTURE)
         assert t["expected_evidence"] != ""
         assert "vendor" in t["expected_evidence"].lower() or "announcement" in t["expected_evidence"].lower()
+
+
+# ---------------------------------------------------------------------------
+# DecisionTrace tests
+# ---------------------------------------------------------------------------
+
+
+class TestDecisionTrace:
+    """Verify that DecisionTrace records are emitted correctly, that the renderer
+    produces expected sections, and that zero-overhead (trace=None) works."""
+
+    # ------------------------------------------------------------------ helpers
+    def _make_gap08(self):
+        return {
+            "id": "GAP-08",
+            "title": "Optical prior art not ingested",
+            "shows_up_in": "wiki/sources/photons-to-tokens",
+            "missing": "entity pages for four cited papers",
+            "fillable_by": ["arxiv"],
+            "topics": ["T-0006"],
+            "priority": "medium",
+        }
+
+    def _make_dir0004(self):
+        return {
+            "id": "DIR-0004",
+            "serves_question": ["Q-0005"],
+            "topics": ["T-0006", "T-0007"],
+            "targets_gap": "Four optical-AI prior-art papers cited by Photons-to-Tokens are not yet ingested",
+            "priority": "medium",
+            "status": "open",
+            "seed_queries": [
+                {"engine": None, "query": "LightML Liu et al ISCA 2025"},
+                {"engine": None, "query": "Demirkiran electrophotonic"},
+                {"engine": "arxiv", "query": "optical LLM prior art"},
+            ],
+            "expected_evidence": "Comparative table of device params",
+            "solves_when": "Q-0005 met",
+            "_engine_tags": ["arxiv"],
+        }
+
+    def _make_weak_dir(self):
+        """A direction with topic-only overlap (no lexical match) -> below-threshold."""
+        return {
+            "id": "DIR-0010",
+            "serves_question": ["Q-0010"],
+            "topics": ["T-0099"],  # no shared topic with GAP-08
+            "targets_gap": "Some standalone research direction not matching any gap at all",
+            "priority": "high",
+            "status": "open",
+            "seed_queries": [
+                {"engine": None, "query": "standalone research query"},
+            ],
+            "expected_evidence": "Some evidence",
+            "solves_when": "Done",
+            "_engine_tags": [],
+        }
+
+    # ------------------------------------------------------------------ merge_targets trace
+    def test_merge_trace_emits_scores_record(self):
+        t = DecisionTrace()
+        gap = self._make_gap08()
+        direction = self._make_dir0004()
+        merge_targets([gap], [direction], trace=t)
+        rec = t.first("merge", "scores")
+        assert rec is not None, "merge/scores record must be emitted"
+
+    def test_merge_trace_strong_pair_decision_is_merged(self):
+        t = DecisionTrace()
+        gap = self._make_gap08()
+        direction = self._make_dir0004()
+        merge_targets([gap], [direction], trace=t)
+        rec = t.first("merge", "scores")
+        pairs = rec["data"]["pairs"]
+        # Find the GAP-08 / DIR-0004 pair
+        strong = next(
+            (p for p in pairs if p["gap"] == "GAP-08" and p["direction"] == "DIR-0004"),
+            None,
+        )
+        assert strong is not None, "GAP-08/DIR-0004 pair must appear in trace"
+        assert strong["decision"] == "MERGED", f"expected MERGED, got {strong['decision']}"
+        from web_decision import MERGE_THRESHOLD
+        assert strong["total"] >= MERGE_THRESHOLD, (
+            f"total={strong['total']} should be >= MERGE_THRESHOLD={MERGE_THRESHOLD}"
+        )
+
+    def test_merge_trace_weak_pair_decision_is_below_threshold(self):
+        t = DecisionTrace()
+        gap = self._make_gap08()
+        weak_dir = self._make_weak_dir()
+        merge_targets([gap], [weak_dir], trace=t)
+        rec = t.first("merge", "scores")
+        pairs = rec["data"]["pairs"]
+        weak = next(
+            (p for p in pairs if p["direction"] == "DIR-0010"),
+            None,
+        )
+        assert weak is not None, "DIR-0010 pair must appear in trace"
+        assert weak["decision"] == "below-threshold", (
+            f"expected below-threshold, got {weak['decision']}"
+        )
+
+    def test_merge_trace_two_dirs_records_consumed_decision(self):
+        """When two directions both score above threshold vs the same gap, the
+        second (lower-scoring) one should be direction-consumed or gap-consumed."""
+        t = DecisionTrace()
+        gap = self._make_gap08()
+        dir1 = self._make_dir0004()
+        # A second direction that ALSO has strong lexical overlap + shared topic
+        dir2 = {
+            "id": "DIR-0009",
+            "serves_question": ["Q-0009"],
+            "topics": ["T-0006"],
+            "targets_gap": "Optical prior-art papers cited by Photons-to-Tokens not yet ingested in entity pages",
+            "priority": "medium",
+            "status": "open",
+            "seed_queries": [{"engine": None, "query": "optical prior art ingested entity"}],
+            "expected_evidence": "Evidence",
+            "solves_when": "Done",
+            "_engine_tags": ["arxiv"],
+        }
+        merge_targets([gap], [dir1, dir2], trace=t)
+        rec = t.first("merge", "scores")
+        pairs = rec["data"]["pairs"]
+        decisions = {p["direction"]: p["decision"] for p in pairs}
+        # One of the two should be MERGED; the other should be consumed
+        consumed_decisions = {"gap-consumed", "direction-consumed", "below-threshold"}
+        assert decisions.get("DIR-0004") == "MERGED" or decisions.get("DIR-0009") == "MERGED", (
+            "At least one dir should be MERGED"
+        )
+        # The other must NOT also be MERGED
+        if decisions.get("DIR-0004") == "MERGED":
+            assert decisions.get("DIR-0009") in consumed_decisions, (
+                f"DIR-0009 should be consumed, got {decisions.get('DIR-0009')}"
+            )
+        else:
+            assert decisions.get("DIR-0004") in consumed_decisions, (
+                f"DIR-0004 should be consumed, got {decisions.get('DIR-0004')}"
+            )
+
+    def test_merge_trace_threshold_and_merged_fields(self):
+        t = DecisionTrace()
+        gap = self._make_gap08()
+        direction = self._make_dir0004()
+        merge_targets([gap], [direction], trace=t)
+        rec = t.first("merge", "scores")
+        from web_decision import MERGE_THRESHOLD
+        assert rec["data"]["threshold"] == MERGE_THRESHOLD
+        merged_list = rec["data"]["merged"]
+        assert len(merged_list) == 1
+        assert merged_list[0]["target_id"] == "GAP-08+DIR-0004"
+        assert rec["data"]["unmatched_gaps"] == []
+        assert rec["data"]["unmatched_directions"] == []
+
+    def test_merge_trace_no_trace_when_none(self):
+        """Calling merge_targets without trace leaves no side effects."""
+        gap = self._make_gap08()
+        direction = self._make_dir0004()
+        # Should not raise; trace=None is the default
+        result = merge_targets([gap], [direction])
+        assert len(result) == 1  # existing behavior unchanged
+
+    # ------------------------------------------------------------------ route_to_sources trace
+    def test_route_trace_emits_target_record(self):
+        t = DecisionTrace()
+        target = {
+            "target_id": "GAP-08",
+            "lane": "gap",
+            "origin_ids": ["GAP-08"],
+            "priority": "medium",
+            "queries": [],
+            "expected_evidence": "",
+            "fillable_by": ["arxiv"],
+            "routed_sources": [],
+            "_gap": {
+                "id": "GAP-08",
+                "title": "Optical prior art not ingested",
+                "topics": ["T-0006"],
+                "fillable_by": ["arxiv"],
+            },
+            "_dir": None,
+        }
+        route_to_sources(target, REGISTRY_FIXTURE, trace=t)
+        recs = t.find("route", "target")
+        assert len(recs) == 1
+        rec = recs[0]
+        assert rec["data"]["target_id"] == "GAP-08"
+        assert rec["data"]["lane"] == "gap"
+
+    def test_route_trace_considered_has_chosen_flags(self):
+        t = DecisionTrace()
+        target = {
+            "target_id": "GAP-08",
+            "lane": "gap",
+            "origin_ids": ["GAP-08"],
+            "priority": "medium",
+            "queries": [],
+            "expected_evidence": "",
+            "fillable_by": ["arxiv"],
+            "routed_sources": [],
+            "_gap": {
+                "id": "GAP-08",
+                "title": "Optical prior art not ingested",
+                "topics": ["T-0006"],
+                "fillable_by": ["arxiv"],
+            },
+            "_dir": None,
+        }
+        route_to_sources(target, REGISTRY_FIXTURE, trace=t)
+        rec = t.find("route", "target")[0]
+        considered = rec["data"]["considered"]
+        assert len(considered) > 0
+        chosen_sources = [s for s in considered if s["chosen"]]
+        unchosen_sources = [s for s in considered if not s["chosen"]]
+        # arxiv has 4 sources (3 high-relevance + 1 low); cap is 5 so all might be chosen
+        # but we need at least some chosen
+        assert len(chosen_sources) > 0
+        # Check that all fields are present
+        for s in considered:
+            assert "source_id" in s
+            assert "category" in s
+            assert "relevance" in s
+            assert "focus_score" in s
+            assert "chosen" in s
+            assert "reason" in s
+
+    def test_route_trace_none_has_no_effect(self):
+        """route_to_sources without trace should behave identically to before."""
+        target = {
+            "target_id": "GAP-08",
+            "lane": "gap",
+            "origin_ids": ["GAP-08"],
+            "priority": "medium",
+            "queries": [],
+            "expected_evidence": "",
+            "fillable_by": ["arxiv"],
+            "routed_sources": [],
+            "_gap": {
+                "id": "GAP-08",
+                "title": "Optical prior art not ingested",
+                "topics": ["T-0006"],
+                "fillable_by": ["arxiv"],
+            },
+            "_dir": None,
+        }
+        result_no_trace = route_to_sources(target, REGISTRY_FIXTURE)
+        result_with_none = route_to_sources(target, REGISTRY_FIXTURE, trace=None)
+        assert result_no_trace == result_with_none
+
+    # ------------------------------------------------------------------ select_candidates trace
+    def test_select_trace_emits_per_lane_records(self):
+        t = DecisionTrace()
+        pool = (
+            [_make_candidate(f"g{i}", "gap", 10 - i) for i in range(5)]
+            + [_make_candidate(f"r{i}", "research", 10 - i) for i in range(3)]
+            + [_make_candidate(f"n{i}", "news", 10 - i) for i in range(2)]
+        )
+        select_candidates(pool, CONFIG_FIXTURE, trace=t)
+        lane_recs = t.find("select", "lane")
+        lane_names = [r["data"]["lane"] for r in lane_recs]
+        # All three spillover_order lanes should have a record
+        assert "gap" in lane_names
+        assert "research" in lane_names
+        assert "news" in lane_names
+
+    def test_select_trace_over_quota_reason(self):
+        t = DecisionTrace()
+        # 5 gap candidates but quota=3 -> 2 should be over-quota
+        pool = [_make_candidate(f"g{i}", "gap", 10 - i) for i in range(5)]
+        select_candidates(pool, CONFIG_FIXTURE, trace=t)
+        gap_rec = next(r for r in t.find("select", "lane") if r["data"]["lane"] == "gap")
+        rejected = gap_rec["data"]["rejected"]
+        assert len(rejected) >= 1
+        for rej in rejected:
+            assert rej["reason"] == "over-quota", f"Expected over-quota, got {rej['reason']}"
+
+    def test_select_trace_ingest_dedup_reason(self):
+        """A candidate matching an ingest row should be annotated with ingest-dedup:<status>."""
+        t = DecisionTrace()
+        # g1 has source_id starting with "arxiv:" so _candidate_ident returns "arxiv:1234.5678"
+        # (the fallback in _candidate_ident checks for arxiv:/doi: prefix on source_id).
+        pool = [
+            _make_candidate("g0", "gap", 9.0),
+            _make_candidate("g1", "gap", 8.0, source_id="arxiv:1234.5678"),
+        ]
+        # Match the ident that _candidate_ident actually returns: "arxiv:1234.5678"
+        ingest_rows = [{"id": "arxiv:1234.5678", "status": "ingested", "url": ""}]
+        select_candidates(pool, CONFIG_FIXTURE, ingest_rows=ingest_rows, trace=t)
+        dedup_rec = t.first("select", "dedup")
+        assert dedup_rec is not None
+        ingest_dropped = dedup_rec["data"]["ingest_dropped"]
+        assert len(ingest_dropped) >= 1
+        dropped_idents = [d["ident"] for d in ingest_dropped]
+        assert "arxiv:1234.5678" in dropped_idents
+        # Check status recorded
+        dropped_item = next(d for d in ingest_dropped if d["ident"] == "arxiv:1234.5678")
+        assert dropped_item["status"] == "ingested"
+
+    def test_select_trace_ingest_dedup_reason_in_rejected(self):
+        """After select_candidates, the lane record's rejected list includes ingest-dedup entries."""
+        t = DecisionTrace()
+        pool = [
+            _make_candidate("g0", "gap", 9.0),
+            _make_candidate("g1", "gap", 8.0),
+        ]
+        ingest_rows = [{"id": "https://example.com/g1", "status": "rejected", "url": ""}]
+        select_candidates(pool, CONFIG_FIXTURE, ingest_rows=ingest_rows, trace=t)
+        gap_rec = next(r for r in t.find("select", "lane") if r["data"]["lane"] == "gap")
+        rejected = gap_rec["data"]["rejected"]
+        ingest_reasons = [r for r in rejected if r["reason"].startswith("ingest-dedup:")]
+        assert len(ingest_reasons) >= 1
+        assert ingest_reasons[0]["reason"] == "ingest-dedup:rejected"
+
+    def test_select_trace_final_record(self):
+        t = DecisionTrace()
+        pool = [_make_candidate(f"g{i}", "gap", 10.0 - i) for i in range(3)]
+        select_candidates(pool, CONFIG_FIXTURE, trace=t)
+        final_rec = t.first("select", "final")
+        assert final_rec is not None
+        selected = final_rec["data"]["selected"]
+        assert len(selected) >= 1
+        for item in selected:
+            assert "ident" in item
+            assert "lane" in item
+            assert "score" in item
+
+    def test_select_trace_none_unchanged_behavior(self):
+        """select_candidates with no trace returns the same result as with trace=None."""
+        pool = [_make_candidate(f"g{i}", "gap", 10.0 - i) for i in range(3)]
+        result_default = select_candidates(pool, CONFIG_FIXTURE)
+        result_none = select_candidates(pool, CONFIG_FIXTURE, trace=None)
+        assert [c["id"] for c in result_default] == [c["id"] for c in result_none]
+
+    # ------------------------------------------------------------------ render_trace_markdown
+    def test_render_trace_contains_merge_table_header(self):
+        t = DecisionTrace()
+        gap = self._make_gap08()
+        direction = self._make_dir0004()
+        merge_targets([gap], [direction], trace=t)
+        md = render_trace_markdown(t)
+        assert "## Merge scoring" in md
+        assert "| gap | direction | jaccard | topic_bonus | total | decision |" in md
+
+    def test_render_trace_contains_selection_section(self):
+        t = DecisionTrace()
+        pool = (
+            [_make_candidate(f"g{i}", "gap", 10 - i) for i in range(4)]
+            + [_make_candidate(f"r{i}", "research", 10 - i) for i in range(2)]
+            + [_make_candidate(f"n{i}", "news", 10 - i) for i in range(2)]
+        )
+        select_candidates(pool, CONFIG_FIXTURE, trace=t)
+        md = render_trace_markdown(t)
+        assert "## Selection" in md
+        assert "### Lane: gap" in md
+
+    def test_render_trace_merged_target_appears_in_output(self):
+        t = DecisionTrace()
+        gap = self._make_gap08()
+        direction = self._make_dir0004()
+        merge_targets([gap], [direction], trace=t)
+        md = render_trace_markdown(t)
+        # The merged target id should appear somewhere
+        assert "GAP-08+DIR-0004" in md
+
+    def test_render_trace_idents_appear_in_selection(self):
+        t = DecisionTrace()
+        pool = [_make_candidate("g0", "gap", 9.0)]
+        select_candidates(pool, CONFIG_FIXTURE, trace=t)
+        md = render_trace_markdown(t)
+        # The ident for g0 should be its URL (id_type=url in _make_candidate)
+        assert "https://example.com/g0" in md
+
+    def test_render_trace_returns_string(self):
+        t = DecisionTrace()
+        md = render_trace_markdown(t)
+        assert isinstance(md, str)
+        # Should always have the header
+        assert "# Web Decision Trace" in md
+
+    def test_render_trace_routing_section(self):
+        """When route_to_sources is called with a trace, the Routing section appears."""
+        t = DecisionTrace()
+        target = {
+            "target_id": "GAP-08",
+            "lane": "gap",
+            "origin_ids": ["GAP-08"],
+            "priority": "medium",
+            "queries": [],
+            "expected_evidence": "",
+            "fillable_by": ["arxiv"],
+            "routed_sources": [],
+            "_gap": {
+                "id": "GAP-08",
+                "title": "Optical prior art",
+                "topics": ["T-0006"],
+                "fillable_by": ["arxiv"],
+            },
+            "_dir": None,
+        }
+        route_to_sources(target, REGISTRY_FIXTURE, trace=t)
+        md = render_trace_markdown(t)
+        assert "## Routing" in md
+        assert "GAP-08" in md
+
+    # ------------------------------------------------------------------ zero-overhead
+    def test_zero_overhead_merge_targets(self):
+        """merge_targets(trace=None) is default and must not raise or change results."""
+        gap = self._make_gap08()
+        direction = self._make_dir0004()
+        result = merge_targets([gap], [direction])
+        assert result[0]["target_id"] == "GAP-08+DIR-0004"
+
+    def test_zero_overhead_select_candidates(self):
+        """select_candidates(trace=None) behaves identically to calling without trace."""
+        pool = [_make_candidate(f"g{i}", "gap", 10.0 - i) for i in range(3)]
+        r1 = select_candidates(pool, CONFIG_FIXTURE)
+        r2 = select_candidates(pool, CONFIG_FIXTURE, trace=None)
+        assert len(r1) == len(r2)
+        for a, b in zip(r1, r2):
+            assert a["id"] == b["id"]
+
+    def test_zero_overhead_route_to_sources(self):
+        """route_to_sources(trace=None) returns same list as without trace."""
+        target = {
+            "target_id": "T",
+            "lane": "gap",
+            "origin_ids": ["T"],
+            "priority": "medium",
+            "queries": [],
+            "expected_evidence": "",
+            "fillable_by": ["arxiv"],
+            "routed_sources": [],
+            "_gap": {"id": "T", "title": "test", "topics": [], "fillable_by": ["arxiv"]},
+            "_dir": None,
+        }
+        r1 = route_to_sources(target, REGISTRY_FIXTURE)
+        r2 = route_to_sources(target, REGISTRY_FIXTURE, trace=None)
+        assert r1 == r2
+
+
+# ===========================================================================
+# Tests: render_trace_markdown covers harvest/target and rank/scores records
+# ===========================================================================
+
+class TestRenderHarvestAndRank:
+    """render_trace_markdown renders harvest/target and rank/scores records."""
+
+    def _make_trace_with_harvest_and_rank(self) -> "DecisionTrace":
+        """Build a DecisionTrace populated with harvest/target and rank/scores records."""
+        t = DecisionTrace()
+
+        # Two harvest/target records with per-engine query detail
+        t.add(
+            "harvest",
+            "target",
+            target_id="GAP-01+DIR-0001",
+            lane="gap",
+            queries=[
+                {"engine": "arxiv", "query": "disaggregated LLM inference", "n_returned": 4},
+                {"engine": "hackernews", "query": "disaggregated serving", "n_returned": 2},
+            ],
+            n_candidates=6,
+            seen_dropped=1,
+        )
+        t.add(
+            "harvest",
+            "target",
+            target_id="news",
+            lane="news",
+            queries=[
+                {"engine": "rss", "query": "https://developer.nvidia.com/blog/feed", "n_returned": 3},
+                {"engine": "rss", "query": "https://semianalysis.substack.com/feed", "n_returned": 0,
+                 "error": "HTTP 503"},
+            ],
+            n_candidates=3,
+            seen_dropped=0,
+        )
+
+        # rank/scores record
+        t.add(
+            "rank",
+            "scores",
+            path="fallback",
+            candidates=[
+                {"ident": "arxiv:2401.10001", "score": 0.85},
+                {"ident": "arxiv:2401.10002", "score": 0.72},
+                {"ident": "https://news.ycombinator.com/item?id=12345", "score": 0.55},
+            ],
+            n=3,
+        )
+
+        return t
+
+    def test_harvest_section_header_present(self):
+        t = self._make_trace_with_harvest_and_rank()
+        md = render_trace_markdown(t)
+        assert "## Harvest" in md
+
+    def test_harvest_query_table_engine_column(self):
+        t = self._make_trace_with_harvest_and_rank()
+        md = render_trace_markdown(t)
+        assert "arxiv" in md
+        assert "hackernews" in md
+        assert "rss" in md
+
+    def test_harvest_query_table_n_returned(self):
+        t = self._make_trace_with_harvest_and_rank()
+        md = render_trace_markdown(t)
+        # n_returned values from the fixture
+        assert "| 4 |" in md
+        assert "| 2 |" in md
+        assert "| 3 |" in md
+
+    def test_harvest_error_appears_in_table(self):
+        t = self._make_trace_with_harvest_and_rank()
+        md = render_trace_markdown(t)
+        assert "HTTP 503" in md
+
+    def test_harvest_per_target_summary_present(self):
+        t = self._make_trace_with_harvest_and_rank()
+        md = render_trace_markdown(t)
+        assert "Per-target summary" in md
+        assert "GAP-01+DIR-0001" in md
+        assert "news" in md
+
+    def test_harvest_seen_dropped_in_summary(self):
+        t = self._make_trace_with_harvest_and_rank()
+        md = render_trace_markdown(t)
+        # seen_dropped=1 for GAP-01+DIR-0001, seen_dropped=0 for news
+        assert "| 1 |" in md
+
+    def test_rank_section_header_present(self):
+        t = self._make_trace_with_harvest_and_rank()
+        md = render_trace_markdown(t)
+        assert "## Rank" in md
+
+    def test_rank_path_label_in_header(self):
+        t = self._make_trace_with_harvest_and_rank()
+        md = render_trace_markdown(t)
+        assert "path=fallback" in md
+
+    def test_rank_candidate_table_has_ident_and_score(self):
+        t = self._make_trace_with_harvest_and_rank()
+        md = render_trace_markdown(t)
+        assert "arxiv:2401.10001" in md
+        assert "0.8500" in md
+        assert "arxiv:2401.10002" in md
+
+    def test_rank_section_absent_when_no_record(self):
+        t = DecisionTrace()
+        # Only add a harvest record, no rank record
+        t.add(
+            "harvest", "target",
+            target_id="T1", lane="gap",
+            queries=[{"engine": "arxiv", "query": "test", "n_returned": 1}],
+            n_candidates=1,
+            seen_dropped=0,
+        )
+        md = render_trace_markdown(t)
+        assert "## Rank" not in md
+
+    def test_harvest_section_absent_when_no_record(self):
+        t = DecisionTrace()
+        # Only add a rank record, no harvest record
+        t.add(
+            "rank", "scores",
+            path="fallback",
+            candidates=[{"ident": "arxiv:1234", "score": 0.5}],
+            n=1,
+        )
+        md = render_trace_markdown(t)
+        assert "## Harvest" not in md
+
+    def test_render_harvest_rank_section_ordering(self):
+        """Harvest and Rank sections appear before Selection in the rendered output."""
+        t = self._make_trace_with_harvest_and_rank()
+        # Also add a select/final record to verify ordering
+        t.add("select", "final", selected=[{"ident": "arxiv:2401.10001", "lane": "gap", "score": 0.85}], total_cap=5)
+        md = render_trace_markdown(t)
+        harvest_pos = md.find("## Harvest")
+        rank_pos = md.find("## Rank")
+        selection_pos = md.find("## Selection")
+        # Harvest before Rank, Rank before Selection
+        assert harvest_pos < rank_pos
+        assert rank_pos < selection_pos

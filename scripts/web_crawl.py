@@ -31,7 +31,10 @@ Routing map (target -> harvest engine):
 
 CLI:
   python scripts/web_crawl.py --vault <root> [--dry-run] [--allow-remote-ollama]
-                               [--json] [--limit N]
+                               [--json] [--limit N] [--explain] [--trace-out PATH]
+
+  --explain      print the full decision trace to STDERR after the run.
+  --trace-out    write the rendered trace markdown to PATH (export on request).
 
 Exit codes:
   0  -- success
@@ -65,6 +68,12 @@ if str(_REPO_ROOT) not in sys.path:
 def _import_web_decision():
     import web_decision as _wd
     return _wd
+
+
+def _import_decision_trace():
+    """Import DecisionTrace and render_trace_markdown (lazy, monkeypatch-safe)."""
+    from web_decision import DecisionTrace as _DT, render_trace_markdown as _RTM
+    return _DT, _RTM
 
 
 def _import_web_harvest():
@@ -234,6 +243,7 @@ def _harvest_target(
     *,
     per_source_limit: int = 8,
     _harvest_mod=None,  # injected for testing
+    trace=None,         # DecisionTrace | None
 ) -> list[dict]:
     """Harvest candidates for a single plan target.
 
@@ -247,6 +257,7 @@ def _harvest_target(
     - research lane with empty routed_sources -> query_papers(arxiv) per seed query
 
     All network failures are caught and logged; the harvest continues with other sources.
+    If trace is provided, records one harvest/target entry with per-engine call details.
     """
     wh = _harvest_mod or _import_web_harvest()
 
@@ -255,15 +266,19 @@ def _harvest_target(
     routed = target.get("routed_sources", [])
     fillable = target.get("fillable_by", [])
     origin_ids = target.get("origin_ids", [])
+    target_id = target.get("target_id", "")
 
     candidates: list[dict] = []
     seen_engines: set[str] = set()  # avoid duplicate forum calls per target
+
+    # For trace: track each engine call
+    _trace_queries: list[dict] = []
 
     # -- primary query for query-based engines --
     def _q(idx: int = 0) -> str:
         if queries and idx < len(queries):
             return queries[idx]
-        return target.get("target_id", "")
+        return target_id
 
     # -- tag candidate with lane + origin_ids --
     def _tag(c: dict) -> dict:
@@ -271,13 +286,27 @@ def _harvest_target(
         c["origin_ids"] = list(origin_ids)
         return c
 
-    # -- safe call wrapper --
-    def _call(fn, *args, **kwargs) -> list[dict]:
+    # -- safe call wrapper with trace recording --
+    def _call(fn, engine_label: str, query_str: str, *args, **kwargs) -> list[dict]:
         try:
-            return fn(*args, **kwargs) or []
+            results = fn(*args, **kwargs) or []
+            if trace is not None:
+                _trace_queries.append({
+                    "engine": engine_label,
+                    "query": query_str,
+                    "n_returned": len(results),
+                })
+            return results
         except Exception as exc:
             fn_name = getattr(fn, "__name__", repr(fn))
             print(f"[web_crawl] harvest error ({fn_name}): {exc}", file=sys.stderr)
+            if trace is not None:
+                _trace_queries.append({
+                    "engine": engine_label,
+                    "query": query_str,
+                    "n_returned": 0,
+                    "error": str(exc),
+                })
             return []
 
     # --- routed sources ---
@@ -285,7 +314,10 @@ def _harvest_target(
         is_gh, gh_url = _is_github_entry(src_id, registry)
         if is_gh:
             # GitHub releases
-            results = _call(wh.poll_github_releases, gh_url, limit=per_source_limit)
+            results = _call(
+                wh.poll_github_releases, "github", gh_url,
+                gh_url, limit=per_source_limit
+            )
             candidates.extend(_tag(c) for c in results)
             continue
 
@@ -307,7 +339,8 @@ def _harvest_target(
         if section_key == "blog-newsfeed" or cat in ("research_aggregator", "conference"):
             if rss_feed:
                 results = _call(
-                    wh.poll_rss, rss_feed, source_id=src_id, limit=per_source_limit
+                    wh.poll_rss, "rss", rss_feed,
+                    rss_feed, source_id=src_id, limit=per_source_limit
                 )
                 candidates.extend(_tag(c) for c in results)
             continue
@@ -318,13 +351,15 @@ def _harvest_target(
             if paper_engine:
                 for q in (queries or [_q()]):
                     results = _call(
-                        wh.query_papers, q, engine=paper_engine, limit=per_source_limit
+                        wh.query_papers, paper_engine, q,
+                        q, engine=paper_engine, limit=per_source_limit
                     )
                     candidates.extend(_tag(c) for c in results)
             elif rss_feed:
                 # research_aggregator without a direct paper engine -> use RSS
                 results = _call(
-                    wh.poll_rss, rss_feed, source_id=src_id, limit=per_source_limit
+                    wh.poll_rss, "rss", rss_feed,
+                    rss_feed, source_id=src_id, limit=per_source_limit
                 )
                 candidates.extend(_tag(c) for c in results)
             continue
@@ -334,7 +369,8 @@ def _harvest_target(
         seen_engines.add("forum")
         for q in (queries[:2] if queries else [_q()]):
             results = _call(
-                wh.query_forum, q, engine="hackernews", limit=per_source_limit
+                wh.query_forum, "hackernews", q,
+                q, engine="hackernews", limit=per_source_limit
             )
             candidates.extend(_tag(c) for c in results)
 
@@ -342,11 +378,25 @@ def _harvest_target(
     if lane == "research" and not routed:
         for q in (queries or [_q()]):
             results = _call(
-                wh.query_papers, q, engine="arxiv", limit=per_source_limit
+                wh.query_papers, "arxiv", q,
+                q, engine="arxiv", limit=per_source_limit
             )
             candidates.extend(_tag(c) for c in results)
         # Note: WebSearch augmentation for research lanes is an agent-level step,
         # not done here.
+
+    # Record the harvest/target trace entry (AFTER collecting all results, BEFORE
+    # the dedup_seen pass that happens in the caller).
+    if trace is not None:
+        trace.add(
+            "harvest",
+            "target",
+            target_id=target_id,
+            lane=lane,
+            queries=_trace_queries,
+            n_candidates=len(candidates),
+            seen_dropped=0,  # filled in by the caller after dedup_seen
+        )
 
     return candidates
 
@@ -395,8 +445,16 @@ _SECTION_TEMPLATE = """\
 """
 
 
-def _write_nightly_report(vault_root: str, today: str, selected: list[dict]) -> Path:
-    """Write meta/nightly_report/<today>.md with one section per selected candidate."""
+def _write_nightly_report(
+    vault_root: str,
+    today: str,
+    selected: list[dict],
+    trace=None,  # DecisionTrace | None
+) -> Path:
+    """Write meta/nightly_report/<today>.md with one section per selected candidate.
+
+    If trace is provided, append a '## Decision trace' section rendered from it.
+    """
     report_dir = Path(vault_root) / "meta" / "nightly_report"
     report_dir.mkdir(parents=True, exist_ok=True)
     report_path = report_dir / f"{today}.md"
@@ -426,6 +484,16 @@ def _write_nightly_report(vault_root: str, today: str, selected: list[dict]) -> 
         today=today,
         sections="\n".join(sections) if sections else "_No candidates selected._",
     )
+
+    # Append the decision trace section if a trace was provided
+    if trace is not None:
+        try:
+            _, _render = _import_decision_trace()
+            trace_md = _render(trace)
+            content = content + "\n## Decision trace\n\n" + trace_md + "\n"
+        except Exception as exc:
+            print(f"[web_crawl] could not render trace: {exc}", file=sys.stderr)
+
     report_path.write_text(content, encoding="utf-8")
     return report_path
 
@@ -442,6 +510,7 @@ def crawl(
     allow_remote_ollama: bool = False,
     today: str | None = None,
     per_source_limit: int = 8,
+    trace=None,  # DecisionTrace | None -- if None, one is created internally
 ) -> dict:
     """End-to-end Phase-3A FREE crawl pipeline.
 
@@ -459,15 +528,27 @@ def crawl(
         Defaults to today's date.
     per_source_limit:
         Maximum candidates to fetch per source / per query call.
+    trace:
+        Optional DecisionTrace to record into. When None (the default), a fresh
+        DecisionTrace is created internally so the nightly report always contains
+        the full decision audit. Pass an existing trace to compose with a caller's
+        trace context.
 
     Returns
     -------
     dry_run=True:
-        {"plan": <plan dict>, "selected": <list>, "would_write": "<date>.md"}
+        {"plan": <plan dict>, "selected": <list>, "would_write": "<date>.md",
+         "trace": <DecisionTrace>}
     dry_run=False:
-        {"selected": <list>, "report_path": <str>, "enqueued": [<id>, ...]}
+        {"selected": <list>, "report_path": <str>, "enqueued": [<id>, ...],
+         "trace": <DecisionTrace>}
     """
     today_s = today or date.today().isoformat()
+
+    # Always ensure a trace exists (zero-overhead when not rendered)
+    _DT, _render_trace = _import_decision_trace()
+    if trace is None:
+        trace = _DT()
 
     # 1. Load config, registry, PURPOSE, ingest rows
     config = _load_config()
@@ -475,26 +556,50 @@ def crawl(
     purpose_text = _load_purpose(vault_root)
     ingest_rows = _load_ingest_rows(vault_root)
 
-    # 2. Build plan
+    # 2. Build plan (threads trace into parse/merge/lanes/route steps)
     wd = _import_web_decision()
-    plan = wd.build_plan(vault_root, config, registry)
+    plan = wd.build_plan(vault_root, config, registry, trace=trace)
     targets = plan.get("targets", [])
 
     # 3. Harvest: one call per target; failures degrade gracefully
+    #    Track per-target candidate ids so we can compute seen_dropped after dedup.
     wh = _import_web_harvest()
     all_candidates: list[dict] = []
+    # Map target_id -> index of the harvest/target trace record
+    # (so we can back-fill seen_dropped after dedup_seen).
+    _target_cand_counts: list[tuple[str, int, int]] = []  # (target_id, start_idx, end_idx)
+
     for target in targets:
+        start_idx = len(all_candidates)
         cands = _harvest_target(
             target,
             registry,
             purpose_text,
             per_source_limit=per_source_limit,
+            trace=trace,
         )
         all_candidates.extend(cands)
+        end_idx = len(all_candidates)
+        _target_cand_counts.append((target.get("target_id", ""), start_idx, end_idx))
 
     # 4. Dedup seen (persist cache only when not dry_run)
     seen_p = _seen_path()
+    new_ids_set: set[str] = set()
     new_candidates, updated_seen = wh.dedup_seen(all_candidates, seen_path=seen_p)
+    # Compute the set of stable ids that survived dedup
+    from web_harvest import _stable_id as _wh_stable_id, candidate_ident as _candidate_ident
+    new_ids_set = {_wh_stable_id(c) for c in new_candidates}
+
+    # Back-fill seen_dropped into each harvest/target trace record
+    harvest_recs = trace.find("harvest", "target")
+    for (target_id, start_idx, end_idx), hrec in zip(_target_cand_counts, harvest_recs):
+        target_cands = all_candidates[start_idx:end_idx]
+        seen_dropped = sum(
+            1 for c in target_cands
+            if _wh_stable_id(c) not in new_ids_set
+        )
+        hrec["data"]["seen_dropped"] = seen_dropped
+
     if not dry_run and new_candidates:
         # Persist the updated seen cache
         try:
@@ -509,9 +614,6 @@ def crawl(
 
     # 5. Rank: score all candidates against PURPOSE + per-candidate evidence
     wr = _import_web_rank()
-    # Build a query per candidate based on its tagged origin + PURPOSE
-    # For scoring efficiency, score the whole pool once against PURPOSE;
-    # candidates already carry their lane/origin context in their title+snippet.
     rank_query = purpose_text
     scored_pool = wr.score_candidates(
         new_candidates,
@@ -521,8 +623,29 @@ def crawl(
         today=today_s,
     )
 
-    # 6. Select
-    selected = wd.select_candidates(scored_pool, config, ingest_rows=ingest_rows)
+    # Record the rank/scores trace step
+    # Determine path: check whether ollama embedding was available
+    try:
+        from rerank import ollama_url as _olu, ollama_alive as _ola, DEFAULT_MODEL as _dm
+        _olu_url = _olu(allow_remote_ollama)
+        _alive, _models = _ola(_olu_url)
+        rank_path = "embedding" if (_alive and _dm in _models) else "fallback"
+    except Exception:
+        rank_path = "fallback"
+
+    trace.add(
+        "rank",
+        "scores",
+        path=rank_path,
+        candidates=[
+            {"ident": _candidate_ident(c), "score": float(c.get("score", 0.0))}
+            for c in scored_pool
+        ],
+        n=len(scored_pool),
+    )
+
+    # 6. Select (threads trace into selection steps)
+    selected = wd.select_candidates(scored_pool, config, ingest_rows=ingest_rows, trace=trace)
 
     # 7. dry_run early return
     if dry_run:
@@ -530,14 +653,12 @@ def crawl(
             "plan": plan,
             "selected": selected,
             "would_write": f"{today_s}.md",
+            "trace": trace,
         }
 
     # 8. Enqueue each selected candidate and write nightly report
     ii = _import_ingest_index()
     enqueued_ids: list[str] = []
-
-    # Import candidate_ident for per-item identity (not the feed-level source_id)
-    from web_harvest import candidate_ident as _candidate_ident
 
     for c in selected:
         ident = _candidate_ident(c)
@@ -564,13 +685,14 @@ def crawl(
         except Exception as exc:
             print(f"[web_crawl] enqueue({ident!r}) failed: {exc}", file=sys.stderr)
 
-    # Write nightly report
-    report_path = _write_nightly_report(vault_root, today_s, selected)
+    # Write nightly report (with embedded decision trace)
+    report_path = _write_nightly_report(vault_root, today_s, selected, trace=trace)
 
     return {
         "selected": selected,
         "report_path": str(report_path),
         "enqueued": enqueued_ids,
+        "trace": trace,
     }
 
 
@@ -620,7 +742,7 @@ def main(argv: list[str] | None = None) -> int:
     """CLI entry point.
 
     python scripts/web_crawl.py --vault <root> [--dry-run] [--allow-remote-ollama]
-                                  [--json] [--limit N]
+                                  [--json] [--limit N] [--explain] [--trace-out PATH]
     """
     if argv is None:
         argv = sys.argv[1:]
@@ -658,6 +780,22 @@ def main(argv: list[str] | None = None) -> int:
         metavar="N",
         help="Max candidates per source / per query call (default: 8).",
     )
+    parser.add_argument(
+        "--explain",
+        action="store_true",
+        dest="explain",
+        help=(
+            "After the run, print the full decision trace (harvest + rank + selection) "
+            "to STDERR. Stdout remains the normal JSON/summary output."
+        ),
+    )
+    parser.add_argument(
+        "--trace-out",
+        default=None,
+        dest="trace_out",
+        metavar="PATH",
+        help="Write the rendered decision trace to PATH (creates parent dirs).",
+    )
 
     try:
         args = parser.parse_args(argv)
@@ -674,8 +812,12 @@ def main(argv: list[str] | None = None) -> int:
         per_source_limit=args.per_source_limit,
     )
 
+    trace = result.get("trace")
+
     if args.as_json:
-        print(json.dumps(result, indent=2, ensure_ascii=False, default=str))
+        # Exclude trace from JSON output (not JSON-serializable cleanly)
+        out = {k: v for k, v in result.items() if k != "trace"}
+        print(json.dumps(out, indent=2, ensure_ascii=False, default=str))
     else:
         selected = result.get("selected", [])
         if args.dry_run:
@@ -695,6 +837,26 @@ def main(argv: list[str] | None = None) -> int:
                 f"  [{c.get('lane', '?'):<8}] score={score:.3f}  "
                 f"{c.get('title', '')[:70]}"
             )
+
+    # --explain: print trace to STDERR
+    if args.explain and trace is not None:
+        try:
+            _, _render_trace = _import_decision_trace()
+            print(_render_trace(trace), file=sys.stderr)
+        except Exception as exc:
+            print(f"[web_crawl] could not render trace: {exc}", file=sys.stderr)
+
+    # --trace-out: write trace to file
+    if args.trace_out and trace is not None:
+        try:
+            _, _render_trace = _import_decision_trace()
+            trace_md = _render_trace(trace)
+            out_path = Path(args.trace_out)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(trace_md, encoding="utf-8")
+            print(f"[trace] written to {out_path}", file=sys.stderr)
+        except Exception as exc:
+            print(f"[web_crawl] could not write trace to {args.trace_out}: {exc}", file=sys.stderr)
 
     return 0
 

@@ -1281,3 +1281,219 @@ class TestPerItemIdentity:
         }
         ident = candidate_ident(arxiv_cand)
         assert ident == "arxiv:2401.09670v2"
+
+
+# ===========================================================================
+# Tests: Decision trace wired through crawl
+# ===========================================================================
+
+class TestDecisionTrace:
+    """crawl() builds a DecisionTrace; assert it has harvest/rank/select records."""
+
+    def test_dry_run_returns_trace(self, tmp_path, monkeypatch):
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest(monkeypatch)
+        _patch_rank(monkeypatch)
+
+        result = web_crawl.crawl(str(vault), dry_run=True, today="2026-06-22")
+        assert "trace" in result
+        trace = result["trace"]
+        assert trace is not None
+
+    def test_harvest_target_records_present(self, tmp_path, monkeypatch):
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest(monkeypatch)
+        _patch_rank(monkeypatch)
+
+        result = web_crawl.crawl(str(vault), dry_run=True, today="2026-06-22")
+        trace = result["trace"]
+        harvest_recs = trace.find("harvest", "target")
+        # Should have at least one harvest/target record (one per target in plan)
+        assert len(harvest_recs) >= 1
+
+    def test_harvest_records_have_queries_with_engine_and_n_returned(
+        self, tmp_path, monkeypatch
+    ):
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest(monkeypatch)
+        _patch_rank(monkeypatch)
+
+        result = web_crawl.crawl(str(vault), dry_run=True, today="2026-06-22")
+        trace = result["trace"]
+        harvest_recs = trace.find("harvest", "target")
+        for rec in harvest_recs:
+            d = rec["data"]
+            assert "target_id" in d
+            assert "lane" in d
+            assert "queries" in d
+            assert "n_candidates" in d
+            assert "seen_dropped" in d
+            # queries is a list; each entry should have engine, query, n_returned
+            for q_entry in d["queries"]:
+                assert "engine" in q_entry
+                assert "query" in q_entry
+                assert "n_returned" in q_entry
+
+    def test_harvest_records_n_candidates_is_nonneg(self, tmp_path, monkeypatch):
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest(monkeypatch)
+        _patch_rank(monkeypatch)
+
+        result = web_crawl.crawl(str(vault), dry_run=True, today="2026-06-22")
+        trace = result["trace"]
+        for rec in trace.find("harvest", "target"):
+            assert rec["data"]["n_candidates"] >= 0
+            assert rec["data"]["seen_dropped"] >= 0
+
+    def test_rank_scores_record_present(self, tmp_path, monkeypatch):
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest(monkeypatch)
+        _patch_rank(monkeypatch)
+
+        result = web_crawl.crawl(str(vault), dry_run=True, today="2026-06-22")
+        trace = result["trace"]
+        rank_rec = trace.first("rank", "scores")
+        assert rank_rec is not None
+
+    def test_rank_scores_record_has_path_and_candidates(self, tmp_path, monkeypatch):
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest(monkeypatch)
+        _patch_rank(monkeypatch)
+
+        result = web_crawl.crawl(str(vault), dry_run=True, today="2026-06-22")
+        trace = result["trace"]
+        rank_rec = trace.first("rank", "scores")
+        d = rank_rec["data"]
+        assert "path" in d
+        assert d["path"] in ("embedding", "fallback")
+        assert "candidates" in d
+        # Each candidate entry has ident and score
+        for item in d["candidates"]:
+            assert "ident" in item
+            assert "score" in item
+
+    def test_select_final_record_present(self, tmp_path, monkeypatch):
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest(monkeypatch)
+        _patch_rank(monkeypatch)
+
+        result = web_crawl.crawl(str(vault), dry_run=True, today="2026-06-22")
+        trace = result["trace"]
+        final_rec = trace.first("select", "final")
+        assert final_rec is not None
+
+    def test_live_run_nightly_report_contains_decision_trace_section(
+        self, tmp_path, monkeypatch
+    ):
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest(monkeypatch)
+        _patch_rank(monkeypatch)
+
+        result = web_crawl.crawl(str(vault), dry_run=False, today="2026-06-22")
+        report_text = Path(result["report_path"]).read_text(encoding="utf-8")
+        assert "## Decision trace" in report_text
+
+    def test_live_run_report_contains_merge_scoring(self, tmp_path, monkeypatch):
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest(monkeypatch)
+        _patch_rank(monkeypatch)
+
+        result = web_crawl.crawl(str(vault), dry_run=False, today="2026-06-22")
+        report_text = Path(result["report_path"]).read_text(encoding="utf-8")
+        assert "Merge scoring" in report_text
+
+    def test_live_run_report_contains_selection(self, tmp_path, monkeypatch):
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest(monkeypatch)
+        _patch_rank(monkeypatch)
+
+        result = web_crawl.crawl(str(vault), dry_run=False, today="2026-06-22")
+        report_text = Path(result["report_path"]).read_text(encoding="utf-8")
+        assert "Selection" in report_text
+
+    def test_trace_out_flag_writes_file(self, tmp_path, monkeypatch, capsys):
+        """--trace-out PATH writes the rendered trace to the given path."""
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest(monkeypatch)
+        _patch_rank(monkeypatch)
+
+        # Patch vault resolution to return our tmp vault
+        monkeypatch.setattr(
+            web_crawl, "_resolve_vault_root", lambda arg: str(vault)
+        )
+
+        trace_out_path = str(tmp_path / "trace_out.md")
+        ret = web_crawl.main([
+            "--vault", str(vault),
+            "--dry-run",
+            "--trace-out", trace_out_path,
+        ])
+        assert ret == 0
+
+        # File should exist and contain key sections
+        assert Path(trace_out_path).exists(), f"trace-out file not written to {trace_out_path}"
+        content = Path(trace_out_path).read_text(encoding="utf-8")
+        assert "Web Decision Trace" in content
+        assert "Merge scoring" in content
+        assert "Selection" in content
+
+    def test_trace_out_contains_harvest_section(self, tmp_path, monkeypatch):
+        """--trace-out file includes ## Harvest section."""
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest(monkeypatch)
+        _patch_rank(monkeypatch)
+
+        monkeypatch.setattr(
+            web_crawl, "_resolve_vault_root", lambda arg: str(vault)
+        )
+
+        trace_out_path = str(tmp_path / "trace_out2.md")
+        web_crawl.main([
+            "--vault", str(vault),
+            "--dry-run",
+            "--trace-out", trace_out_path,
+        ])
+
+        content = Path(trace_out_path).read_text(encoding="utf-8")
+        assert "## Harvest" in content
+
+    def test_harvest_error_recorded_in_trace(self, tmp_path, monkeypatch):
+        """When a harvest function raises, the error is captured in the trace queries."""
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_rank(monkeypatch)
+
+        import web_harvest as wh
+
+        def _raise_papers(*a, **kw):
+            raise RuntimeError("simulated arxiv down")
+
+        monkeypatch.setattr(wh, "poll_rss", lambda *a, **kw: list(CANNED_RSS))
+        monkeypatch.setattr(wh, "query_papers", _raise_papers)
+        monkeypatch.setattr(wh, "query_forum", lambda *a, **kw: [])
+        monkeypatch.setattr(wh, "poll_github_releases", lambda *a, **kw: [])
+
+        result = web_crawl.crawl(str(vault), dry_run=True, today="2026-06-22")
+        trace = result["trace"]
+        harvest_recs = trace.find("harvest", "target")
+        # At least one harvest record should have an error entry in queries
+        all_queries = [
+            q for rec in harvest_recs for q in rec["data"].get("queries", [])
+        ]
+        # Some query entries should carry an 'error' key from the raised exception
+        error_entries = [q for q in all_queries if "error" in q]
+        assert len(error_entries) >= 1, (
+            "Expected at least one error-marked query in harvest trace records"
+        )
