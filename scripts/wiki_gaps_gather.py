@@ -150,14 +150,23 @@ def _extract_section(body: str, header_lower: str) -> str:
     Returns the text between that header line and the next "## " heading
     (or end of body).  Returns "" if the section is absent.
     The returned text does NOT include the header line itself.
+
+    Matches a heading when the normalized line STARTS WITH the target
+    (case-insensitive), tolerating trailing parenthetical/suffix after the
+    heading text (e.g., "## Open questions (TBD for [[iris-tetra]])").
     """
     lines = body.splitlines()
     in_section = False
     section_lines: list[str] = []
     for line in lines:
-        if line.strip().lower() == header_lower:
-            in_section = True
-            continue
+        line_lower = line.strip().lower()
+        # Check if this line starts with the target header.
+        # Allow trailing parenthetical suffixes.
+        if line_lower.startswith(header_lower):
+            # Verify it's an actual level-2 heading, not a substring inside body text.
+            if line.strip().startswith("## "):
+                in_section = True
+                continue
         if in_section:
             # Stop at the next level-2 heading (## ).
             if line.startswith("## "):

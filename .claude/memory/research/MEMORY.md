@@ -20,19 +20,31 @@ current; never store fact bodies here.
 - [ ] W3: skills question-promote, question-solve, obj-reconcile created.
 - [ ] W4: `objective/` scaffold applied to Inference-Disagg vault; user seeded purpose/topic/questions.
 
-## Objective graph state (populate after user seeds objective/ nodes)
+## Objective graph state (updated 2026-06-22)
 
-- Current open research questions: (none yet - pending user seed)
-- Current open directions: (none yet - pending obj-synth run)
-- Last synthesis run: (none yet)
+- Current open research questions: 7 (Q-0001..Q-0007), none solved.
+- Current open directions: 5 (DIR-0001..DIR-0005), all emitted 2026-06-22 by obj-synth.
+- Current proposals: 1 (QP-0001 software disagg primitives), pending user approval.
+- Last synthesis run: obj-synth + deep-synthesis (Q-0001), 2026-06-22.
 
-## Synthesis decisions (populate as patterns are discovered)
+## Synthesis decisions (updated 2026-06-22)
 
-- _(record prompt-fill strategies, retrieval depth decisions, ranking choices that worked well)_
+- decisions() command does NOT support --json flag; use plain `decisions` subcommand.
+- frontier() command does NOT support --json flag; use plain `frontier` subcommand.
+- next-id uses hyphen not underscore: `next-id direction`, `next-id research_question_proposal`.
+- Write files to vault via wsl.exe bash + python3 (Windows path EPERM blocks Write tool).
+- Heredoc in wsl.exe bash breaks on parentheses in content; use python3 inline or Write tool
+  to UNC path (\\wsl.localhost\ubuntu\tmp\...) then copy with python3.
+- gather_local_context + excerpts_to_wiki_baseline work correctly for keyword scoring.
+- obj-synth reasoning pattern: B_rank formula derivation from Baidu sources is strong signal.
+- Deep zone analysis: H800 dead zone for DeepSeek-V3 at NF<=2; Step-3 essentially immune.
+- Minimum B_ScaleOut to eliminate dead zone at NF=X for DeepSeek-V3: 20*X GB/s.
 
 ## Question -> answer linkage
 
-- _(record Q-NNNN -> research/Q-NNNN.md mappings after question-solve runs)_
+- Q-0001 -> research/Q-0001.md (partial, 2026-06-22): criteria A+B answered analytically;
+  criterion C (optical fabric scale-out BW) deferred to Phase 3 (DIR-0004 needed).
+- Q-0002..Q-0007 -> no reports yet.
 
 ## RBAC R4 contract reminder
 

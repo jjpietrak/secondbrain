@@ -249,6 +249,43 @@ def test_gather_open_questions_section_header_in_wiki_state():
     assert "Open Questions" in payload["wiki_state"]
 
 
+def test_gather_open_questions_with_parenthetical_suffix():
+    """Open-question headers with trailing parentheticals (e.g., TBD markers) are matched."""
+    with tempfile.TemporaryDirectory() as tmp_str:
+        vault = _make_fixture_vault(Path(tmp_str))
+        # Add a page with a parenthetical header
+        (vault / "wiki" / "concepts" / "future-work.md").write_text(
+            textwrap.dedent("""\
+            ---
+            type: concept
+            title: "Future Work"
+            created: 2026-06-22
+            ai-first: true
+            ---
+            # Future Work
+
+            ## Open questions (TBD for [[iris-tetra]])
+            - What is the impact of disaggregation on e2e latency?
+            - How does batching interact with network latency?
+
+            ## Notes
+            To be filled in later.
+            """),
+            encoding="utf-8",
+        )
+        payload = gather_wiki_state(vault)
+        # Now we should have 4 pages (the original 3 + future-work)
+        assert payload["page_count"] == 4
+        # Open-question count should be 4 (original 2 + 2 new from future-work)
+        assert payload["open_question_count"] == 4, (
+            f"Expected 4 open-question items (2 original + 2 from parenthetical header); got {payload['open_question_count']}"
+        )
+        # The new questions should be in wiki_state verbatim
+        ws = payload["wiki_state"]
+        assert "impact of disaggregation on e2e latency" in ws
+        assert "batching interact with network latency" in ws
+
+
 # ---------------------------------------------------------------------------
 # Tests: gather_wiki_state - For future Claude harvested verbatim
 # ---------------------------------------------------------------------------

@@ -6,6 +6,7 @@ vault contents or the code.
 
 ## Index
 - [2026-06-21-ingest-map.md](2026-06-21-ingest-map.md) -- source->page map for arXiv 2602.09721 (Baidu AFD challenges); key AFD dead zone finding; optical bandwidth niche for Iris Tetra.
+- [2026-06-22-gaps-run.md](2026-06-22-gaps-run.md) -- wiki-gaps run results: 68 pages scanned, 32 open-question items harvested (parenthetical header bug), 10 gaps, 5 self-contained tasks.
 
 ## Standing reminders
 - No web. Ingest only what is in `raw/` and approved; new-source discovery is the Research
