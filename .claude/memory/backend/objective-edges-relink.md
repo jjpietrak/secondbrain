@@ -49,3 +49,21 @@ ONLY remaining vault_health objective upgrade = degree-based (not inbound-only) 
 9 "orphaned" under --area objective are DAG leaves (outbound-but-no-inbound), not true orphans.
 2 genuine dangling refs remain (low priority, agent-written body content, NOT relink): DIR-0004 +
 QP-0001 bodies link `[[hot.md]]` (skippable/ambiguous) — clean via a wiki-lint/research pass.
+
+## PHASE 2.5 COMPLETE (2026-06-22) — code 821759e, vault 2839e08 (PUSHED to origin/master)
+All remaining Phase-2.5 tasks done:
+- `objective/hot.md` prose ids linkified to full wikilinks; `generated_by`->`written_by` (relink).
+- `relink` now DROPS `generated_by` from objective nodes (node-side unify complete).
+- `vault_health`: degree-based orphan for objective/research (objective orphaned 22->0) + a
+  `missing_written_by` check (now 0 across wiki/objective/research). wiki keeps inbound-only orphan.
+- 13 templates (objective/research/wiki `_template.md`) carry `written_by`, `generated_by` removed.
+- write-side helpers (deep_synth_helper, obj_reconcile_helper, obj_init, question_lifecycle,
+  wiki_gaps_fill) emit `written_by`. obj-synth/deep-synthesis/question-promote/obj-reconcile SKILLs
+  now run `relink --apply` at the end so NEW nodes self-link.
+- `scripts/written_by_backfill.py` (dry-run/apply) stamped `written_by` on 72 wiki/research pages
+  (wiki->wiki, research report->research, research/notes->USER) + dropped residual generated_by.
+- Full suite 374 green. Aliases fully removed (reverted earlier). PROVENANCE UNIFY DONE: only
+  `written_by` remains (no `generated_by` anywhere).
+RESIDUAL (pre-existing / low-pri, NOT regressions): 2 objective dead-links = `[[hot.md]]` body refs
+in DIR-0004/QP-0001; wiki 173 dead-links = known wanted-but-uncreated forward-refs; research/notes
+2 isolated + 2 missing-frontmatter (hand-authored, non-standard fm).

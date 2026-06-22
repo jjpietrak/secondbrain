@@ -23,9 +23,11 @@ current; never store fact bodies here.
   Change1 (templates/ drop + 4 producer _template.md) + Change2 (vault _CLAUDE.md delete)
   applied to Inference-Disagg. SCHEMA_VERSION 1->2. All 15 on-disk checks pass.
   Vault commit df2c5df; code commit (see wiki-init-v2.md). Not pushed.
-- [objective-edges-relink.md](objective-edges-relink.md) — Phase 2.5 (partial) 2026-06-22: `objectives.py
-  relink` adds aliases + written_by + `## Links` edges; APPLIED to live vault + PUSHED (vault db31121 ->
-  origin/master). KEY: vault_health is NOT alias-aware -> must upgrade it to validate the objective graph.
+- [objective-edges-relink.md](objective-edges-relink.md) — Phase 2.5 COMPLETE 2026-06-22 (code 821759e,
+  vault 2839e08 -> origin/master): objective edges = full path-qualified wikilinks via `objectives.py
+  relink` (no aliases); `written_by` on ALL items (provenance unify, generated_by gone); vault_health
+  degree-based orphan + missing_written_by check; templates+skills wire new nodes to self-link;
+  written_by_backfill stamped 72 wiki/research pages. objective orphaned 22->0, missing_written_by 0. 374 tests.
 - [vault-ops-skills.md](vault-ops-skills.md) — vault-push + vault-health added 2026-06-22 (commit
   664ef1d): vault-push commits+pushes the vault repo (formalizes obsidian-sync); vault-health
   generalizes vault_health.py to all areas (--area, per-type FM, cross-area links). Docs updated.
