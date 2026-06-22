@@ -31,10 +31,18 @@ vault commit `e3ad8b3`. Not pushed.
   fix: also accept `--json` post-verb (argparse subparser-default clobber risk — do it with
   `default=SUPPRESS` or a parent parser; NOT done, to avoid regressing the pre-verb form).
 
-## Phase 2 — what's left (NOT yet exercised live)
-- `question-promote QP-0001` → `research_question/Q-0008` (user-gated, R4 SB_SANCTIONED_SKILL).
-- `question-solve` on a question (user SOLVED authority).
-- `obj-reconcile` (contradiction/dup adjudication) + `obj-query` (read path) — not run.
-- **Legacy `research/` reconcile (R8) — Checkpoint B, NOT done.** Must be dry-run-on-copy →
-  user diff approval before any move; touches hand-authored `research/afd-simulator/` (do
-  not blind-move). This is a stop-and-confer gate.
+## Phase 2 CLOSEOUT (2026-06-22)
+- **User signed off P2** ("skip — P2 validated"): the obj-synth/deep-synthesis/wiki-gaps
+  live demo is sufficient. `question-promote`/`question-solve` (user-authority, R4) and
+  `obj-reconcile`/`obj-query` are NOT separately demoed — they get exercised in real use.
+  QP-0001 remains a pending proposal awaiting a real user promote decision.
+- **R8 legacy `research/` reconcile DONE** (vault commit `88494fe`). User rule: only `/notes`
+  is valuable. Lifted `research/afd-simulator/notes/` (2 hand-authored notes) → `research/notes/`
+  (git renames, content preserved). Removed the `afd-simulator/` wrapper + its `.nlm-sync.json`
+  (nlm sync is P5; re-establishes from each note's `nlm_note_id` frontmatter) and the empty
+  `research/daily/` + `research/notebooklm/` dirs. `research/` now matches plan: `deep/ query/
+  notes/ <question_id>(Q-0001.md)`. **P5 flag:** when nlm sync is built, re-key it to the new
+  `research/notes/` path (the old per-notebook `.nlm-sync.json` ledger is gone).
+- **Phase 2 COMPLETE.** Next per plan = Phase 3 (web), which is GATED on a dedicated Web
+  DECISION grill-me (combine `objective/direction` + wiki `gaps.md`, rank, de-dup, crawl-plan)
+  before any building. Also pending: `agent-learn` grill-me before Phase 4.
