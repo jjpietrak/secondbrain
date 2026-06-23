@@ -164,7 +164,9 @@ def tmp_vault(tmp_path: Path):
     """Create a minimal vault dir with a seeded ingest_index.json.
 
     Seeds three waiting_approval rows (approve, reject, conflict ids).
-    Returns (vault_root_path, vault_name).
+    The APPROVE_ID row is given a valid https URL so it passes the approve gate.
+    The REJECT_ID and CONFLICT_ID rows have no URL (url gate only applies to approve).
+    Returns the vault root path.
     """
     meta = tmp_path / "meta"
     meta.mkdir(parents=True)
@@ -174,6 +176,12 @@ def tmp_vault(tmp_path: Path):
         "vault": tmp_path.name,
         "sources": {},
     }
+    # URL map: APPROVE_ID gets a real https URL; others stay empty.
+    _urls = {
+        APPROVE_ID: "https://arxiv.org/abs/2606.08635",
+        REJECT_ID: "",
+        CONFLICT_ID: "",
+    }
     for ident in (APPROVE_ID, REJECT_ID, CONFLICT_ID):
         data["sources"][ident] = {
             "id": ident,
@@ -181,7 +189,7 @@ def tmp_vault(tmp_path: Path):
             "status": "waiting_approval",
             "title": f"Test source {ident}",
             "filename": "",
-            "url": "",
+            "url": _urls[ident],
             "source_type": "arxiv",
             "content_hash": "",
             "first_seen": "2026-06-23T00:00:00+00:00",
@@ -327,3 +335,177 @@ class TestEdgeCases:
         md = "- [x] reject · `test:unicode`\n    - reason: café reason\n"
         results = parse_report(md)
         assert results[0]["reason"] == "café reason"
+
+    def test_missing_report_returns_blocked_key(self, tmp_vault, monkeypatch):
+        """apply() on a non-existent report must include 'blocked' in the returned dict."""
+        monkeypatch.setenv("VAULT_PATH", str(tmp_vault))
+        plan = apply("/nonexistent/path/report.md", str(tmp_vault), dry_run=False)
+        assert "blocked" in plan
+        assert plan["blocked"] == []
+
+
+# ---------------------------------------------------------------------------
+# 5. URL gate in apply() -- approve blocked without a valid URL
+# ---------------------------------------------------------------------------
+
+def _make_url_gate_vault(tmp_path: Path, url_for_approve: str = "") -> Path:
+    """Vault with two waiting_approval rows: one with a URL, one without.
+
+    APPROVE_WITH_URL_ID  -> has a valid https URL (should be approved).
+    APPROVE_NO_URL_ID    -> has no URL (should be blocked).
+    REJECT_NO_URL_ID     -> no URL; reject action (reject is unaffected by gate).
+    """
+    meta = tmp_path / "meta"
+    meta.mkdir(parents=True, exist_ok=True)
+
+    def _row(ident, url=""):
+        return {
+            "id": ident,
+            "id_type": "arxiv",
+            "status": "waiting_approval",
+            "title": f"Test {ident}",
+            "filename": "",
+            "url": url,
+            "source_type": "arxiv",
+            "content_hash": "",
+            "first_seen": "2026-06-23T00:00:00+00:00",
+            "ingested_at": None,
+            "source_page": "",
+            "relevance_score": None,
+            "rationale": "",
+            "discovered_by": "",
+            "objective_ids": [],
+            "proposed_at": "2026-06-23T00:00:00+00:00",
+            "rejected_at": None,
+            "rejection_reason": "",
+            "published": None,
+        }
+
+    data = {
+        "version": 3,
+        "vault": tmp_path.name,
+        "sources": {
+            "test:with-url": _row("test:with-url", url="https://arxiv.org/abs/2606.08635"),
+            "test:no-url": _row("test:no-url", url=""),
+            "test:reject-no-url": _row("test:reject-no-url", url=""),
+        },
+    }
+    (meta / "ingest_index.json").write_text(json.dumps(data, indent=2))
+    return tmp_path
+
+
+_URL_GATE_REPORT = """\
+# Nightly Report URL Gate Test
+
+## Candidates
+
+### 1. Source with valid URL
+- [x] approve · `test:with-url`
+- [ ] reject · `test:with-url`
+    - reason:
+
+### 2. Source with no URL
+- [x] approve · `test:no-url`
+- [ ] reject · `test:no-url`
+    - reason:
+
+### 3. Reject without URL (should work fine)
+- [ ] approve · `test:reject-no-url`
+- [x] reject · `test:reject-no-url`
+    - reason: not relevant
+"""
+
+
+class TestUrlGate:
+
+    @pytest.fixture()
+    def url_gate_vault(self, tmp_path):
+        return _make_url_gate_vault(tmp_path)
+
+    @pytest.fixture()
+    def url_gate_report(self, tmp_path):
+        p = tmp_path / "url_gate_report.md"
+        p.write_text(_URL_GATE_REPORT, encoding="utf-8")
+        return p
+
+    def test_approve_with_valid_url_is_approved_dry_run(
+        self, url_gate_vault, url_gate_report, monkeypatch
+    ):
+        """Ticked-approve with a valid URL appears in 'approved' on dry-run."""
+        monkeypatch.setenv("VAULT_PATH", str(url_gate_vault))
+        plan = apply(str(url_gate_report), str(url_gate_vault), dry_run=True)
+
+        assert "test:with-url" in plan["approved"]
+
+    def test_approve_without_url_is_blocked_dry_run(
+        self, url_gate_vault, url_gate_report, monkeypatch
+    ):
+        """Ticked-approve with no URL appears in 'blocked' with reason 'no working URL' on dry-run."""
+        monkeypatch.setenv("VAULT_PATH", str(url_gate_vault))
+        plan = apply(str(url_gate_report), str(url_gate_vault), dry_run=True)
+
+        assert "test:no-url" not in plan["approved"]
+        assert any(b["id"] == "test:no-url" for b in plan["blocked"])
+        blocked_entry = next(b for b in plan["blocked"] if b["id"] == "test:no-url")
+        assert blocked_entry["reason"] == "no working URL"
+
+    def test_approve_without_url_not_mutated_dry_run(
+        self, url_gate_vault, url_gate_report, monkeypatch
+    ):
+        """The index is NOT mutated for a blocked approve row on dry-run."""
+        monkeypatch.setenv("VAULT_PATH", str(url_gate_vault))
+        index_path = url_gate_vault / "meta" / "ingest_index.json"
+        before = json.loads(index_path.read_text())
+
+        apply(str(url_gate_report), str(url_gate_vault), dry_run=True)
+
+        after = json.loads(index_path.read_text())
+        assert before == after, "Dry-run must not write the index at all"
+
+    def test_approve_with_valid_url_flips_to_pending_apply(
+        self, url_gate_vault, url_gate_report, monkeypatch
+    ):
+        """Ticked-approve with URL: waiting_approval -> pending on --apply."""
+        monkeypatch.setenv("VAULT_PATH", str(url_gate_vault))
+        apply(str(url_gate_report), str(url_gate_vault), dry_run=False)
+
+        data = json.loads((url_gate_vault / "meta" / "ingest_index.json").read_text())
+        assert data["sources"]["test:with-url"]["status"] == "pending"
+
+    def test_approve_without_url_stays_waiting_approval_apply(
+        self, url_gate_vault, url_gate_report, monkeypatch
+    ):
+        """Ticked-approve with no URL: status stays waiting_approval on --apply."""
+        monkeypatch.setenv("VAULT_PATH", str(url_gate_vault))
+        apply(str(url_gate_report), str(url_gate_vault), dry_run=False)
+
+        data = json.loads((url_gate_vault / "meta" / "ingest_index.json").read_text())
+        assert data["sources"]["test:no-url"]["status"] == "waiting_approval", (
+            "A blocked approve must NOT change the row status"
+        )
+
+    def test_reject_without_url_succeeds(
+        self, url_gate_vault, url_gate_report, monkeypatch
+    ):
+        """Ticked-reject with no URL: reject is unaffected by the URL gate -> rejected."""
+        monkeypatch.setenv("VAULT_PATH", str(url_gate_vault))
+        apply(str(url_gate_report), str(url_gate_vault), dry_run=False)
+
+        data = json.loads((url_gate_vault / "meta" / "ingest_index.json").read_text())
+        assert data["sources"]["test:reject-no-url"]["status"] == "rejected"
+
+    def test_blocked_in_plan_returned_key(
+        self, url_gate_vault, url_gate_report, monkeypatch
+    ):
+        """The 'blocked' key is always present in the returned plan."""
+        monkeypatch.setenv("VAULT_PATH", str(url_gate_vault))
+        plan = apply(str(url_gate_report), str(url_gate_vault), dry_run=True)
+        assert "blocked" in plan
+
+    def test_applied_true_with_url_gate(
+        self, url_gate_vault, url_gate_report, monkeypatch
+    ):
+        """applied=True on --apply even when some rows are blocked."""
+        monkeypatch.setenv("VAULT_PATH", str(url_gate_vault))
+        plan = apply(str(url_gate_report), str(url_gate_vault), dry_run=False)
+        assert plan["applied"] is True

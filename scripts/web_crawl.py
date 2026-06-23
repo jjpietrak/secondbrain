@@ -35,10 +35,13 @@ Nightly report interactive format (one block per selected candidate):
   - [ ] approve * `ident`
   - [ ] reject * `ident`
       - reason:
-  - **published**: DATE * **score**: 0.0000 * **lane**: LANE
-  - **relevance**: [[wikilink]], ...
-  - **rationale**: 1-2 sentence content rationale
+  - **retrieved via**: ENGINE * **source**: SOURCE_ID * **published**: DATE * **score**: 0.0000 * **lane**: LANE
+  - **relevance refs**: [[wikilink]], ...
   - **url**: https://...
+
+  **Summary** -- <stripped snippet capped at ~200 words>
+
+  **Relevance** -- <why selected: lane, origin_ids, expected_evidence, score, engine>
 
   The approve/reject lines are real Obsidian checkboxes. `ident` is the same value
   passed to ingest_index.enqueue (candidate_ident(cand)). The rationale is derived
@@ -349,10 +352,13 @@ def _harvest_target(
             return queries[idx]
         return target_id
 
-    # -- tag candidate with lane + origin_ids --
+    # -- tag candidate with lane + origin_ids + expected_evidence --
+    expected_evidence = target.get("expected_evidence", "")
+
     def _tag(c: dict) -> dict:
         c["lane"] = lane
         c["origin_ids"] = list(origin_ids)
+        c["expected_evidence"] = expected_evidence
         return c
 
     # -- safe call wrapper with trace recording and per-target dedup --
@@ -537,6 +543,82 @@ def _content_rationale(cand: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Content summary helper (deterministic, $0 -- no LLM call)
+# ---------------------------------------------------------------------------
+
+def _content_summary(cand: dict) -> str:
+    """Return a Summary paragraph describing the source's CONTENT.
+
+    Steps:
+    1. Strip HTML tags from snippet.
+    2. Collapse whitespace.
+    3. Cap at ~200 WORDS on a word boundary.
+    4. If snippet is empty or very short (<=5 words), return an honest note.
+
+    Returns a plain ASCII-safe string (no markup).
+    """
+    raw = (cand.get("snippet") or "").strip()
+    if raw:
+        # Strip HTML tags
+        clean = _re.sub(r"<[^>]+>", "", raw)
+        # Collapse whitespace (newlines, tabs, multiple spaces)
+        clean = _re.sub(r"\s+", " ", clean).strip()
+        if clean:
+            words = clean.split()
+            if len(words) >= 5:
+                if len(words) > 200:
+                    clean = " ".join(words[:200])
+                    # Try to end at a sentence boundary within those 200 words
+                    m = _re.search(r"[.!?](?=\s|$)", clean)
+                    if m:
+                        clean = clean[: m.end()].strip()
+                    else:
+                        clean = clean.rstrip(",;:") + "..."
+                return clean
+
+    return (
+        "No abstract/snippet retrieved -- fetch the URL to summarize."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Relevance paragraph helper (deterministic, $0 -- no LLM call)
+# ---------------------------------------------------------------------------
+
+def _relevance_paragraph(cand: dict) -> str:
+    """Return a Relevance paragraph explaining WHY the web agent selected this candidate.
+
+    Composed from: lane, origin_ids, expected_evidence, score, engine, source_id.
+    One readable paragraph, ASCII only (no Unicode dashes or curly quotes).
+
+    Example shape:
+      "Selected for the gap lane to serve GAP-01. The web agent sought:
+       Papers describing P/D disaggregation with latency measurements.
+       Ranked by semantic relevance to the vault PURPOSE (score 0.850);
+       retrieved via arxiv from arxiv_cs_dc."
+    """
+    lane = (cand.get("lane") or "").strip()
+    origin_ids = cand.get("origin_ids") or []
+    expected_evidence = (cand.get("expected_evidence") or "").strip()
+    score = float(cand.get("score", 0.0))
+    engine = (cand.get("engine") or "").strip()
+    source_id = (cand.get("source_id") or "").strip()
+
+    origin_str = ", ".join(origin_ids) if origin_ids else "n/a"
+    evidence_str = expected_evidence if expected_evidence else "evidence to close this gap"
+    # Strip trailing period from evidence_str to avoid double period
+    evidence_str = evidence_str.rstrip(".")
+
+    parts: list[str] = [
+        f"Selected for the {lane} lane to serve {origin_str}.",
+        f"The web agent sought: {evidence_str}.",
+        f"Ranked by semantic relevance to the vault PURPOSE (score {score:.3f});",
+        f"retrieved via {engine} from {source_id}.",
+    ]
+    return " ".join(parts)
+
+
+# ---------------------------------------------------------------------------
 # Relevance links helper (inline copy of ingest_index._relevance_links logic,
 # so web_crawl has no circular import risk; kept in sync with the real impl)
 # ---------------------------------------------------------------------------
@@ -633,10 +715,13 @@ _CANDIDATE_BLOCK = """\
 - [ ] approve \xb7 `{ident}`
 - [ ] reject \xb7 `{ident}`
     - reason:
-- **published**: {published} \xb7 **score**: {score:.4f} \xb7 **lane**: {lane}
-- **relevance**: {relevance_links}
-- **rationale**: {rationale}
+- **retrieved via**: {engine} \xb7 **source**: {source_id} \xb7 **published**: {published} \xb7 **score**: {score:.4f} \xb7 **lane**: {lane}
+- **relevance refs**: {relevance_links}
 - **url**: {url}
+
+**Summary** — {content_summary}
+
+**Relevance** — {relevance_paragraph}
 """
 
 
@@ -648,16 +733,22 @@ def _write_nightly_report(
 ) -> Path:
     """Write meta/nightly_report/<today>.md with one interactive block per candidate.
 
-    Format (pinned -- scripts/report_approve.py parses it):
+    Format (pinned -- scripts/report_approve.py parses the checkbox lines):
       ### N. Title
       - [ ] approve * `ident`
       - [ ] reject * `ident`
           - reason:
-      - **published**: DATE * **score**: 0.0000 * **lane**: LANE
-      - **relevance**: [[wikilink]], ...
-      - **rationale**: 1-2 sentence content rationale
+      - **retrieved via**: ENGINE * **source**: SOURCE_ID * **published**: DATE
+        * **score**: 0.0000 * **lane**: LANE
+      - **relevance refs**: [[wikilink]], ...
       - **url**: https://...
 
+      **Summary** -- <content summary paragraph>
+
+      **Relevance** -- <relevance paragraph>
+
+    The approve/reject/reason lines are UNCHANGED from the previous format so
+    report_approve.py continues to parse them correctly.
     Frontmatter and '## Decision trace' section are preserved unchanged.
     If trace is provided, a '## Decision trace' section is appended.
     """
@@ -676,8 +767,11 @@ def _write_nightly_report(
             published = (c.get("published") or "").strip() or "—"
             score = float(c.get("score", 0.0))
             lane = c.get("lane", "")
+            engine = (c.get("engine") or "").strip()
+            source_id = (c.get("source_id") or "").strip()
             rel_links = _relevance_links(origin_ids, vault_root)
-            rationale = _content_rationale(c)
+            content_summary = _content_summary(c)
+            relevance_para = _relevance_paragraph(c)
             url = c.get("url", "")
             title = c.get("title", "(no title)")
             blocks.append(
@@ -685,11 +779,14 @@ def _write_nightly_report(
                     n=n,
                     title=title,
                     ident=ident,
+                    engine=engine,
+                    source_id=source_id,
                     published=published,
                     score=score,
                     lane=lane,
                     relevance_links=rel_links,
-                    rationale=rationale,
+                    content_summary=content_summary,
+                    relevance_paragraph=relevance_para,
                     url=url,
                 )
             )
@@ -880,9 +977,19 @@ def crawl(
             continue
         title = c.get("title", "")
         origin_ids = c.get("origin_ids") or []
-        rationale = _content_rationale(c)
+        # Compact one-liner for the ingest_index Rationale column
+        # (cap at ~200 chars so the column stays readable)
+        summary_text = _content_summary(c)
+        rationale = summary_text[:200].rstrip() if len(summary_text) > 200 else summary_text
         score = float(c.get("score", 0.0))
         published = c.get("published") or None
+
+        # Resolve the working URL to pass to enqueue.
+        # For arXiv candidates whose url field is empty, derive from ident.
+        enqueue_url = c.get("url") or ""
+        if not enqueue_url and ident.startswith("arxiv:"):
+            arxiv_id = ident[len("arxiv:"):]
+            enqueue_url = f"https://arxiv.org/abs/{arxiv_id}"
 
         try:
             row = ii.enqueue(
@@ -893,6 +1000,7 @@ def crawl(
                 discovered_by="web",
                 objective_ids=list(origin_ids),
                 published=published,
+                url=enqueue_url,
             )
             enqueued_ids.append(row.get("id", ident))
         except Exception as exc:

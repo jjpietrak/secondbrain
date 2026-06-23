@@ -74,6 +74,7 @@ STATUSES = {"pending", "ingested", "deleted", "waiting_approval", "rejected"}
 NO_FILE_STATUSES = {"deleted", "waiting_approval", "rejected"}
 # v3 fields added additively to every row (.get()-safe, never overwrite existing values).
 _V3_DEFAULTS = {
+    "url": "",
     "relevance_score": None,
     "rationale": "",
     "discovered_by": "",
@@ -349,7 +350,8 @@ def _normalize_enqueue_id(raw: str) -> tuple[str, str, str]:
     return f"id:{raw}", "explicit", ""
 
 
-def enqueue(ident: str, *, title: str = "", rationale: str = "", score: float | None = None,
+def enqueue(ident: str, *, url: str | None = None, title: str = "",
+            rationale: str = "", score: float | None = None,
             discovered_by: str = "", objective_ids: list[str] | None = None,
             published: str | None = None, name: str | None = None) -> dict:
     """Add a `waiting_approval` candidate (no file on disk). Idempotent / status-safe:
@@ -357,19 +359,27 @@ def enqueue(ident: str, *, title: str = "", rationale: str = "", score: float | 
     - if the id already exists in any other status -> update metadata only, NEVER regress
       the status (so an already-pending/ingested source is not knocked back to waiting);
     - otherwise create a fresh `waiting_approval` row.
+
+    The *url* keyword stores a http/https URL for the source.  A non-empty *url* is
+    stored unconditionally on new rows and as an update on existing rows when the row
+    currently has no URL.  None or empty string never clobbers an existing URL.
+
     Returns the resulting row."""
-    sid, id_type, url = _normalize_enqueue_id(ident)
+    sid, id_type, derived_url = _normalize_enqueue_id(ident)
+    # Explicit url= wins over the url derived from the ident when both are present.
+    effective_url = (url.strip() if url and url.strip() else derived_url)
     data = _load(name)
     row = data["sources"].get(sid)
     if row is not None and row.get("status") == "rejected":
         return row  # sticky no-op
     if row is None:
         row = {"id": sid, "id_type": id_type, "status": "waiting_approval",
-               "title": title, "filename": "", "url": url,
+               "title": title, "filename": "", "url": effective_url,
                "source_type": id_type, "content_hash": "",
                "first_seen": _now(), "ingested_at": None, "source_page": ""}
         for k, v in _V3_DEFAULTS.items():
             row[k] = list(v) if isinstance(v, list) else v
+        row["url"] = effective_url  # row["url"] is now set to effective_url
         row["proposed_at"] = _now()
         data["sources"][sid] = row
     # metadata-only update (never touches status for an existing non-rejected row)
@@ -387,8 +397,9 @@ def enqueue(ident: str, *, title: str = "", rationale: str = "", score: float | 
             if oid not in merged:
                 merged.append(oid)
         row["objective_ids"] = merged
-    if url and not row.get("url"):
-        row["url"] = url
+    # url update: non-empty effective_url wins; do NOT clobber an existing url with None/empty
+    if effective_url and not row.get("url"):
+        row["url"] = effective_url
     # published: only store when provided (do NOT clobber an existing value with None)
     if published is not None:
         row["published"] = published
@@ -509,6 +520,31 @@ def _resolve_title(row: dict, vault_root: Path) -> str:
 
     # Last resort: return whatever is stored (may still be the filename stem).
     return stored
+
+
+# ---------------------------------------------------------------------------
+# URL validation helpers
+# ---------------------------------------------------------------------------
+
+def _valid_url(u: str) -> bool:
+    """Return True iff *u* is a non-empty http/https URL with a network location.
+
+    Uses urllib.parse.urlparse: scheme must be 'http' or 'https' and netloc must
+    be non-empty (i.e. a real host is present).  All other values -- empty string,
+    bare arXiv ids, 'ftp://', relative paths -- return False.
+    """
+    if not u:
+        return False
+    try:
+        p = urlparse(u)
+        return p.scheme in {"http", "https"} and bool(p.netloc)
+    except Exception:
+        return False
+
+
+def has_working_url(row: dict) -> bool:
+    """Return True iff the ingest row contains a valid http/https URL."""
+    return _valid_url(row.get("url") or "")
 
 
 _STATUS_RANK = {"pending": 0, "waiting_approval": 1, "ingested": 2,
@@ -651,10 +687,11 @@ def _main(argv: list[str]) -> int:
     if "--id" in args:
         i = args.index("--id"); sid_opt = args[i + 1]; del args[i:i + 2]
     # v3 enqueue/reject options
-    opt_title = opt_rationale = opt_discovered = opt_reason = opt_published = None
+    opt_title = opt_rationale = opt_discovered = opt_reason = opt_published = opt_url = None
     opt_score = None
     opt_objectives: list[str] = []
-    for flag in ("--title", "--rationale", "--discovered-by", "--score", "--reason", "--published"):
+    for flag in ("--title", "--rationale", "--discovered-by", "--score", "--reason",
+                 "--published", "--url"):
         if flag in args:
             i = args.index(flag); val = args[i + 1]; del args[i:i + 2]
             if flag == "--title": opt_title = val
@@ -662,6 +699,7 @@ def _main(argv: list[str]) -> int:
             elif flag == "--discovered-by": opt_discovered = val
             elif flag == "--reason": opt_reason = val
             elif flag == "--published": opt_published = val
+            elif flag == "--url": opt_url = val
             elif flag == "--score":
                 try: opt_score = float(val)
                 except ValueError: opt_score = None
@@ -708,8 +746,8 @@ def _main(argv: list[str]) -> int:
     elif cmd == "enqueue":
         if len(args) < 2:
             print("usage: enqueue <id|url> [--title --rationale --score "
-                  "--discovered-by --published --objective-ids ...]", file=sys.stderr); return 2
-        row = enqueue(args[1], title=opt_title or "", rationale=opt_rationale or "",
+                  "--discovered-by --published --url --objective-ids ...]", file=sys.stderr); return 2
+        row = enqueue(args[1], url=opt_url, title=opt_title or "", rationale=opt_rationale or "",
                       score=opt_score, discovered_by=opt_discovered or "",
                       objective_ids=opt_objectives, published=opt_published, name=name)
         if as_json:

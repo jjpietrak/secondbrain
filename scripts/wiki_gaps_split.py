@@ -287,6 +287,37 @@ def _render_frontmatter(fm_dict: OrderedDict) -> str:
     return "---\n" + body + "---"
 
 
+_WIKILINK_RE = re.compile(r"(\[\[wiki/[^\]]+\]\])")
+
+
+def _render_shows_up_in_bullets(shows_up_in: list[str]) -> list[str]:
+    """Render shows_up_in entries as body bullet lines.
+
+    Each entry may contain a [[wiki/...]] wikilink followed by optional
+    descriptor text.  The bullet is rendered as:
+
+        - [[wiki/...]] -- <descriptor>
+
+    If an entry contains no [[...]] wikilink it is rendered as a plain bullet.
+    If the list is empty, returns an empty list (the section is omitted).
+    """
+    bullets: list[str] = []
+    for entry in shows_up_in:
+        m = _WIKILINK_RE.search(entry)
+        if m:
+            wikilink = m.group(1)
+            # Trailing text: everything after the wikilink, stripped
+            after = entry[m.end():].strip()
+            if after:
+                bullets.append(f"- {wikilink} -- {after}")
+            else:
+                bullets.append(f"- {wikilink}")
+        else:
+            # No wikilink -- render as plain bullet
+            bullets.append(f"- {entry}")
+    return bullets
+
+
 def _render_gap_file(
     gap: dict,
     created: str,
@@ -321,6 +352,11 @@ def _render_gap_file(
             gap["why"],
             "",
         ]
+
+    # Shows up in: body section for Obsidian graph edges
+    shows_up_in_bullets = _render_shows_up_in_bullets(gap.get("shows_up_in", []))
+    if shows_up_in_bullets:
+        lines += ["## Shows up in"] + shows_up_in_bullets + [""]
 
     # Open questions section is omitted when empty
     # (caller injects per-gap OQ lines if desired; here we leave it to the LLM)

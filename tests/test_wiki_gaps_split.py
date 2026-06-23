@@ -595,6 +595,118 @@ def test_yaml_roundtrip_index_frontmatter():
 
 
 # ---------------------------------------------------------------------------
+# Tests: ## Shows up in body section (Obsidian graph edges)
+# ---------------------------------------------------------------------------
+
+# Fixture: two shows_up_in entries, each with a [[wiki/...]] wikilink + trailing text.
+FIXTURE_SHOWS_UP_IN = textwrap.dedent("""\
+    ## Knowledge Gaps
+    ### GAP-01: Missing optical prior art
+    - shows_up_in: [[wiki/sources/photons-to-tokens]] Open Questions; [[wiki/concepts/free-space-optics]] cited optical-AI prior art
+    - missing: the 4 cited papers are not ingested
+    - fillable_by: arxiv
+    - topic: T-0006
+    - priority: low  -  informational only
+
+    ## Coverage Map
+    - T-0006: sparse
+""")
+
+
+def test_shows_up_in_body_section_two_bullets():
+    """A gap with 2 shows_up_in entries produces a ## Shows up in section with 2 bullets."""
+    result = split(FIXTURE_SHOWS_UP_IN, "/tmp/nonexistent_vault_sui", apply=False, today="2026-06-23")
+    gap01 = next(f for f in result["files"] if "GAP-01" in f["path"])
+    content = gap01["content"]
+
+    assert "## Shows up in" in content, "Body must contain ## Shows up in section"
+    assert "[[wiki/sources/photons-to-tokens]]" in content, (
+        "Wikilink from first shows_up_in entry must appear in body"
+    )
+    assert "[[wiki/concepts/free-space-optics]]" in content, (
+        "Wikilink from second shows_up_in entry must appear in body"
+    )
+    # Both bullets should use ' -- ' separator
+    assert "- [[wiki/sources/photons-to-tokens]] -- Open Questions" in content
+    assert "- [[wiki/concepts/free-space-optics]] -- cited optical-AI prior art" in content
+
+
+def test_shows_up_in_body_is_in_body_not_only_frontmatter():
+    """The wikilinks must appear AFTER the frontmatter closing ---, not just inside it."""
+    result = split(FIXTURE_SHOWS_UP_IN, "/tmp/nonexistent_vault_sui", apply=False, today="2026-06-23")
+    gap01 = next(f for f in result["files"] if "GAP-01" in f["path"])
+    content = gap01["content"]
+
+    # Split on the closing --- of frontmatter
+    parts = content.split("---", 2)
+    # parts[0] = empty, parts[1] = YAML frontmatter body, parts[2] = markdown body
+    assert len(parts) >= 3, "Content must have frontmatter fences"
+    body = parts[2]
+    assert "[[wiki/sources/photons-to-tokens]]" in body, (
+        "Wikilinks must appear in the markdown body (after frontmatter), not only in frontmatter"
+    )
+
+
+def test_shows_up_in_plain_bullet_when_no_wikilink():
+    """An entry with no [[...]] wikilink is rendered as a plain bullet without crashing."""
+    plain_entry_fixture = textwrap.dedent("""\
+        ## Knowledge Gaps
+        ### GAP-01: Plain entry gap
+        - shows_up_in: some page without a wikilink
+        - missing: something
+        - fillable_by: web
+        - topic: T-0001
+        - priority: medium
+
+        ## Coverage Map
+        - T-0001: ok
+    """)
+    result = split(plain_entry_fixture, "/tmp/nonexistent_vault_plain", apply=False, today="2026-06-23")
+    gap01 = next(f for f in result["files"] if "GAP-01" in f["path"])
+    content = gap01["content"]
+
+    assert "## Shows up in" in content
+    # Plain bullet: no [[ prefix, just the text
+    assert "- some page without a wikilink" in content
+
+
+def test_shows_up_in_empty_omits_section():
+    """A gap with no shows_up_in field must NOT produce a ## Shows up in section."""
+    # When shows_up_in is absent entirely, the section is omitted.
+    no_shows_up_in = textwrap.dedent("""\
+        ## Knowledge Gaps
+        ### GAP-01: No source gap
+        - missing: something missing
+        - fillable_by: web
+        - topic: T-0001
+        - priority: medium
+
+        ## Coverage Map
+        - T-0001: ok
+    """)
+    result = split(no_shows_up_in, "/tmp/nonexistent_vault_empty_sui", apply=False, today="2026-06-23")
+    assert len(result["files"]) == 1
+    content = result["files"][0]["content"]
+    assert "## Shows up in" not in content, (
+        "Empty shows_up_in must not produce a ## Shows up in section"
+    )
+
+
+def test_shows_up_in_frontmatter_still_present():
+    """Frontmatter shows_up_in list is preserved alongside the body section."""
+    result = split(FIXTURE_SHOWS_UP_IN, "/tmp/nonexistent_vault_fm", apply=False, today="2026-06-23")
+    gap01 = next(f for f in result["files"] if "GAP-01" in f["path"])
+    content = gap01["content"]
+
+    fm_text = _extract_frontmatter(content)
+    fm = yaml.safe_load(fm_text)
+
+    assert "shows_up_in" in fm, "shows_up_in key must remain in frontmatter"
+    assert isinstance(fm["shows_up_in"], list), "shows_up_in frontmatter value must be a list"
+    assert len(fm["shows_up_in"]) == 2, "Both entries must be preserved in frontmatter"
+
+
+# ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
 

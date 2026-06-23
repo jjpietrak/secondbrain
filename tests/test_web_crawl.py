@@ -386,7 +386,7 @@ def _patch_loaders(monkeypatch, tmp_path: Path, vault: Path):
 
         def enqueue(self, ident, *, title="", rationale="", score=None,
                     discovered_by="", objective_ids=None, name=None,
-                    published=None):
+                    published=None, url=None):
             # Load existing data from vault directly
             index_path = vault / "meta" / "ingest_index.json"
             if index_path.exists():
@@ -399,7 +399,9 @@ def _patch_loaders(monkeypatch, tmp_path: Path, vault: Path):
             data.setdefault("sources", {})
 
             # Normalize id (simplified: use _real_ii helpers)
-            sid, id_type, url = _real_ii._normalize_enqueue_id(ident)
+            sid, id_type, derived_url = _real_ii._normalize_enqueue_id(ident)
+            # Prefer the explicitly passed url; fall back to the derived one
+            resolved_url = url or derived_url or ""
             row = data["sources"].get(sid)
             if row is not None and row.get("status") == "rejected":
                 return row
@@ -408,7 +410,7 @@ def _patch_loaders(monkeypatch, tmp_path: Path, vault: Path):
                 now = datetime.now(timezone.utc).isoformat(timespec="seconds")
                 row = {
                     "id": sid, "id_type": id_type, "status": "waiting_approval",
-                    "title": title, "filename": "", "url": url,
+                    "title": title, "filename": "", "url": resolved_url,
                     "source_type": id_type, "content_hash": "",
                     "first_seen": now, "ingested_at": None, "source_page": "",
                     "relevance_score": None, "rationale": "", "discovered_by": "",
@@ -430,8 +432,8 @@ def _patch_loaders(monkeypatch, tmp_path: Path, vault: Path):
                     if oid not in merged:
                         merged.append(oid)
                 row["objective_ids"] = merged
-            if url and not row.get("url"):
-                row["url"] = url
+            if resolved_url and not row.get("url"):
+                row["url"] = resolved_url
             if published is not None:
                 row["published"] = published
             # Save
@@ -2170,6 +2172,323 @@ class TestContentRationale:
 
 
 # ===========================================================================
+# Tests: _content_summary helper
+# ===========================================================================
+
+class TestContentSummary:
+    """_content_summary strips HTML and caps at ~200 words."""
+
+    def test_plain_snippet_returned(self):
+        cand = {
+            "snippet": "This paper surveys disaggregated inference approaches.",
+            "lane": "gap",
+            "origin_ids": ["GAP-01"],
+        }
+        result = web_crawl._content_summary(cand)
+        assert "disaggregated inference" in result
+        assert "<" not in result  # no HTML tags
+
+    def test_html_tags_stripped(self):
+        cand = {
+            "snippet": "<b>Fast</b> inference <em>scheduling</em> for LLMs.",
+            "lane": "gap",
+            "origin_ids": ["GAP-01"],
+        }
+        result = web_crawl._content_summary(cand)
+        assert "<b>" not in result
+        assert "<em>" not in result
+        assert "Fast" in result
+        assert "scheduling" in result
+
+    def test_long_abstract_capped_at_200_words(self):
+        # 300 words of content
+        words = ["word"] * 300
+        snippet = " ".join(words)
+        cand = {"snippet": snippet, "lane": "gap", "origin_ids": []}
+        result = web_crawl._content_summary(cand)
+        result_words = result.rstrip("...").split()
+        assert len(result_words) <= 200, (
+            f"Expected <=200 words, got {len(result_words)}"
+        )
+
+    def test_200_word_cap_on_word_boundary(self):
+        # Exactly 201 words -- should cap at 200 (word boundary)
+        words = [f"w{i}" for i in range(201)]
+        snippet = " ".join(words)
+        cand = {"snippet": snippet, "lane": "gap", "origin_ids": []}
+        result = web_crawl._content_summary(cand)
+        # Must NOT contain word 201
+        assert "w200" not in result
+
+    def test_empty_snippet_returns_honest_note(self):
+        cand = {"snippet": "", "lane": "research", "origin_ids": ["GAP-02"]}
+        result = web_crawl._content_summary(cand)
+        assert "No abstract/snippet retrieved" in result
+
+    def test_missing_snippet_returns_honest_note(self):
+        cand = {"lane": "news", "origin_ids": ["news"]}
+        result = web_crawl._content_summary(cand)
+        assert "No abstract/snippet retrieved" in result
+
+    def test_whitespace_only_snippet_returns_honest_note(self):
+        cand = {"snippet": "   \n\t  ", "lane": "gap", "origin_ids": ["GAP-01"]}
+        result = web_crawl._content_summary(cand)
+        assert "No abstract/snippet retrieved" in result
+
+    def test_very_short_snippet_returns_honest_note(self):
+        # 4 words is <= 5 words -- treated as "very short"
+        cand = {"snippet": "short four words only", "lane": "gap", "origin_ids": []}
+        result = web_crawl._content_summary(cand)
+        assert "No abstract/snippet retrieved" in result
+
+    def test_six_word_snippet_returned_as_is(self):
+        cand = {"snippet": "This has six real words here.", "lane": "gap",
+                "origin_ids": []}
+        result = web_crawl._content_summary(cand)
+        assert "No abstract/snippet" not in result
+        assert "six" in result
+
+    def test_newlines_collapsed(self):
+        cand = {"snippet": "Line one.\nLine two.\nLine three.", "lane": "gap",
+                "origin_ids": ["GAP-01"]}
+        result = web_crawl._content_summary(cand)
+        assert "\n" not in result
+
+
+# ===========================================================================
+# Tests: _relevance_paragraph helper
+# ===========================================================================
+
+class TestRelevanceParagraph:
+    """_relevance_paragraph composes a grounded relevance paragraph."""
+
+    def _make_cand(self, **kwargs) -> dict:
+        base = {
+            "lane": "gap",
+            "origin_ids": ["GAP-01"],
+            "expected_evidence": "Papers describing P/D disaggregation with latency measurements.",
+            "score": 0.850,
+            "engine": "arxiv",
+            "source_id": "arxiv:2401.10001",
+        }
+        base.update(kwargs)
+        return base
+
+    def test_contains_lane(self):
+        cand = self._make_cand(lane="research")
+        result = web_crawl._relevance_paragraph(cand)
+        assert "research" in result
+
+    def test_contains_origin_ids(self):
+        cand = self._make_cand(origin_ids=["GAP-01", "DIR-0001"])
+        result = web_crawl._relevance_paragraph(cand)
+        assert "GAP-01" in result
+        assert "DIR-0001" in result
+
+    def test_contains_engine(self):
+        cand = self._make_cand(engine="hackernews")
+        result = web_crawl._relevance_paragraph(cand)
+        assert "hackernews" in result
+
+    def test_contains_score(self):
+        cand = self._make_cand(score=0.923)
+        result = web_crawl._relevance_paragraph(cand)
+        assert "0.923" in result
+
+    def test_contains_expected_evidence(self):
+        cand = self._make_cand(
+            expected_evidence="Papers describing P/D disaggregation with latency measurements."
+        )
+        result = web_crawl._relevance_paragraph(cand)
+        assert "P/D disaggregation" in result
+
+    def test_missing_expected_evidence_uses_fallback(self):
+        cand = self._make_cand(expected_evidence="")
+        result = web_crawl._relevance_paragraph(cand)
+        assert "evidence to close this gap" in result
+
+    def test_is_one_paragraph_ascii(self):
+        cand = self._make_cand()
+        result = web_crawl._relevance_paragraph(cand)
+        # Must be ASCII (no curly quotes, em-dashes, etc.)
+        result.encode("ascii")  # raises UnicodeEncodeError if non-ASCII
+        # Should not contain newlines (one paragraph)
+        assert "\n" not in result
+
+    def test_source_id_present(self):
+        cand = self._make_cand(source_id="arxiv_cs_dc")
+        result = web_crawl._relevance_paragraph(cand)
+        assert "arxiv_cs_dc" in result
+
+
+# ===========================================================================
+# Tests: enqueue passes url= and derives arXiv URLs
+# ===========================================================================
+
+class TestEnqueueURL:
+    """crawl() passes url= to enqueue; arXiv candidates without url get derived URL."""
+
+    def test_enqueue_receives_url_for_rss_candidate(self, tmp_path, monkeypatch):
+        """RSS candidates pass their item URL to enqueue."""
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_rank(monkeypatch)
+
+        rss_cand = {
+            "title": "NVIDIA Post",
+            "url": "https://developer.nvidia.com/blog/some-post",
+            "source_id": "nvidia_developer_blog",
+            "id_type": "url",
+            "published": "2026-06-01",
+            "snippet": "snippet text here that is long enough",
+            "engine": "rss",
+            "lane": "news",
+            "origin_ids": ["news"],
+            "score": 0.7,
+        }
+
+        import web_harvest as wh
+        monkeypatch.setattr(wh, "poll_rss", lambda *a, **kw: [rss_cand])
+        monkeypatch.setattr(wh, "query_papers", lambda *a, **kw: [])
+        monkeypatch.setattr(wh, "query_forum", lambda *a, **kw: [])
+        monkeypatch.setattr(wh, "poll_github_releases", lambda *a, **kw: [])
+
+        enqueue_calls: list[dict] = []
+
+        import agents.ingest_index as _real_ii
+
+        class _URLCapture:
+            def enqueue(self, ident, *, title="", rationale="", score=None,
+                        discovered_by="", objective_ids=None, name=None,
+                        published=None, url=None):
+                enqueue_calls.append({"ident": ident, "url": url})
+                sid, id_type, derived_url = _real_ii._normalize_enqueue_id(ident)
+                resolved_url = url or derived_url or ""
+                index_path = vault / "meta" / "ingest_index.json"
+                if index_path.exists():
+                    try:
+                        data = json.loads(index_path.read_text())
+                    except (OSError, json.JSONDecodeError):
+                        data = {"version": 3, "vault": vault.name, "sources": {}}
+                else:
+                    data = {"version": 3, "vault": vault.name, "sources": {}}
+                data.setdefault("sources", {})
+                from datetime import datetime, timezone
+                now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+                row = data["sources"].get(sid) or {
+                    "id": sid, "id_type": id_type, "status": "waiting_approval",
+                    "title": title, "filename": "", "url": resolved_url,
+                    "source_type": id_type, "content_hash": "",
+                    "first_seen": now, "ingested_at": None, "source_page": "",
+                    "relevance_score": score, "rationale": rationale,
+                    "discovered_by": discovered_by, "objective_ids": [],
+                    "proposed_at": now, "rejected_at": None, "rejection_reason": "",
+                }
+                data["sources"][sid] = row
+                index_path.parent.mkdir(parents=True, exist_ok=True)
+                index_path.write_text(
+                    json.dumps(data, indent=2, sort_keys=True) + "\n"
+                )
+                return row
+
+        monkeypatch.setattr(web_crawl, "_import_ingest_index", lambda: _URLCapture())
+
+        result = web_crawl.crawl(str(vault), dry_run=False, today="2026-06-22")
+
+        if not result["selected"]:
+            pytest.skip("No candidates selected")
+
+        # Every enqueue call must have received a url= kwarg
+        assert len(enqueue_calls) > 0
+        for call in enqueue_calls:
+            assert call["url"] is not None, (
+                f"enqueue called without url for ident {call['ident']!r}"
+            )
+            assert call["url"] != "", (
+                f"enqueue called with empty url for ident {call['ident']!r}"
+            )
+
+    def test_arxiv_empty_url_gets_derived_url(self, tmp_path, monkeypatch):
+        """arXiv candidate with empty url gets derived https://arxiv.org/abs/<id>."""
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_rank(monkeypatch)
+
+        arxiv_cand_no_url = {
+            "title": "Disaggregated Inference Paper",
+            "url": "",  # intentionally empty
+            "source_id": "arxiv:2401.55555",
+            "id_type": "arxiv",
+            "published": "2026-06-01",
+            "snippet": "Abstract text describing disaggregated inference approaches.",
+            "engine": "arxiv",
+            "lane": "gap",
+            "origin_ids": ["GAP-01"],
+            "score": 0.85,
+        }
+
+        import web_harvest as wh
+        monkeypatch.setattr(wh, "query_papers", lambda *a, **kw: [arxiv_cand_no_url])
+        monkeypatch.setattr(wh, "poll_rss", lambda *a, **kw: [])
+        monkeypatch.setattr(wh, "query_forum", lambda *a, **kw: [])
+        monkeypatch.setattr(wh, "poll_github_releases", lambda *a, **kw: [])
+
+        enqueue_calls: list[dict] = []
+
+        import agents.ingest_index as _real_ii
+
+        class _URLCapture:
+            def enqueue(self, ident, *, title="", rationale="", score=None,
+                        discovered_by="", objective_ids=None, name=None,
+                        published=None, url=None):
+                enqueue_calls.append({"ident": ident, "url": url})
+                sid, id_type, derived_url = _real_ii._normalize_enqueue_id(ident)
+                resolved_url = url or derived_url or ""
+                index_path = vault / "meta" / "ingest_index.json"
+                data = {"version": 3, "vault": vault.name, "sources": {}}
+                data.setdefault("sources", {})
+                from datetime import datetime, timezone
+                now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+                row = {
+                    "id": sid, "id_type": id_type, "status": "waiting_approval",
+                    "title": title, "filename": "", "url": resolved_url,
+                    "source_type": id_type, "content_hash": "",
+                    "first_seen": now, "ingested_at": None, "source_page": "",
+                    "relevance_score": score, "rationale": rationale,
+                    "discovered_by": discovered_by, "objective_ids": [],
+                    "proposed_at": now, "rejected_at": None, "rejection_reason": "",
+                }
+                data["sources"][sid] = row
+                index_path.parent.mkdir(parents=True, exist_ok=True)
+                index_path.write_text(
+                    json.dumps(data, indent=2, sort_keys=True) + "\n"
+                )
+                return row
+
+        monkeypatch.setattr(web_crawl, "_import_ingest_index", lambda: _URLCapture())
+
+        result = web_crawl.crawl(str(vault), dry_run=False, today="2026-06-22")
+
+        if not result["selected"]:
+            pytest.skip("No candidates selected")
+
+        # The arXiv candidate should have gotten the derived URL
+        arxiv_calls = [
+            c for c in enqueue_calls
+            if c["ident"].startswith("arxiv:")
+        ]
+        assert len(arxiv_calls) >= 1, "Expected at least one arXiv enqueue call"
+        for call in arxiv_calls:
+            ident = call["ident"]  # e.g. "arxiv:2401.55555"
+            arxiv_id = ident[len("arxiv:"):]
+            expected_url = f"https://arxiv.org/abs/{arxiv_id}"
+            assert call["url"] == expected_url, (
+                f"arXiv candidate {ident!r} got url={call['url']!r}, "
+                f"expected {expected_url!r}"
+            )
+
+
+# ===========================================================================
 # Tests: interactive nightly report format
 # ===========================================================================
 
@@ -2341,27 +2660,119 @@ class TestInteractiveReportFormat:
         assert "**score**" in text
         assert "0.9123" in text
 
-    def test_relevance_field_present(self, tmp_path):
+    def test_relevance_refs_field_present(self, tmp_path):
         vault = self._make_vault(tmp_path)
         c = _make_candidate("Relevance Paper", lane="gap", origin_ids=["GAP-01"])
         report_path = web_crawl._write_nightly_report(str(vault), "2026-06-22", [c])
         text = report_path.read_text(encoding="utf-8")
-        assert "**relevance**" in text
+        assert "**relevance refs**" in text
         # GAP-01 -> per-gap file link (or fallback to index when file absent)
         assert "[[wiki/gap/" in text
 
-    def test_rationale_field_present(self, tmp_path):
+    def test_retrieved_via_and_source_fields_present(self, tmp_path):
+        """New attribute line has **retrieved via** and **source** fields."""
         vault = self._make_vault(tmp_path)
         c = _make_candidate(
-            "Rationale Paper",
+            "Engine Paper",
+            source_id="arxiv:2401.10001",
+            engine="arxiv",
+            lane="gap",
+            origin_ids=["GAP-01"],
+        )
+        report_path = web_crawl._write_nightly_report(str(vault), "2026-06-22", [c])
+        text = report_path.read_text(encoding="utf-8")
+        assert "**retrieved via**" in text
+        assert "**source**" in text
+        assert "arxiv" in text
+
+    def test_summary_and_relevance_paragraphs_present(self, tmp_path):
+        """Report block contains **Summary** and **Relevance** paragraph leads."""
+        vault = self._make_vault(tmp_path)
+        c = _make_candidate(
+            "Summary Paper",
             lane="gap",
             origin_ids=["GAP-01"],
         )
         c["snippet"] = "This paper describes disaggregated serving with measurable gains."
+        c["expected_evidence"] = "Papers describing P/D disaggregation."
         report_path = web_crawl._write_nightly_report(str(vault), "2026-06-22", [c])
         text = report_path.read_text(encoding="utf-8")
-        assert "**rationale**" in text
+        assert "**Summary** —" in text
         assert "disaggregated serving" in text
+        assert "**Relevance** —" in text
+        # Relevance paragraph mentions lane and origin
+        assert "gap" in text
+        assert "GAP-01" in text
+
+    def test_decision_trace_section_is_only_double_hash_boundary(self, tmp_path, monkeypatch):
+        """## Decision trace is the only ## section in the candidate-blocks part of the report.
+
+        The candidate blocks must use **Summary** and **Relevance** bold leads (not ##
+        headings). The ## Decision trace section may itself contain ## sub-headings, which
+        are only checked after the trace boundary.
+        """
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest(monkeypatch)
+        _patch_rank(monkeypatch)
+
+        result = web_crawl.crawl(str(vault), dry_run=False, today="2026-06-22")
+        report_text = Path(result["report_path"]).read_text(encoding="utf-8")
+        # ## Decision trace must exist
+        assert "## Decision trace" in report_text
+        # Summary and Relevance use bold leads, not ## headings
+        assert "## Summary" not in report_text
+        assert "## Relevance" not in report_text
+        # The candidate blocks section (everything BEFORE ## Decision trace) must
+        # not have any ## headings (candidates use ### headings).
+        trace_idx = report_text.index("## Decision trace")
+        candidate_section = report_text[:trace_idx]
+        lines = candidate_section.splitlines()
+        double_hash_lines = [
+            ln for ln in lines if ln.startswith("## ")
+        ]
+        assert double_hash_lines == [], (
+            f"Unexpected ## headings in candidate section (before trace): "
+            f"{double_hash_lines}"
+        )
+
+    def test_approve_reject_lines_unchanged_format(self, tmp_path):
+        """approve/reject/reason lines keep exact format for report_approve compatibility."""
+        from web_harvest import candidate_ident
+        vault = self._make_vault(tmp_path)
+        c = _make_candidate(
+            "Compat Paper",
+            source_id="arxiv:2401.77777",
+            url="https://arxiv.org/abs/2401.77777",
+            lane="gap",
+            origin_ids=["GAP-01"],
+        )
+        report_path = web_crawl._write_nightly_report(str(vault), "2026-06-22", [c])
+        text = report_path.read_text(encoding="utf-8")
+        ident = candidate_ident(c)
+
+        lines = text.splitlines()
+        # Approve line: starts with "- [ ] approve" and contains backtick ident
+        approve_line = next(
+            (ln for ln in lines if ln.startswith("- [ ] approve") and ident in ln), None
+        )
+        assert approve_line is not None, f"No approve line for {ident!r}"
+        assert f"`{ident}`" in approve_line
+
+        # Reject line: starts with "- [ ] reject" and contains backtick ident
+        reject_line = next(
+            (ln for ln in lines if ln.startswith("- [ ] reject") and ident in ln
+             and "reason" not in ln), None
+        )
+        assert reject_line is not None, f"No reject line for {ident!r}"
+        assert f"`{ident}`" in reject_line
+
+        # reason line immediately follows reject line
+        reject_idx = lines.index(reject_line)
+        assert reject_idx + 1 < len(lines)
+        assert lines[reject_idx + 1].startswith("    - reason:"), (
+            f"Expected '    - reason:' after reject, got: {lines[reject_idx + 1]!r}"
+        )
 
     def test_url_field_present(self, tmp_path):
         vault = self._make_vault(tmp_path)
@@ -2444,8 +2855,8 @@ class TestEnqueuePublishedAndRationale:
                 f"Row {row['id']!r} published={row['published']!r}, expected '2026-06-01'"
             )
 
-    def test_enqueue_rationale_equals_content_rationale(self, tmp_path, monkeypatch):
-        """The rationale stored in the ingest index equals _content_rationale(cand)."""
+    def test_enqueue_rationale_is_compact_summary(self, tmp_path, monkeypatch):
+        """The rationale stored in the ingest index is the compact summary (<=200 chars)."""
         vault = _make_tmp_vault(tmp_path)
         _patch_loaders(monkeypatch, tmp_path, vault)
         _patch_harvest(monkeypatch)
@@ -2462,17 +2873,24 @@ class TestEnqueuePublishedAndRationale:
         for c in selected:
             from web_harvest import candidate_ident
             ident = candidate_ident(c)
-            # _normalize_enqueue_id maps ident -> sid
             import agents.ingest_index as _rii
             sid, _, _ = _rii._normalize_enqueue_id(ident)
             row = data["sources"].get(sid)
             if row is None:
                 continue
-            expected_rationale = web_crawl._content_rationale(c)
-            assert row.get("rationale") == expected_rationale, (
+            stored = row.get("rationale", "")
+            # Rationale must be non-empty and at most 200 chars
+            assert stored, f"Row {sid!r} has empty rationale"
+            assert len(stored) <= 200, (
+                f"Row {sid!r} rationale too long ({len(stored)} chars): {stored!r}"
+            )
+            # Rationale should be the start of the summary text
+            summary = web_crawl._content_summary(c)
+            expected = summary[:200].rstrip() if len(summary) > 200 else summary
+            assert stored == expected, (
                 f"Row {sid!r} rationale mismatch:\n"
-                f"  stored:   {row.get('rationale')!r}\n"
-                f"  expected: {expected_rationale!r}"
+                f"  stored:   {stored!r}\n"
+                f"  expected: {expected!r}"
             )
 
     def test_enqueue_ident_matches_report_and_candidate_ident(self, tmp_path, monkeypatch):

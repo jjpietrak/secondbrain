@@ -17,6 +17,9 @@ Describe what knowledge is missing and why it matters.
 ## Why
 Justification for the priority level (high/medium/low).
 
+## Shows up in
+- [[wiki/<page>]] -- why it surfaces here
+
 ## Open questions
 - List any harvested open-question lines that reference this gap's topic or pages.
 - Omit this section if there are no matching open questions.
