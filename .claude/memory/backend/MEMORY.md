@@ -49,6 +49,12 @@ current; never store fact bodies here.
   GATED Tier-2 harvest engine: `web_harvest.query_perplexity` (reuses research/lib/perplexity citations) +
   `web_crawl --perplexity` (skill arg) gated on paid_scrape.enabled+KEY, top-2 targets, cost-logged; decision/
   rank/select/stage 100% reused. enabled=false default (no spend). 939 tests. PENDING: live $ test + Apify/crawl4AI.
+- [phase3-conclusion.md](phase3-conclusion.md) — **PHASE 3 CLOSED 2026-06-23 (user sign-off): functionally
+  works OK w/ minor bugs, but relevance/accuracy NOT good enough + DECISION is obscure.** Perplexity returned
+  only slightly-relevant results; arXiv path better but not great. NOT production-trusted — do NOT auto-wire web
+  into nightly yet. DEFERRED complete revision (with agent-learn): (1) query formulation [weakest], (2) ranking,
+  (3) gap/direction DECISION legibility, (4) real closed feedback loop. Plumbing/transparency/adapter pattern are
+  solid; the intelligence layer is what's weak. Awaiting 'go' for Phase 4.
 
 ## Architecture
 - [retrieval-pipeline.md](retrieval-pipeline.md) — claude-obsidian hybrid retrieval
