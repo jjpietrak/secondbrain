@@ -60,7 +60,7 @@ flowchart TD
 
 | Input | Produced by | Read by | Shape |
 |---|---|---|---|
-| `wiki/gap/GAP-NN-<slug>.md` (+ `index.md`) | `wiki-gaps` skill → `scripts/wiki_gaps_split.py` | `web_decision.parse_gaps` | per-gap frontmatter: `id, title, topics[], fillable_by[], priority, shows_up_in[], status` + `## Missing` body |
+| `wiki/gap/GAP-NN-<slug>.md` (+ `index.md`) | `wiki-gaps` skill → `scripts/wiki_gaps_split.py` | `web_decision.parse_gaps` | per-gap frontmatter: `id, title, topics[], fillable_by[], priority, shows_up_in[], status` + `## Missing`/`## Why` + a `## Shows up in` body section of `[[wiki/...]]` links (real graph edges to the source pages that dictate the gap) |
 | `objective/direction/DIR-NNNN-*.md` | research `obj-synth` | `web_decision.parse_directions` | `serves_question, topics, targets_gap, priority, status` + `## seed_queries`, `## expected_evidence` |
 | `.claude/web/web-config.json` | user-editable | `web_decision` / `web_crawl` loaders | `new_sources_total`, lane `quota`, `spillover_order`, `registry_boost`, `paid_scrape` |
 | `.claude/web/sources/*.json` | the curated registry (user) | `route_to_sources` | per-source `rss_feed`/`api_endpoint`, `category`, `focus`, `relevance`, `priority` |
@@ -91,12 +91,12 @@ flowchart TD
    - per-item dedup → ingest-dedup (drop `ingested`/`pending`/sticky-`rejected`) → fill lane **quotas** `{gap:3, research:1, news:1}` → **spillover** `gap>research>news` → cap at `new_sources_total` (5).
 
 5. **STAGE** — `scripts/web_crawl.py::crawl()` + `_write_nightly_report()`
-   - each survivor → `ingest_index.enqueue(ident, discovered_by="web", objective_ids=[GAP-/DIR-], score, rationale, published)` (status `waiting_approval`).
-   - writes the **interactive** `meta/nightly_report/<date>.md`: per source an `approve`/`reject` checkbox + `published / score / lane / relevance(wikilinks) / rationale / url`, plus an embedded **`## Decision trace`**.
+   - each survivor → `ingest_index.enqueue(ident, discovered_by="web", objective_ids=[GAP-/DIR-], score, rationale, published, url)` (status `waiting_approval`). The stored **`url`** is always a working http(s) link (arXiv ids → `https://arxiv.org/abs/<id>`).
+   - writes the **interactive** `meta/nightly_report/<date>.md`: per source an `approve`/`reject` checkbox + a `- reason:` line, the attributes **`retrieved via {engine}` · `source {source_id}` · published · score · lane**, **`relevance refs`** (GAP/DIR wikilinks), **`url`**, then a **`Summary`** paragraph (≤200 words, the source's content/abstract — `_content_summary`) and a **`Relevance`** paragraph (why the web agent picked it: lane + served GAP/DIR + the `expected_evidence` it sought + score — `_relevance_paragraph`). Plus the embedded **`## Decision trace`**. (Thin-snippet sources note "fetch the URL to summarize" — an optional web-agent LLM/WebFetch enrichment can replace both paragraphs with richer prose.)
 
 6. **APPROVAL → INGEST** — `wiki-approve` skill → `scripts/report_approve.py`
    - you tick boxes in Obsidian (persists to disk) → `parse_report()` → `apply(--apply)`:
-     **approve** → `ingest_index.approve` (→`pending`) → wiki fetches into `raw/<type>/` → `wiki-ingest`;
+     **approve** → (only if the row has a working URL — else it lands in `blocked[]`, never half-ingested) → `ingest_index.approve` (→`pending`) → wiki fetches into `raw/<type>/` → `wiki-ingest`;
      **reject** → `ingest_index.reject(reason)` (sticky). Usable manually (`/wiki-approve`) or by the nightly run (Phase 4).
 
 7. **FEEDBACK** — the web agent reads prior `approve`/`reject(+reason)` from the ingest index to tune future crawls (persistence via `agent-learn`, Phase 4).
