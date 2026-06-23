@@ -78,6 +78,8 @@ index current; never store fact bodies here.
 
 - [x] Phase 3A complete 2026-06-22 (commits 954dbc1 W1, a548a75 W2, b1948e3 W3): agent + RBAC +
   config/registry + harvest + decision + rank + orchestrator + 2 skills; 625 tests; live $0 demo.
-- [ ] Skills `/web-scrape` `/web-rank` + the `web` agent need a **CLI restart** to register.
+- [x] 2026-06-23 quality + UX (e31d43a, 0c9bf85): arXiv-category routing (cs.AR/dc/lg/eess.SP per-category calls); ingest_index columns (Date Published / Date Ingested / Rationale / Relevance-wikilinks); **nomic-embed-text pulled -> web_rank path=embedding** (on-topic papers now rank top, not blog noise); **interactive approve/reject report** (Obsidian checkboxes + `- reason:` line) + `report_approve.py` + `wiki-approve` skill (read-back -> approve->pending->fetch raw/->wiki-ingest; reject->sticky).
+- NOTE: pull embeddings into the **WSL** ollama (`wsl.exe -- bash -lc 'ollama pull nomic-embed-text'`); a bare Bash-tool `ollama pull` hits the Windows ollama, which web_rank does NOT use.
+- [ ] Skills `/web-scrape` `/web-rank` `/wiki-approve` + the `web` agent need a **CLI restart** to register.
 - [ ] Phase 3B: paid scraper adapters behind the cost gate.
-- [ ] Phase 4: nightly_run.sh integration (web after research) + agent-learn feedback persistence.
+- [ ] Phase 4: nightly_run.sh integration (web after research) + agent-learn feedback persistence + nightly auto-read of the ticked report (report_approve reused).
