@@ -337,7 +337,8 @@ def _patch_loaders(monkeypatch, tmp_path: Path, vault: Path):
         """Thin shim: enqueue / _load / _save wired to the tmp vault path."""
 
         def enqueue(self, ident, *, title="", rationale="", score=None,
-                    discovered_by="", objective_ids=None, name=None):
+                    discovered_by="", objective_ids=None, name=None,
+                    published=None):
             # Load existing data from vault directly
             index_path = vault / "meta" / "ingest_index.json"
             if index_path.exists():
@@ -383,6 +384,8 @@ def _patch_loaders(monkeypatch, tmp_path: Path, vault: Path):
                 row["objective_ids"] = merged
             if url and not row.get("url"):
                 row["url"] = url
+            if published is not None:
+                row["published"] = published
             # Save
             index_path.parent.mkdir(parents=True, exist_ok=True)
             index_path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
@@ -2051,3 +2054,407 @@ class TestHarvestCallDedup:
             f"got {len(rss_call_log)}: {rss_call_log}"
         )
         assert rss_call_log[0] != rss_call_log[1]
+
+
+# ===========================================================================
+# Tests: _content_rationale helper
+# ===========================================================================
+
+class TestContentRationale:
+    """_content_rationale derives a short rationale from the candidate snippet."""
+
+    def test_plain_snippet_returned_as_rationale(self):
+        cand = {
+            "snippet": "This paper surveys disaggregated inference approaches.",
+            "lane": "gap",
+            "origin_ids": ["GAP-01"],
+        }
+        result = web_crawl._content_rationale(cand)
+        assert "disaggregated inference" in result
+        assert "<" not in result  # no HTML tags
+
+    def test_html_tags_stripped(self):
+        cand = {
+            "snippet": "<b>Fast</b> inference <em>scheduling</em> for LLMs.",
+            "lane": "gap",
+            "origin_ids": ["GAP-01"],
+        }
+        result = web_crawl._content_rationale(cand)
+        assert "<b>" not in result
+        assert "<em>" not in result
+        assert "Fast" in result
+        assert "scheduling" in result
+
+    def test_long_snippet_truncated_at_sentence_boundary(self):
+        # 200-char sentence followed by more text
+        long_snip = "A" * 150 + ". And then some extra long tail " + "X" * 100
+        cand = {"snippet": long_snip, "lane": "gap", "origin_ids": []}
+        result = web_crawl._content_rationale(cand)
+        assert len(result) <= 225  # at most 220 + a tiny bit
+
+    def test_long_snippet_no_sentence_boundary_gets_ellipsis(self):
+        cand = {"snippet": "A" * 300, "lane": "gap", "origin_ids": []}
+        result = web_crawl._content_rationale(cand)
+        assert result.endswith("...")
+        assert len(result) <= 225
+
+    def test_empty_snippet_falls_back_to_lane_origin(self):
+        cand = {"snippet": "", "lane": "research", "origin_ids": ["GAP-02", "DIR-0001"]}
+        result = web_crawl._content_rationale(cand)
+        assert "lane=research" in result
+        assert "GAP-02" in result
+
+    def test_missing_snippet_falls_back(self):
+        cand = {"lane": "news", "origin_ids": ["news"]}
+        result = web_crawl._content_rationale(cand)
+        assert "lane=news" in result
+
+    def test_whitespace_only_snippet_falls_back(self):
+        cand = {"snippet": "   \n\t  ", "lane": "gap", "origin_ids": ["GAP-01"]}
+        result = web_crawl._content_rationale(cand)
+        assert "lane=gap" in result
+
+    def test_newlines_collapsed_in_snippet(self):
+        cand = {"snippet": "Line one.\nLine two.\nLine three.", "lane": "gap",
+                "origin_ids": ["GAP-01"]}
+        result = web_crawl._content_rationale(cand)
+        assert "\n" not in result
+
+
+# ===========================================================================
+# Tests: interactive nightly report format
+# ===========================================================================
+
+class TestInteractiveReportFormat:
+    """_write_nightly_report emits the pinned interactive Obsidian checkbox format."""
+
+    def _make_vault(self, tmp_path: Path) -> Path:
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        # Create direction file so _relevance_links can find it
+        dir_dir = vault / "objective" / "direction"
+        dir_dir.mkdir(parents=True)
+        (dir_dir / "DIR-0001-test-direction.md").write_text("", encoding="utf-8")
+        return vault
+
+    def test_approve_checkbox_present_with_ident(self, tmp_path):
+        from web_harvest import candidate_ident
+        vault = self._make_vault(tmp_path)
+        c = _make_candidate(
+            "Test Paper",
+            source_id="arxiv:2401.10001",
+            url="https://arxiv.org/abs/2401.10001",
+            lane="gap",
+            origin_ids=["GAP-01"],
+        )
+        report_path = web_crawl._write_nightly_report(str(vault), "2026-06-22", [c])
+        text = report_path.read_text(encoding="utf-8")
+
+        ident = candidate_ident(c)
+        assert f"- [ ] approve" in text
+        assert f"`{ident}`" in text
+        # approve line must contain the ident in backticks
+        approve_line = next(
+            (ln for ln in text.splitlines() if "approve" in ln and ident in ln), None
+        )
+        assert approve_line is not None, (
+            f"No approve line with ident {ident!r} found in:\n{text}"
+        )
+        assert approve_line.startswith("- [ ] approve"), (
+            f"approve line does not start with '- [ ] approve': {approve_line!r}"
+        )
+
+    def test_reject_checkbox_present_with_same_ident(self, tmp_path):
+        from web_harvest import candidate_ident
+        vault = self._make_vault(tmp_path)
+        c = _make_candidate(
+            "Test Paper",
+            source_id="arxiv:2401.10001",
+            url="https://arxiv.org/abs/2401.10001",
+            lane="gap",
+            origin_ids=["GAP-01"],
+        )
+        report_path = web_crawl._write_nightly_report(str(vault), "2026-06-22", [c])
+        text = report_path.read_text(encoding="utf-8")
+
+        ident = candidate_ident(c)
+        reject_line = next(
+            (ln for ln in text.splitlines() if "reject" in ln and ident in ln
+             and "reason" not in ln), None
+        )
+        assert reject_line is not None, (
+            f"No reject line with ident {ident!r} found in:\n{text}"
+        )
+        assert reject_line.startswith("- [ ] reject"), (
+            f"reject line does not start with '- [ ] reject': {reject_line!r}"
+        )
+
+    def test_approve_and_reject_ident_are_identical(self, tmp_path):
+        from web_harvest import candidate_ident
+        vault = self._make_vault(tmp_path)
+        c = _make_candidate(
+            "Ident Match Paper",
+            source_id="arxiv:2401.99999",
+            url="https://arxiv.org/abs/2401.99999",
+            lane="gap",
+            origin_ids=["GAP-01"],
+        )
+        report_path = web_crawl._write_nightly_report(str(vault), "2026-06-22", [c])
+        text = report_path.read_text(encoding="utf-8")
+
+        expected_ident = candidate_ident(c)
+        lines = text.splitlines()
+
+        approve_idents = [
+            ln.split("`")[1]
+            for ln in lines
+            if ln.startswith("- [ ] approve") and "`" in ln
+        ]
+        reject_idents = [
+            ln.split("`")[1]
+            for ln in lines
+            if ln.startswith("- [ ] reject") and "`" in ln
+        ]
+
+        assert len(approve_idents) == 1
+        assert len(reject_idents) == 1
+        assert approve_idents[0] == reject_idents[0] == expected_ident, (
+            f"approve ident={approve_idents[0]!r}, reject ident={reject_idents[0]!r}, "
+            f"expected={expected_ident!r}"
+        )
+
+    def test_ident_equals_candidate_ident(self, tmp_path):
+        """The ident in the report == candidate_ident(cand) == what enqueue receives."""
+        from web_harvest import candidate_ident
+        vault = self._make_vault(tmp_path)
+        # RSS-style candidate: ident = URL, not source_id
+        c = {
+            "title": "RSS Post",
+            "url": "https://developer.nvidia.com/blog/some-post",
+            "source_id": "nvidia_developer_blog",
+            "id_type": "url",
+            "published": "2026-06-10",
+            "snippet": "GPU inference improvements.",
+            "engine": "rss",
+            "lane": "news",
+            "origin_ids": ["news"],
+            "score": 0.6,
+        }
+        report_path = web_crawl._write_nightly_report(str(vault), "2026-06-22", [c])
+        text = report_path.read_text(encoding="utf-8")
+
+        expected_ident = candidate_ident(c)
+        assert expected_ident == "https://developer.nvidia.com/blog/some-post"
+        # The URL ident (not the feed source_id) must appear in the approve line
+        assert f"`{expected_ident}`" in text
+        assert "nvidia_developer_blog" not in text.split("approve")[1].split("\n")[0]
+
+    def test_reason_indented_sub_bullet_present(self, tmp_path):
+        vault = self._make_vault(tmp_path)
+        c = _make_candidate("Paper with reason slot", lane="gap", origin_ids=["GAP-01"])
+        report_path = web_crawl._write_nightly_report(str(vault), "2026-06-22", [c])
+        text = report_path.read_text(encoding="utf-8")
+        # The reason line must be indented (4 spaces) and immediately follow reject line
+        lines = text.splitlines()
+        for i, ln in enumerate(lines):
+            if ln.startswith("- [ ] reject") and i + 1 < len(lines):
+                reason_line = lines[i + 1]
+                assert reason_line.startswith("    - reason:"), (
+                    f"Expected '    - reason:' after reject line, got {reason_line!r}"
+                )
+                break
+        else:
+            pytest.fail("No reject line found in report")
+
+    def test_published_field_present(self, tmp_path):
+        vault = self._make_vault(tmp_path)
+        c = _make_candidate("Dated Paper", published="2026-05-15", lane="gap",
+                            origin_ids=["GAP-01"])
+        report_path = web_crawl._write_nightly_report(str(vault), "2026-06-22", [c])
+        text = report_path.read_text(encoding="utf-8")
+        assert "**published**" in text
+        assert "2026-05-15" in text
+
+    def test_published_field_dash_when_absent(self, tmp_path):
+        vault = self._make_vault(tmp_path)
+        c = dict(_make_candidate("No-date Paper", lane="gap", origin_ids=["GAP-01"]))
+        c["published"] = ""
+        report_path = web_crawl._write_nightly_report(str(vault), "2026-06-22", [c])
+        text = report_path.read_text(encoding="utf-8")
+        # Should contain em-dash for missing date
+        assert "—" in text  # —
+
+    def test_score_field_present(self, tmp_path):
+        vault = self._make_vault(tmp_path)
+        c = _make_candidate("Scored Paper", score=0.9123, lane="gap",
+                            origin_ids=["GAP-01"])
+        report_path = web_crawl._write_nightly_report(str(vault), "2026-06-22", [c])
+        text = report_path.read_text(encoding="utf-8")
+        assert "**score**" in text
+        assert "0.9123" in text
+
+    def test_relevance_field_present(self, tmp_path):
+        vault = self._make_vault(tmp_path)
+        c = _make_candidate("Relevance Paper", lane="gap", origin_ids=["GAP-01"])
+        report_path = web_crawl._write_nightly_report(str(vault), "2026-06-22", [c])
+        text = report_path.read_text(encoding="utf-8")
+        assert "**relevance**" in text
+        # GAP-01 -> wiki/gaps wikilink
+        assert "[[wiki/gaps]]" in text
+
+    def test_rationale_field_present(self, tmp_path):
+        vault = self._make_vault(tmp_path)
+        c = _make_candidate(
+            "Rationale Paper",
+            lane="gap",
+            origin_ids=["GAP-01"],
+        )
+        c["snippet"] = "This paper describes disaggregated serving with measurable gains."
+        report_path = web_crawl._write_nightly_report(str(vault), "2026-06-22", [c])
+        text = report_path.read_text(encoding="utf-8")
+        assert "**rationale**" in text
+        assert "disaggregated serving" in text
+
+    def test_url_field_present(self, tmp_path):
+        vault = self._make_vault(tmp_path)
+        c = _make_candidate(
+            "URL Paper",
+            url="https://arxiv.org/abs/2401.55555",
+            lane="gap",
+            origin_ids=["GAP-01"],
+        )
+        report_path = web_crawl._write_nightly_report(str(vault), "2026-06-22", [c])
+        text = report_path.read_text(encoding="utf-8")
+        assert "**url**" in text
+        assert "https://arxiv.org/abs/2401.55555" in text
+
+    def test_instruction_line_present(self, tmp_path):
+        vault = self._make_vault(tmp_path)
+        c = _make_candidate("Instruction Test", lane="gap", origin_ids=["GAP-01"])
+        report_path = web_crawl._write_nightly_report(str(vault), "2026-06-22", [c])
+        text = report_path.read_text(encoding="utf-8")
+        assert "wiki-approve" in text
+
+    def test_decision_trace_section_present(self, tmp_path, monkeypatch):
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest(monkeypatch)
+        _patch_rank(monkeypatch)
+
+        result = web_crawl.crawl(str(vault), dry_run=False, today="2026-06-22")
+        report_text = Path(result["report_path"]).read_text(encoding="utf-8")
+        assert "## Decision trace" in report_text
+
+    def test_multiple_candidates_numbered(self, tmp_path):
+        vault = self._make_vault(tmp_path)
+        c1 = _make_candidate("First Paper", source_id="arxiv:2401.10001",
+                              url="https://arxiv.org/abs/2401.10001",
+                              lane="gap", origin_ids=["GAP-01"])
+        c2 = _make_candidate("Second Paper", source_id="arxiv:2401.10002",
+                              url="https://arxiv.org/abs/2401.10002",
+                              lane="gap", origin_ids=["GAP-01"])
+        report_path = web_crawl._write_nightly_report(
+            str(vault), "2026-06-22", [c1, c2]
+        )
+        text = report_path.read_text(encoding="utf-8")
+        assert "### 1. First Paper" in text
+        assert "### 2. Second Paper" in text
+
+
+# ===========================================================================
+# Tests: enqueue called with published= and rationale= (content rationale)
+# ===========================================================================
+
+class TestEnqueuePublishedAndRationale:
+    """crawl() passes published= and content rationale to ingest_index.enqueue."""
+
+    def test_enqueue_receives_published(self, tmp_path, monkeypatch):
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest(monkeypatch)
+        _patch_rank(monkeypatch)
+
+        result = web_crawl.crawl(str(vault), dry_run=False, today="2026-06-22")
+        selected = result["selected"]
+        if not selected:
+            pytest.skip("No candidates selected")
+
+        # Read the ingest index and check published was stored
+        index_path = vault / "meta" / "ingest_index.json"
+        assert index_path.exists()
+        data = json.loads(index_path.read_text())
+        waiting = [
+            r for r in data.get("sources", {}).values()
+            if r.get("status") == "waiting_approval"
+        ]
+        # Each candidate in CANNED_* has published="2026-06-01"; it must be stored
+        for row in waiting:
+            assert "published" in row, (
+                f"Row {row['id']!r} missing 'published' field: {row}"
+            )
+            assert row["published"] == "2026-06-01", (
+                f"Row {row['id']!r} published={row['published']!r}, expected '2026-06-01'"
+            )
+
+    def test_enqueue_rationale_equals_content_rationale(self, tmp_path, monkeypatch):
+        """The rationale stored in the ingest index equals _content_rationale(cand)."""
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest(monkeypatch)
+        _patch_rank(monkeypatch)
+
+        result = web_crawl.crawl(str(vault), dry_run=False, today="2026-06-22")
+        selected = result["selected"]
+        if not selected:
+            pytest.skip("No candidates selected")
+
+        index_path = vault / "meta" / "ingest_index.json"
+        data = json.loads(index_path.read_text())
+
+        for c in selected:
+            from web_harvest import candidate_ident
+            ident = candidate_ident(c)
+            # _normalize_enqueue_id maps ident -> sid
+            import agents.ingest_index as _rii
+            sid, _, _ = _rii._normalize_enqueue_id(ident)
+            row = data["sources"].get(sid)
+            if row is None:
+                continue
+            expected_rationale = web_crawl._content_rationale(c)
+            assert row.get("rationale") == expected_rationale, (
+                f"Row {sid!r} rationale mismatch:\n"
+                f"  stored:   {row.get('rationale')!r}\n"
+                f"  expected: {expected_rationale!r}"
+            )
+
+    def test_enqueue_ident_matches_report_and_candidate_ident(self, tmp_path, monkeypatch):
+        """enqueue id == candidate_ident == ident on approve/reject lines in report."""
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest(monkeypatch)
+        _patch_rank(monkeypatch)
+
+        result = web_crawl.crawl(str(vault), dry_run=False, today="2026-06-22")
+        selected = result["selected"]
+        if not selected:
+            pytest.skip("No candidates selected")
+
+        from web_harvest import candidate_ident
+        import agents.ingest_index as _rii
+
+        report_text = Path(result["report_path"]).read_text(encoding="utf-8")
+        index_path = vault / "meta" / "ingest_index.json"
+        data = json.loads(index_path.read_text())
+
+        for c in selected:
+            ident = candidate_ident(c)
+            sid, _, _ = _rii._normalize_enqueue_id(ident)
+
+            # ident must appear in the report (approve/reject lines)
+            assert f"`{ident}`" in report_text, (
+                f"Ident {ident!r} not found in report as backtick-wrapped token"
+            )
+            # ident must have produced a row in the index
+            assert sid in data["sources"], (
+                f"Ident {ident!r} (sid={sid!r}) not found in ingest index"
+            )

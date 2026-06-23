@@ -29,6 +29,22 @@ Routing map (target -> harvest engine):
                                        -> query_papers(q, engine="arxiv") per seed query
     (Note: WebSearch augmentation for research lanes is an agent-level step.)
 
+Nightly report interactive format (one block per selected candidate):
+
+  ### N. Title
+  - [ ] approve * `ident`
+  - [ ] reject * `ident`
+      - reason:
+  - **published**: DATE * **score**: 0.0000 * **lane**: LANE
+  - **relevance**: [[wikilink]], ...
+  - **rationale**: 1-2 sentence content rationale
+  - **url**: https://...
+
+  The approve/reject lines are real Obsidian checkboxes. `ident` is the same value
+  passed to ingest_index.enqueue (candidate_ident(cand)). The rationale is derived
+  deterministically from the candidate snippet (no LLM call) via _content_rationale().
+  scripts/report_approve.py (built separately) parses this format to action approvals.
+
 CLI:
   python scripts/web_crawl.py --vault <root> [--dry-run] [--allow-remote-ollama]
                                [--json] [--limit N] [--explain] [--trace-out PATH]
@@ -482,10 +498,103 @@ def _seen_path() -> str:
 
 
 # ---------------------------------------------------------------------------
+# Content rationale helper (deterministic, $0 -- no LLM call)
+# ---------------------------------------------------------------------------
+
+def _content_rationale(cand: dict) -> str:
+    """Derive a 1-2 sentence content rationale from the candidate snippet.
+
+    Steps:
+    1. Strip HTML tags from snippet.
+    2. Collapse whitespace.
+    3. Take the first ~220 chars, trying to break at a sentence boundary (. ! ?).
+    4. If snippet is missing/empty, fall back to a lane+origin summary string.
+
+    Returns a plain ASCII-safe string (no markup).
+    """
+    raw = (cand.get("snippet") or "").strip()
+    if raw:
+        # Strip HTML tags
+        clean = _re.sub(r"<[^>]+>", "", raw)
+        # Collapse whitespace (newlines, tabs, multiple spaces)
+        clean = _re.sub(r"\s+", " ", clean).strip()
+        if clean:
+            # Truncate to ~220 chars at sentence boundary if possible
+            if len(clean) > 220:
+                # Find last sentence-ending punctuation within 220 chars
+                m = _re.search(r"[.!?](?=\s|$)", clean[:220])
+                if m:
+                    clean = clean[: m.end()].strip()
+                else:
+                    clean = clean[:220].rstrip() + "..."
+            return clean
+
+    # Fallback: lane + origin summary
+    lane = cand.get("lane") or ""
+    origin_ids = cand.get("origin_ids") or []
+    origin_str = ", ".join(origin_ids) if origin_ids else "n/a"
+    return f"lane={lane}; serves {origin_str}"
+
+
+# ---------------------------------------------------------------------------
+# Relevance links helper (inline copy of ingest_index._relevance_links logic,
+# so web_crawl has no circular import risk; kept in sync with the real impl)
+# ---------------------------------------------------------------------------
+
+_RL_GAP_RE = _re.compile(r"^GAP-\d+$", _re.IGNORECASE)
+_RL_OBJ_RE = _re.compile(
+    r"^(DIR|Q|T|D|QP)-(\d{4,})$", _re.IGNORECASE
+)
+_RL_OBJ_SUBDIR = {
+    "DIR": "direction",
+    "Q": "question",
+    "T": "topic",
+    "D": "decision",
+    "QP": "question",
+}
+
+
+def _relevance_links(origin_ids: list, vault_root: str) -> str:
+    """Render origin_ids as Obsidian wikilinks for the nightly report.
+
+    Mirrors ingest_index._relevance_links logic; never raises; returns "" when empty.
+    """
+    if not origin_ids:
+        return ""
+    parts: list[str] = []
+    obj_root = Path(vault_root) / "objective"
+    for oid in origin_ids:
+        oid = oid.strip()
+        if not oid:
+            continue
+        if _RL_GAP_RE.match(oid):
+            parts.append(f"[[wiki/gaps]] ({oid})")
+            continue
+        m = _RL_OBJ_RE.match(oid)
+        if m:
+            prefix = m.group(1).upper()
+            subdir = _RL_OBJ_SUBDIR.get(prefix)
+            if subdir:
+                subdir_path = obj_root / subdir
+                try:
+                    matches = list(subdir_path.glob(f"{oid}-*.md"))
+                    if matches:
+                        stem = matches[0].stem
+                        parts.append(f"[[objective/{subdir}/{stem}]]")
+                        continue
+                except OSError:
+                    pass
+            parts.append(f"[[{oid}]]")
+            continue
+        parts.append(f"[[{oid}]]")
+    return ", ".join(parts)
+
+
+# ---------------------------------------------------------------------------
 # Nightly report writer
 # ---------------------------------------------------------------------------
 
-_REPORT_TEMPLATE = """\
+_REPORT_FRONTMATTER = """\
 ---
 type: nightly_report
 date: {today}
@@ -495,24 +604,29 @@ phase: 3a
 
 # Nightly Crawl Report -- {today}
 
-{sections}
-
----
-
-User: approve 0-5 via `python -m agents.ingest_index approve <id>` / reject with \
-`reject <id> --reason ...`
 """
 
-_SECTION_TEMPLATE = """\
-## {title}
+_REPORT_INSTRUCTION = (
+    "Tick **approve** to ingest, or **reject** (optional reason). "
+    "Then run `/wiki-approve`, or it is read on the next nightly run. "
+    "Both blank = decide later."
+)
 
-- **source_id**: `{source_id}`
-- **lane**: {lane}
-- **origin**: {origin}
-- **score**: {score:.4f}
-- **url**: {url}
-- **snippet**: {snippet}
+_REPORT_FOOTER = (
+    "\n---\n\n"
+    "User: approve 0-5 via `python -m agents.ingest_index approve <id>` / reject with "
+    "`reject <id> --reason ...`\n"
+)
+
+_CANDIDATE_BLOCK = """\
+### {n}. {title}
+- [ ] approve \xb7 `{ident}`
+- [ ] reject \xb7 `{ident}`
+    - reason:
+- **published**: {published} \xb7 **score**: {score:.4f} \xb7 **lane**: {lane}
+- **relevance**: {relevance_links}
 - **rationale**: {rationale}
+- **url**: {url}
 """
 
 
@@ -522,39 +636,58 @@ def _write_nightly_report(
     selected: list[dict],
     trace=None,  # DecisionTrace | None
 ) -> Path:
-    """Write meta/nightly_report/<today>.md with one section per selected candidate.
+    """Write meta/nightly_report/<today>.md with one interactive block per candidate.
 
-    If trace is provided, append a '## Decision trace' section rendered from it.
+    Format (pinned -- scripts/report_approve.py parses it):
+      ### N. Title
+      - [ ] approve * `ident`
+      - [ ] reject * `ident`
+          - reason:
+      - **published**: DATE * **score**: 0.0000 * **lane**: LANE
+      - **relevance**: [[wikilink]], ...
+      - **rationale**: 1-2 sentence content rationale
+      - **url**: https://...
+
+    Frontmatter and '## Decision trace' section are preserved unchanged.
+    If trace is provided, a '## Decision trace' section is appended.
     """
+    from web_harvest import candidate_ident as _cand_ident
+
     report_dir = Path(vault_root) / "meta" / "nightly_report"
     report_dir.mkdir(parents=True, exist_ok=True)
     report_path = report_dir / f"{today}.md"
 
-    sections = []
-    for c in selected:
-        origin_ids = c.get("origin_ids") or []
-        rationale = (
-            f"lane={c.get('lane', '')}; "
-            + "origin: " + (", ".join(origin_ids) if origin_ids else "n/a")
-        )
-        snippet = (c.get("snippet") or "")[:200].replace("\n", " ").strip()
-        sections.append(
-            _SECTION_TEMPLATE.format(
-                title=c.get("title", "(no title)"),
-                source_id=c.get("source_id", ""),
-                lane=c.get("lane", ""),
-                origin=", ".join(origin_ids) if origin_ids else "n/a",
-                score=float(c.get("score", 0.0)),
-                url=c.get("url", ""),
-                snippet=snippet or "(no snippet)",
-                rationale=rationale,
+    # Build candidate blocks
+    if selected:
+        blocks: list[str] = [_REPORT_INSTRUCTION + "\n\n"]
+        for n, c in enumerate(selected, start=1):
+            ident = _cand_ident(c)
+            origin_ids = c.get("origin_ids") or []
+            published = (c.get("published") or "").strip() or "—"
+            score = float(c.get("score", 0.0))
+            lane = c.get("lane", "")
+            rel_links = _relevance_links(origin_ids, vault_root)
+            rationale = _content_rationale(c)
+            url = c.get("url", "")
+            title = c.get("title", "(no title)")
+            blocks.append(
+                _CANDIDATE_BLOCK.format(
+                    n=n,
+                    title=title,
+                    ident=ident,
+                    published=published,
+                    score=score,
+                    lane=lane,
+                    relevance_links=rel_links,
+                    rationale=rationale,
+                    url=url,
+                )
             )
-        )
+        body = "\n".join(blocks)
+    else:
+        body = "_No candidates selected._"
 
-    content = _REPORT_TEMPLATE.format(
-        today=today,
-        sections="\n".join(sections) if sections else "_No candidates selected._",
-    )
+    content = _REPORT_FRONTMATTER.format(today=today) + body + _REPORT_FOOTER
 
     # Append the decision trace section if a trace was provided
     if trace is not None:
@@ -737,11 +870,9 @@ def crawl(
             continue
         title = c.get("title", "")
         origin_ids = c.get("origin_ids") or []
-        rationale = (
-            f"lane={c.get('lane', '')}; "
-            + "origin: " + (", ".join(origin_ids) if origin_ids else "n/a")
-        )
+        rationale = _content_rationale(c)
         score = float(c.get("score", 0.0))
+        published = c.get("published") or None
 
         try:
             row = ii.enqueue(
@@ -751,6 +882,7 @@ def crawl(
                 score=score,
                 discovered_by="web",
                 objective_ids=list(origin_ids),
+                published=published,
             )
             enqueued_ids.append(row.get("id", ident))
         except Exception as exc:
