@@ -563,12 +563,22 @@ def _relevance_links(origin_ids: list, vault_root: str) -> str:
         return ""
     parts: list[str] = []
     obj_root = Path(vault_root) / "objective"
+    gap_dir = Path(vault_root) / "wiki" / "gap"
     for oid in origin_ids:
         oid = oid.strip()
         if not oid:
             continue
         if _RL_GAP_RE.match(oid):
-            parts.append(f"[[wiki/gaps]] ({oid})")
+            oid_upper = oid.upper()
+            try:
+                matches = list(gap_dir.glob(f"{oid_upper}-*.md"))
+            except OSError:
+                matches = []
+            if matches:
+                stem = matches[0].stem
+                parts.append(f"[[wiki/gap/{stem}]]")
+            else:
+                parts.append(f"[[wiki/gap/index]] ({oid_upper})")
             continue
         m = _RL_OBJ_RE.match(oid)
         if m:

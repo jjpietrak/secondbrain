@@ -65,6 +65,49 @@ vault: test-vault
 - priority: medium
 """
 
+# Per-gap file fixtures matching the new wiki/gap/GAP-NN-<slug>.md schema
+_GAP_01_FILE = """\
+---
+type: gap
+id: GAP-01
+title: "Disaggregated inference scheduling gaps"
+status: open
+topics: [T-0001]
+fillable_by: [arxiv]
+priority: high
+shows_up_in: ["[[wiki/concepts/inference]]"]
+created: 2026-06-01
+updated: 2026-06-23
+written_by: wiki
+---
+## Missing
+survey of P/D disaggregation scheduling algorithms
+
+## Why
+Needed for scheduling analysis.
+"""
+
+_GAP_02_FILE = """\
+---
+type: gap
+id: GAP-02
+title: "Optical interconnect prior art"
+status: open
+topics: [T-0002]
+fillable_by: [arxiv, github]
+priority: medium
+shows_up_in: ["[[wiki/sources/photons-to-tokens]]"]
+created: 2026-06-01
+updated: 2026-06-23
+written_by: wiki
+---
+## Missing
+four cited optical AI papers not yet ingested
+
+## Why
+Required for optical KV cache design.
+"""
+
 _DIR_0001_MD = """\
 ---
 type: direction
@@ -272,14 +315,19 @@ ALL_CANNED = CANNED_ARXIV + CANNED_RSS + CANNED_GITHUB + CANNED_FORUM
 # ---------------------------------------------------------------------------
 
 def _make_tmp_vault(tmp_path: Path) -> Path:
-    """Create a minimal tmp vault with gaps.md, DIR-0001.md, PURPOSE.md."""
+    """Create a minimal tmp vault with wiki/gap/ per-gap files, DIR-0001.md, PURPOSE.md."""
     vault = tmp_path / "vault"
     vault.mkdir()
 
-    # wiki/gaps.md
-    gaps_dir = vault / "wiki"
-    gaps_dir.mkdir(parents=True)
-    (gaps_dir / "gaps.md").write_text(_GAPS_MD, encoding="utf-8")
+    # wiki/gap/ per-gap files (replacing the old wiki/gaps.md)
+    gap_dir = vault / "wiki" / "gap"
+    gap_dir.mkdir(parents=True)
+    (gap_dir / "GAP-01-disaggregated-inference-scheduling.md").write_text(
+        _GAP_01_FILE, encoding="utf-8"
+    )
+    (gap_dir / "GAP-02-optical-interconnect-prior-art.md").write_text(
+        _GAP_02_FILE, encoding="utf-8"
+    )
 
     # objective/direction/DIR-0001.md
     dir_dir = vault / "objective" / "direction"
@@ -2299,8 +2347,8 @@ class TestInteractiveReportFormat:
         report_path = web_crawl._write_nightly_report(str(vault), "2026-06-22", [c])
         text = report_path.read_text(encoding="utf-8")
         assert "**relevance**" in text
-        # GAP-01 -> wiki/gaps wikilink
-        assert "[[wiki/gaps]]" in text
+        # GAP-01 -> per-gap file link (or fallback to index when file absent)
+        assert "[[wiki/gap/" in text
 
     def test_rationale_field_present(self, tmp_path):
         vault = self._make_vault(tmp_path)

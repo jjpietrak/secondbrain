@@ -68,6 +68,7 @@ The matrix below is authoritative for v0.2. Permission values are preserved verb
 | wiki/concepts/  | ideas, frameworks, theories, methods                                                                                         | YES               | Wiki Agent   | Wiki Agent & Research Agent |
 | wiki/synthesis/ | comparisons, deep analyses short summary, literature reviews                                                                 | YES               | Wiki Agent   | Wiki Agent & Research Agent |
 | wiki/sources/   | one structured summary per ingested raw source                                                                               | YES               | Wiki Agent   | Wiki Agent & Research Agent |
+| wiki/gap/       | one file per knowledge GAP (`GAP-NN-<slug>.md`, gap template) + `index.md` overview (coverage map / stale / self-contained / open-question harvest); bottom-up gap analysis by `wiki-gaps`, machine-read by the web agent DECISION | YES | Wiki Agent | Wiki Agent & Research Agent & Web Agent |
 | wiki/index.md   | master catalog, one row per agent operation                                                                                  | YES               | Wiki Agent   | Wiki Agent & Research Agent |
 | wiki/hot.md     | last ingest session context, current focus, blind spots, proposed new research directions, open work threads (next sessions) | YES               | Wiki Agent   | Wiki Agent & Research Agent |
 

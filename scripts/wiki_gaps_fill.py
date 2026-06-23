@@ -11,10 +11,26 @@ fill_gap_prompt(payload: dict) -> str
     Fill WIKI_GAP_PROMPT with the payload values.
     Raises KeyError if a required key is missing from the payload.
 
+validate_gaps_output(gaps_text: str) -> tuple[bool, str]
+    Minimal validation of the LLM output from WIKI_GAP_PROMPT.
+
+build_gaps_frontmatter(vault_name: str, today: str) -> str
+    DEPRECATED -- the wiki-gaps skill no longer writes a monolithic wiki/gaps.md.
+    File frontmatter is now owned by wiki_gaps_split.py (per-gap files) and
+    wiki/gap/index.md.  This function is retained for backward compatibility only.
+
 CLI usage (pipe from wiki_gaps_gather.py or pass a payload file)
 ---------
     python scripts/wiki_gaps_gather.py <vault_root> --output-json \\
         | python scripts/wiki_gaps_fill.py
+
+    Pipe the output of this script into wiki_gaps_split.py to write the
+    per-gap files:
+
+        python scripts/wiki_gaps_gather.py "$VAULT_ROOT" --output-json \\
+            | python scripts/wiki_gaps_fill.py \\
+            | <LLM call> \\
+            | python scripts/wiki_gaps_split.py --vault "$VAULT_ROOT" --apply
 
     python scripts/wiki_gaps_fill.py payload.json    # from a file
     python scripts/wiki_gaps_fill.py --stdin         # read JSON from stdin
@@ -89,11 +105,17 @@ def validate_gaps_output(gaps_text: str) -> tuple[bool, str]:
 
 
 # ---------------------------------------------------------------------------
-# gaps.md frontmatter builder
+# gaps.md frontmatter builder (DEPRECATED)
 # ---------------------------------------------------------------------------
 
 def build_gaps_frontmatter(vault_name: str, today: str) -> str:
-    """Return the YAML frontmatter block for wiki/gaps.md."""
+    """Return the YAML frontmatter block for wiki/gaps.md.
+
+    DEPRECATED: The wiki-gaps skill no longer writes a monolithic wiki/gaps.md.
+    Per-gap file frontmatter is now rendered by wiki_gaps_split.split(), which
+    writes wiki/gap/GAP-NN-<slug>.md files and wiki/gap/index.md.
+    This function is kept for backward compatibility only.
+    """
     return (
         "---\n"
         "type: gaps_report\n"

@@ -137,7 +137,7 @@ def _jaccard(a: frozenset[str], b: frozenset[str]) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Parse gaps.md
+# Parse per-gap files in wiki/gap/
 # ---------------------------------------------------------------------------
 
 _PRIORITY_RE = re.compile(r"^(high|medium|low)\b", re.IGNORECASE)
@@ -146,75 +146,95 @@ _FILLABLE_TAG_RE = re.compile(
     r"\b(arxiv|web|github|forum|x)\b", re.IGNORECASE
 )
 
+# Regex to extract YAML inline-list items, e.g. [T-0006, T-0003] or ["[[...]]", "[[...]]"]
+_YAML_LIST_RE = re.compile(r'\[([^\]]*)\]')
+
+
+def _parse_gap_frontmatter_list(raw: str) -> list[str]:
+    """Parse a YAML inline list value like [T-0006] or [arxiv, web] into a list of strings.
+
+    Also handles plain comma-separated values (no brackets).
+    """
+    raw = raw.strip()
+    # Try inline list syntax [a, b, c]
+    m = _YAML_LIST_RE.match(raw)
+    if m:
+        inner = m.group(1)
+    else:
+        inner = raw
+    # Split on commas, strip whitespace and quotes
+    items = []
+    for item in inner.split(","):
+        item = item.strip().strip("\"'")
+        if item:
+            items.append(item)
+    return items
+
 
 def parse_gaps(
-    gaps_md_text: str,
+    gap_dir: str,
+    *,
     trace: "DecisionTrace | None" = None,
 ) -> list[dict]:
-    """Parse the ## Knowledge Gaps section of gaps.md.
+    """Parse per-gap files from the wiki/gap/ directory.
 
-    Each gap is a block starting with ### GAP-NN: <title>.
+    Each file matching GAP-*.md (skipping _template.md and index.md) is a gap.
+    Only gaps with status: open (or missing status) are included.
+
     Returns list of dicts with keys:
       id, title, shows_up_in, missing, fillable_by, topics, priority
     """
-    # Find the ## Knowledge Gaps section
-    knowledge_gaps_match = re.search(
-        r"^##\s+Knowledge Gaps\s*$", gaps_md_text, re.MULTILINE
-    )
-    if not knowledge_gaps_match:
+    d = Path(gap_dir)
+    if not d.is_dir():
         return []
 
-    section_text = gaps_md_text[knowledge_gaps_match.end():]
-
-    # Stop at the next ## heading (e.g. ## Stale, ## Self-contained)
-    next_section = re.search(r"^##\s+", section_text, re.MULTILINE)
-    if next_section:
-        section_text = section_text[: next_section.start()]
-
     gaps = []
-    # Split into blocks at ### GAP-NN:
-    blocks = re.split(r"(?=^###\s+GAP-)", section_text, flags=re.MULTILINE)
 
-    for block in blocks:
-        block = block.strip()
-        if not block:
-            continue
-        header_match = re.match(r"^###\s+(GAP-\d+):\s*(.+)$", block, re.MULTILINE)
-        if not header_match:
+    for path in sorted(d.glob("GAP-*.md")):
+        # Skip _template.md and index.md (also GAP-prefixed safety: just check these names)
+        if path.name.startswith("_") or path.name == "index.md":
             continue
 
-        gap_id = header_match.group(1)
-        title = header_match.group(2).strip()
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        fm = _parse_frontmatter(text)
 
-        def _field(name: str) -> str:
-            m = re.search(rf"^-\s+{name}:\s*(.+?)$", block, re.MULTILINE | re.DOTALL)
-            if not m:
-                return ""
-            # Trim to just this field's line (stop at next "- key:")
-            val = m.group(1)
-            # Stop at the next bullet field
-            stop = re.search(r"\n-\s+\w", val)
-            if stop:
-                val = val[: stop.start()]
-            return val.strip()
+        # Filter: only open (or missing) status
+        status = fm.get("status", "open").strip().lower()
+        if status and status != "open":
+            continue
 
-        shows_up_in = _field("shows_up_in")
-        missing = _field("missing")
-        fillable_by_raw = _field("fillable_by")
-        topic_raw = _field("topic")
-        priority_raw = _field("priority")
+        gap_id = fm.get("id", "").strip()
+        if not gap_id:
+            # Derive id from filename stem (e.g. GAP-08-some-slug -> GAP-08)
+            stem = path.stem  # e.g. "GAP-08-optical-prior-art"
+            m = re.match(r"^(GAP-\d+)", stem, re.IGNORECASE)
+            gap_id = m.group(1).upper() if m else stem
 
-        # Parse fillable_by: extract bare engine tags
+        title = fm.get("title", "").strip().strip("\"'")
+
+        # shows_up_in: YAML list of wikilinks -> join as comma-separated string for downstream
+        shows_up_in_raw = fm.get("shows_up_in", "")
+        shows_up_in_list = _parse_gap_frontmatter_list(shows_up_in_raw)
+        shows_up_in = ", ".join(shows_up_in_list)
+
+        # Extract ## Missing body section
+        missing = _parse_section(text, "Missing")
+
+        # fillable_by: YAML inline list [arxiv, web] or plain string
+        fillable_by_raw = fm.get("fillable_by", "")
+        fillable_by_items = _parse_gap_frontmatter_list(fillable_by_raw)
         fillable_by = list(
-            dict.fromkeys(  # deduplicate while preserving order
-                t.lower() for t in _FILLABLE_TAG_RE.findall(fillable_by_raw)
+            dict.fromkeys(  # deduplicate, preserve order
+                t.lower() for t in _FILLABLE_TAG_RE.findall(" ".join(fillable_by_items))
             )
         )
 
-        # Parse topics: T-NNNN comma list
-        topics = _TOPIC_RE.findall(topic_raw)
+        # topics: YAML inline list [T-0006, T-0003] or plain string
+        topics_raw = fm.get("topics", "")
+        topics = _TOPIC_RE.findall(topics_raw)
 
-        # Priority: first word (high/medium/low)
+        # priority: plain string (high/medium/low)
+        priority_raw = fm.get("priority", "medium").strip()
         pm = _PRIORITY_RE.match(priority_raw)
         priority = pm.group(1).lower() if pm else "medium"
 
@@ -953,13 +973,13 @@ def build_plan(
     notes = []
 
     # Parse
-    gaps_path = vault_path / "wiki" / "gaps.md"
-    if gaps_path.exists():
-        gaps = parse_gaps(gaps_path.read_text(encoding="utf-8", errors="ignore"), trace=trace)
-        notes.append(f"parsed {len(gaps)} gaps from wiki/gaps.md")
+    gap_dir = vault_path / "wiki" / "gap"
+    if gap_dir.is_dir():
+        gaps = parse_gaps(str(gap_dir), trace=trace)
+        notes.append(f"parsed {len(gaps)} gaps from wiki/gap/")
     else:
         gaps = []
-        notes.append("wiki/gaps.md not found -- no gaps loaded")
+        notes.append("wiki/gap/ not found -- no gaps loaded")
 
     direction_dir = vault_path / "objective" / "direction"
     directions = parse_directions(str(direction_dir), trace=trace)

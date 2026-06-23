@@ -6,7 +6,8 @@ Tests cover:
   3. render_md() row shows published date, rationale (truncated), and a resolved [[...]] link.
   4. _relevance_links() resolution:
      - DIR/Q/QP/T/D ids -> full-path wikilinks when the file exists in objective/<subdir>/
-     - GAP-## -> [[wiki/gaps]] (GAP-##) regardless of vault content
+     - GAP-## -> [[wiki/gap/<stem>]] when a matching GAP-##-*.md file exists in wiki/gap/
+     - GAP-## -> [[wiki/gap/index]] (GAP-##) fallback when no file found
      - fallback to [[<id>]] when the objective file does not exist
      - empty / None input -> ""
 
@@ -53,6 +54,14 @@ def _make_objective_file(tmp_path: Path, subdir: str, filename: str) -> Path:
     p = tmp_path / "objective" / subdir / filename
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(f"---\ntype: {subdir}\n---\n# {filename}\n")
+    return p
+
+
+def _make_gap_file(tmp_path: Path, filename: str) -> Path:
+    """Create a stub wiki/gap/<filename>.md and return its path."""
+    p = tmp_path / "wiki" / "gap" / filename
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(f"---\ntype: gap\nid: {filename.split('-')[0]+'-'+filename.split('-')[1]}\n---\n")
     return p
 
 
@@ -214,27 +223,42 @@ def test_render_md_resolves_dir_link(tmp_path, monkeypatch):
     )
 
 
-def test_render_md_gap_link(tmp_path, monkeypatch):
-    """A row with objective_ids=['GAP-08'] should show [[wiki/gaps]] (GAP-08)."""
+def test_render_md_gap_link_with_file(tmp_path, monkeypatch):
+    """A row with objective_ids=['GAP-08'] shows [[wiki/gap/GAP-08-<slug>]] when the file exists."""
+    _make_gap_file(tmp_path, "GAP-08-optical-prior-art.md")
     row = _base_row({"objective_ids": ["GAP-08"]})
     _make_vault(tmp_path, rows=[row])
     monkeypatch.setenv("VAULT_PATH", str(tmp_path))
 
     content = ii.render_md().read_text()
-    assert "[[wiki/gaps]]" in content, f"[[wiki/gaps]] not found in:\n{content}"
+    assert "[[wiki/gap/GAP-08-optical-prior-art]]" in content, (
+        f"[[wiki/gap/GAP-08-optical-prior-art]] not found in:\n{content}"
+    )
+    assert "GAP-08" in content
+
+
+def test_render_md_gap_link_fallback(tmp_path, monkeypatch):
+    """A row with objective_ids=['GAP-08'] falls back to [[wiki/gap/index]] (GAP-08) when no file."""
+    row = _base_row({"objective_ids": ["GAP-08"]})
+    _make_vault(tmp_path, rows=[row])
+    monkeypatch.setenv("VAULT_PATH", str(tmp_path))
+
+    content = ii.render_md().read_text()
+    assert "[[wiki/gap/index]]" in content, f"[[wiki/gap/index]] not found in:\n{content}"
     assert "GAP-08" in content
 
 
 def test_render_md_mixed_relevance(tmp_path, monkeypatch):
     """DIR + GAP ids together produce a comma-separated relevance cell."""
     _make_objective_file(tmp_path, "direction", "DIR-0004-optical-prior-art-comparison.md")
+    _make_gap_file(tmp_path, "GAP-08-optical-prior-art.md")
     row = _base_row({"objective_ids": ["DIR-0004", "GAP-08"]})
     _make_vault(tmp_path, rows=[row])
     monkeypatch.setenv("VAULT_PATH", str(tmp_path))
 
     content = ii.render_md().read_text()
     assert "[[objective/direction/DIR-0004-optical-prior-art-comparison]]" in content
-    assert "[[wiki/gaps]]" in content
+    assert "[[wiki/gap/GAP-08-optical-prior-art]]" in content
 
 
 # ---------------------------------------------------------------------------
@@ -247,16 +271,23 @@ def test_relevance_links_empty():
     assert ii._relevance_links(None, Path("/nonexistent")) == ""
 
 
-def test_relevance_links_gap(tmp_path):
-    """GAP-## always resolves to [[wiki/gaps]] (GAP-##) with no file lookup."""
+def test_relevance_links_gap_fallback(tmp_path):
+    """GAP-## with no matching file resolves to [[wiki/gap/index]] (GAP-##) fallback."""
     result = ii._relevance_links(["GAP-01"], tmp_path)
-    assert result == "[[wiki/gaps]] (GAP-01)"
+    assert result == "[[wiki/gap/index]] (GAP-01)"
 
 
-def test_relevance_links_gap_two_digit(tmp_path):
-    """GAP-08, GAP-10, etc. all resolve to [[wiki/gaps]] form."""
-    assert ii._relevance_links(["GAP-08"], tmp_path) == "[[wiki/gaps]] (GAP-08)"
-    assert ii._relevance_links(["GAP-10"], tmp_path) == "[[wiki/gaps]] (GAP-10)"
+def test_relevance_links_gap_file_found(tmp_path):
+    """GAP-08 with a matching GAP-08-*.md file resolves to [[wiki/gap/GAP-08-<stem>]]."""
+    _make_gap_file(tmp_path, "GAP-08-optical-prior-art.md")
+    result = ii._relevance_links(["GAP-08"], tmp_path)
+    assert result == "[[wiki/gap/GAP-08-optical-prior-art]]"
+
+
+def test_relevance_links_gap_two_digit_fallback(tmp_path):
+    """GAP-08, GAP-10, etc. with no file -> [[wiki/gap/index]] (GAP-##) fallback form."""
+    assert ii._relevance_links(["GAP-08"], tmp_path) == "[[wiki/gap/index]] (GAP-08)"
+    assert ii._relevance_links(["GAP-10"], tmp_path) == "[[wiki/gap/index]] (GAP-10)"
 
 
 def test_relevance_links_dir_file_found(tmp_path):
@@ -315,16 +346,17 @@ def test_relevance_links_unknown_id(tmp_path):
 
 
 def test_relevance_links_multiple(tmp_path):
-    """Multiple ids are joined with ', '."""
+    """Multiple ids are joined with ', '; GAP falls back to index when no file."""
     _make_objective_file(tmp_path, "direction", "DIR-0001-some-dir.md")
     result = ii._relevance_links(["DIR-0001", "GAP-03", "Q-0099"], tmp_path)
-    assert result == "[[objective/direction/DIR-0001-some-dir]], [[wiki/gaps]] (GAP-03), [[Q-0099]]"
+    assert result == "[[objective/direction/DIR-0001-some-dir]], [[wiki/gap/index]] (GAP-03), [[Q-0099]]"
 
 
 def test_relevance_links_case_insensitive_gap(tmp_path):
-    """GAP ids are matched case-insensitively."""
+    """GAP ids are matched case-insensitively; lowercase gap-05 falls back to index form."""
     result = ii._relevance_links(["gap-05"], tmp_path)
-    assert "[[wiki/gaps]]" in result
+    assert "[[wiki/gap/index]]" in result
+    assert "GAP-05" in result
 
 
 # ---------------------------------------------------------------------------
@@ -338,6 +370,7 @@ def test_render_md_sample_table(tmp_path, monkeypatch, capsys):
     Prints the table rows to stdout so the caller can visually inspect them.
     """
     _make_objective_file(tmp_path, "direction", "DIR-0004-optical-prior-art-comparison.md")
+    _make_gap_file(tmp_path, "GAP-08-optical-prior-art.md")
 
     rows = [
         {
@@ -402,8 +435,7 @@ def test_render_md_sample_table(tmp_path, monkeypatch, capsys):
     assert "2026-04-22" in content, "published date not in table"
     assert "Proposes a novel KV cache format" in content, "rationale prefix not in table"
     assert "[[objective/direction/DIR-0004-optical-prior-art-comparison]]" in content
-    assert "[[wiki/gaps]]" in content
-    assert "GAP-08" in content
+    assert "[[wiki/gap/GAP-08-optical-prior-art]]" in content
 
     # Assertions on the no-pub row
     # Find the data line for the no-pub row and check Date Published is "—"

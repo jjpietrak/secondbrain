@@ -33,37 +33,81 @@ from web_decision import (
 # Fixtures
 # ---------------------------------------------------------------------------
 
-GAPS_FIXTURE_TEXT = """\
+# Per-gap file fixtures (new wiki/gap/GAP-NN-<slug>.md schema)
+GAP_08_FILE = """\
 ---
-type: gaps_report
-created: 2026-06-01
-vault: test-vault
+type: gap
+id: GAP-08
+title: "Optical prior art -- citations [3]-[6] from Photons to Tokens not ingested"
+status: open
+topics: [T-0006]
+fillable_by: [arxiv]
+priority: medium
+shows_up_in: ["[[wiki/sources/photons-to-tokens]]"]
+created: 2026-06-22
+updated: 2026-06-23
+written_by: wiki
 ---
+## Missing
+entity/source pages for these four cited papers; they contain device parameters
 
-## Open-Question Harvest (TOP PRIORITY)
+## Why
+The optical roofline range needs these citations.
 
-Some questions here.
-
-## Knowledge Gaps
-
-### GAP-08: Optical prior art -- citations [3]-[6] from "Photons to Tokens" not ingested
-- shows_up_in: [[wiki/sources/photons-to-tokens]] Open Questions; ...
-- missing: entity/source pages for these four cited papers; they contain device parameters
-- fillable_by: arxiv (all four are likely arXiv papers based on citation style)
-- topic: T-0006
-- priority: medium -- may provide the optical roofline range needed to close GAP-01
-
-### GAP-04: LLM serving systems coverage is thin
-- shows_up_in: T-0003 Coverage Map; [[wiki/entities/splitwise]] is a stub
-- missing: ingested source pages for seminal P/D systems (DistServe arXiv 2401.09670, Splitwise)
-- fillable_by: arxiv (DistServe, Splitwise, Mooncake); web (SGLang/TensorRT-LLM docs); github (vllm repo)
-- topic: T-0003
-- priority: high -- vault has almost no content; gaps in P/D scheduling limit the simulator
-
-## Stale / Unverified
-
-- Some stale notes here.
+## Open questions
+- Are these all on arXiv?
 """
+
+GAP_04_FILE = """\
+---
+type: gap
+id: GAP-04
+title: "LLM serving systems coverage is thin"
+status: open
+topics: [T-0003]
+fillable_by: [arxiv, web, github]
+priority: high
+shows_up_in: ["[[wiki/entities/splitwise]]"]
+created: 2026-06-20
+updated: 2026-06-23
+written_by: wiki
+---
+## Missing
+ingested source pages for seminal P/D systems (DistServe arXiv 2401.09670, Splitwise)
+
+## Why
+Vault has almost no content; gaps in P/D scheduling limit the simulator.
+
+## Open questions
+- Which papers are most canonical?
+"""
+
+GAP_FILLED_FILE = """\
+---
+type: gap
+id: GAP-99
+title: "Already resolved gap"
+status: filled
+topics: [T-0001]
+fillable_by: [arxiv]
+priority: low
+shows_up_in: []
+created: 2026-06-01
+updated: 2026-06-23
+written_by: wiki
+---
+## Missing
+Nothing -- this gap is filled.
+"""
+
+# Helper: write per-gap files into a tmp wiki/gap/ directory
+def _make_gap_dir(tmp_path, files: dict) -> Path:
+    """Create wiki/gap/ with the given filename->content mapping. Returns the dir path."""
+    gap_dir = tmp_path / "wiki" / "gap"
+    gap_dir.mkdir(parents=True, exist_ok=True)
+    for name, content in files.items():
+        (gap_dir / name).write_text(content, encoding="utf-8")
+    return gap_dir
 
 DIR_WITH_PLAIN_QUERIES = """\
 ---
@@ -298,72 +342,127 @@ CONFIG_FIXTURE = {
 
 
 class TestParseGaps:
-    def test_parses_two_gaps(self):
-        gaps = parse_gaps(GAPS_FIXTURE_TEXT)
+    def test_parses_two_open_gaps(self, tmp_path):
+        gap_dir = _make_gap_dir(tmp_path, {
+            "GAP-08-optical-prior-art.md": GAP_08_FILE,
+            "GAP-04-llm-serving.md": GAP_04_FILE,
+        })
+        gaps = parse_gaps(str(gap_dir))
         assert len(gaps) == 2
 
-    def test_gap08_id_and_title(self):
-        gaps = parse_gaps(GAPS_FIXTURE_TEXT)
+    def test_gap08_id_and_title(self, tmp_path):
+        gap_dir = _make_gap_dir(tmp_path, {"GAP-08-optical-prior-art.md": GAP_08_FILE})
+        gaps = parse_gaps(str(gap_dir))
         g08 = next(g for g in gaps if g["id"] == "GAP-08")
-        assert g08["title"] == 'Optical prior art -- citations [3]-[6] from "Photons to Tokens" not ingested'
+        assert g08["title"] == "Optical prior art -- citations [3]-[6] from Photons to Tokens not ingested"
 
-    def test_gap08_single_topic(self):
-        gaps = parse_gaps(GAPS_FIXTURE_TEXT)
+    def test_gap08_single_topic(self, tmp_path):
+        gap_dir = _make_gap_dir(tmp_path, {"GAP-08-optical-prior-art.md": GAP_08_FILE})
+        gaps = parse_gaps(str(gap_dir))
         g08 = next(g for g in gaps if g["id"] == "GAP-08")
         assert g08["topics"] == ["T-0006"]
 
-    def test_gap08_fillable_by_bare_tag(self):
-        gaps = parse_gaps(GAPS_FIXTURE_TEXT)
+    def test_gap08_fillable_by_bare_tag(self, tmp_path):
+        gap_dir = _make_gap_dir(tmp_path, {"GAP-08-optical-prior-art.md": GAP_08_FILE})
+        gaps = parse_gaps(str(gap_dir))
         g08 = next(g for g in gaps if g["id"] == "GAP-08")
         assert g08["fillable_by"] == ["arxiv"]
 
-    def test_gap08_priority_from_first_word(self):
-        gaps = parse_gaps(GAPS_FIXTURE_TEXT)
+    def test_gap08_priority_from_frontmatter(self, tmp_path):
+        gap_dir = _make_gap_dir(tmp_path, {"GAP-08-optical-prior-art.md": GAP_08_FILE})
+        gaps = parse_gaps(str(gap_dir))
         g08 = next(g for g in gaps if g["id"] == "GAP-08")
         assert g08["priority"] == "medium"
 
-    def test_gap04_multi_topic(self):
-        gaps = parse_gaps(GAPS_FIXTURE_TEXT)
+    def test_gap04_multi_topic(self, tmp_path):
+        gap_dir = _make_gap_dir(tmp_path, {"GAP-04-llm-serving.md": GAP_04_FILE})
+        gaps = parse_gaps(str(gap_dir))
         g04 = next(g for g in gaps if g["id"] == "GAP-04")
         assert "T-0003" in g04["topics"]
 
-    def test_gap04_multi_tag_fillable_by(self):
-        gaps = parse_gaps(GAPS_FIXTURE_TEXT)
+    def test_gap04_multi_tag_fillable_by(self, tmp_path):
+        gap_dir = _make_gap_dir(tmp_path, {"GAP-04-llm-serving.md": GAP_04_FILE})
+        gaps = parse_gaps(str(gap_dir))
         g04 = next(g for g in gaps if g["id"] == "GAP-04")
         tags = g04["fillable_by"]
         assert "arxiv" in tags
         assert "web" in tags
         assert "github" in tags
 
-    def test_gap04_priority_high(self):
-        gaps = parse_gaps(GAPS_FIXTURE_TEXT)
+    def test_gap04_priority_high(self, tmp_path):
+        gap_dir = _make_gap_dir(tmp_path, {"GAP-04-llm-serving.md": GAP_04_FILE})
+        gaps = parse_gaps(str(gap_dir))
         g04 = next(g for g in gaps if g["id"] == "GAP-04")
         assert g04["priority"] == "high"
 
-    def test_no_stale_section_parsed_as_gap(self):
-        gaps = parse_gaps(GAPS_FIXTURE_TEXT)
+    def test_filled_status_excluded(self, tmp_path):
+        gap_dir = _make_gap_dir(tmp_path, {
+            "GAP-08-optical-prior-art.md": GAP_08_FILE,
+            "GAP-99-resolved.md": GAP_FILLED_FILE,
+        })
+        gaps = parse_gaps(str(gap_dir))
         ids = [g["id"] for g in gaps]
-        assert all(gid.startswith("GAP-") for gid in ids)
+        assert "GAP-99" not in ids
+        assert "GAP-08" in ids
 
-    def test_missing_section_returns_empty(self):
-        gaps = parse_gaps("# Some file\n\nNo knowledge gaps section here.\n")
+    def test_template_and_index_skipped(self, tmp_path):
+        gap_dir = _make_gap_dir(tmp_path, {
+            "GAP-08-optical-prior-art.md": GAP_08_FILE,
+            "_template.md": "---\ntype: gap\nid: GAP-NNNN\nstatus: open\n---\n",
+            "index.md": "# Gap index\n\nOverview.\n",
+        })
+        gaps = parse_gaps(str(gap_dir))
+        # Only GAP-08 should be parsed; template and index skipped
+        assert len(gaps) == 1
+        assert gaps[0]["id"] == "GAP-08"
+
+    def test_missing_dir_returns_empty(self):
+        gaps = parse_gaps("/nonexistent/wiki/gap")
         assert gaps == []
 
-    def test_missing_field_returns_empty_string(self):
-        text = """\
-## Knowledge Gaps
-
-### GAP-99: Minimal gap
-- shows_up_in: somewhere
-- missing: something
-- fillable_by: arxiv
-- topic: T-0001
-- priority: low
+    def test_missing_body_returns_empty_string(self, tmp_path):
+        minimal = """\
+---
+type: gap
+id: GAP-99
+title: "Minimal gap"
+status: open
+topics: [T-0001]
+fillable_by: [arxiv]
+priority: low
+shows_up_in: []
+---
 """
-        gaps = parse_gaps(text)
+        gap_dir = _make_gap_dir(tmp_path, {"GAP-99-minimal.md": minimal})
+        gaps = parse_gaps(str(gap_dir))
         assert len(gaps) == 1
         assert gaps[0]["id"] == "GAP-99"
         assert gaps[0]["priority"] == "low"
+        assert gaps[0]["missing"] == ""  # no ## Missing section
+
+    def test_output_dict_shape(self, tmp_path):
+        """Output dict shape must be unchanged: id, title, shows_up_in, missing, fillable_by, topics, priority."""
+        gap_dir = _make_gap_dir(tmp_path, {"GAP-08-optical-prior-art.md": GAP_08_FILE})
+        gaps = parse_gaps(str(gap_dir))
+        required_keys = {"id", "title", "shows_up_in", "missing", "fillable_by", "topics", "priority"}
+        assert required_keys.issubset(gaps[0].keys())
+
+    def test_missing_as_body_text(self, tmp_path):
+        """The 'missing' field is the ## Missing section body text."""
+        gap_dir = _make_gap_dir(tmp_path, {"GAP-08-optical-prior-art.md": GAP_08_FILE})
+        gaps = parse_gaps(str(gap_dir))
+        g08 = next(g for g in gaps if g["id"] == "GAP-08")
+        assert "entity/source pages" in g08["missing"]
+
+    def test_trace_parse_gaps_record(self, tmp_path):
+        """parse_gaps with trace emits a parse/gaps record."""
+        from web_decision import DecisionTrace
+        gap_dir = _make_gap_dir(tmp_path, {"GAP-08-optical-prior-art.md": GAP_08_FILE})
+        t = DecisionTrace()
+        gaps = parse_gaps(str(gap_dir), trace=t)
+        rec = t.first("parse", "gaps")
+        assert rec is not None
+        assert rec["data"]["count"] == len(gaps)
 
 
 # ---------------------------------------------------------------------------
@@ -1046,16 +1145,21 @@ class TestSelectCandidates:
 
 
 class TestBuildPlan:
-    def _make_vault(self, tmp_path, gaps_text=None, dirs=None):
-        """Create a minimal vault directory with gaps.md and direction files."""
+    def _make_vault(self, tmp_path, gap_files=None, dirs=None):
+        """Create a minimal vault directory with wiki/gap/ files and direction files."""
         vault = tmp_path / "vault"
         vault.mkdir()
-        (vault / "wiki").mkdir()
         (vault / "objective" / "direction").mkdir(parents=True)
         (vault / "meta").mkdir()
 
-        if gaps_text is not None:
-            (vault / "wiki" / "gaps.md").write_text(gaps_text, encoding="utf-8")
+        if gap_files is not None:
+            gap_dir = vault / "wiki" / "gap"
+            gap_dir.mkdir(parents=True)
+            for name, text in gap_files.items():
+                (gap_dir / name).write_text(text, encoding="utf-8")
+        else:
+            # Always create wiki/ even without gaps
+            (vault / "wiki").mkdir(exist_ok=True)
 
         for name, text in (dirs or {}).items():
             (vault / "objective" / "direction" / name).write_text(text, encoding="utf-8")
@@ -1063,7 +1167,10 @@ class TestBuildPlan:
         return vault
 
     def test_returns_dict_with_targets_config_notes(self, tmp_path):
-        vault = self._make_vault(tmp_path, gaps_text=GAPS_FIXTURE_TEXT)
+        vault = self._make_vault(tmp_path, gap_files={
+            "GAP-08-optical.md": GAP_08_FILE,
+            "GAP-04-llm-serving.md": GAP_04_FILE,
+        })
         plan = build_plan(str(vault), CONFIG_FIXTURE, REGISTRY_FIXTURE)
         assert "targets" in plan
         assert "config" in plan
@@ -1072,15 +1179,16 @@ class TestBuildPlan:
     def test_gap_targets_before_research_before_news(self, tmp_path):
         vault = self._make_vault(
             tmp_path,
-            gaps_text=GAPS_FIXTURE_TEXT,
+            gap_files={
+                "GAP-08-optical.md": GAP_08_FILE,
+                "GAP-04-llm-serving.md": GAP_04_FILE,
+            },
             dirs={"DIR-0010-standalone.md": DIR_STANDALONE},
         )
         plan = build_plan(str(vault), CONFIG_FIXTURE, REGISTRY_FIXTURE)
         targets = plan["targets"]
 
         lanes_order = [t["lane"] for t in targets]
-        # Find where gap, research, news sections start
-        # Verify gap comes before research comes before news
         gap_indices = [i for i, lane in enumerate(lanes_order) if lane == "gap"]
         research_indices = [i for i, lane in enumerate(lanes_order) if lane == "research"]
         news_indices = [i for i, lane in enumerate(lanes_order) if lane == "news"]
@@ -1091,19 +1199,19 @@ class TestBuildPlan:
             assert max(research_indices) < min(news_indices)
 
     def test_news_target_always_present(self, tmp_path):
-        vault = self._make_vault(tmp_path, gaps_text=GAPS_FIXTURE_TEXT)
+        vault = self._make_vault(tmp_path, gap_files={"GAP-08-optical.md": GAP_08_FILE})
         plan = build_plan(str(vault), CONFIG_FIXTURE, REGISTRY_FIXTURE)
         news_targets = [t for t in plan["targets"] if t["lane"] == "news"]
         assert len(news_targets) == 1
 
     def test_news_target_has_routed_sources(self, tmp_path):
-        vault = self._make_vault(tmp_path, gaps_text=GAPS_FIXTURE_TEXT)
+        vault = self._make_vault(tmp_path, gap_files={"GAP-08-optical.md": GAP_08_FILE})
         plan = build_plan(str(vault), CONFIG_FIXTURE, REGISTRY_FIXTURE)
         news = next(t for t in plan["targets"] if t["lane"] == "news")
         assert len(news["routed_sources"]) > 0
 
     def test_no_internal_keys_in_output(self, tmp_path):
-        vault = self._make_vault(tmp_path, gaps_text=GAPS_FIXTURE_TEXT)
+        vault = self._make_vault(tmp_path, gap_files={"GAP-08-optical.md": GAP_08_FILE})
         plan = build_plan(str(vault), CONFIG_FIXTURE, REGISTRY_FIXTURE)
         for target in plan["targets"]:
             assert "_gap" not in target
@@ -1119,7 +1227,10 @@ class TestBuildPlan:
         assert len(news_targets) == 1
 
     def test_target_shape_matches_spec(self, tmp_path):
-        vault = self._make_vault(tmp_path, gaps_text=GAPS_FIXTURE_TEXT)
+        vault = self._make_vault(tmp_path, gap_files={
+            "GAP-08-optical.md": GAP_08_FILE,
+            "GAP-04-llm-serving.md": GAP_04_FILE,
+        })
         plan = build_plan(str(vault), CONFIG_FIXTURE, REGISTRY_FIXTURE)
 
         required_keys = {
@@ -1130,31 +1241,38 @@ class TestBuildPlan:
             assert required_keys.issubset(t.keys()), f"Missing keys in target: {t}"
 
     def test_gap_targets_have_routed_sources(self, tmp_path):
-        vault = self._make_vault(tmp_path, gaps_text=GAPS_FIXTURE_TEXT)
+        vault = self._make_vault(tmp_path, gap_files={
+            "GAP-08-optical.md": GAP_08_FILE,
+            "GAP-04-llm-serving.md": GAP_04_FILE,
+        })
         plan = build_plan(str(vault), CONFIG_FIXTURE, REGISTRY_FIXTURE)
         gap_targets = [t for t in plan["targets"] if t["lane"] == "gap"]
-        # At least some gap targets should have routed sources (arxiv-fillable gaps)
         with_sources = [t for t in gap_targets if t["routed_sources"]]
         assert len(with_sources) >= 1
 
     def test_merged_gap_dir_present_in_output(self, tmp_path):
-        # DIR-0004 shares topic T-0006 with GAP-08 in GAPS_FIXTURE_TEXT
+        # DIR-0004 shares topic T-0006 with GAP-08
         vault = self._make_vault(
             tmp_path,
-            gaps_text=GAPS_FIXTURE_TEXT,
+            gap_files={"GAP-08-optical.md": GAP_08_FILE},
             dirs={"DIR-0004-optical.md": DIR_WITH_PLAIN_QUERIES},
         )
         plan = build_plan(str(vault), CONFIG_FIXTURE, REGISTRY_FIXTURE)
         gap_targets = [t for t in plan["targets"] if t["lane"] == "gap"]
         merged = [t for t in gap_targets if "DIR-0004" in t.get("target_id", "")]
-        # GAP-08 and DIR-0004 share T-0006 -> should be merged
         assert len(merged) == 1
 
-    def test_notes_report_gap_and_direction_counts(self, tmp_path):
-        vault = self._make_vault(tmp_path, gaps_text=GAPS_FIXTURE_TEXT)
+    def test_notes_report_gap_dir(self, tmp_path):
+        vault = self._make_vault(tmp_path, gap_files={"GAP-08-optical.md": GAP_08_FILE})
         plan = build_plan(str(vault), CONFIG_FIXTURE, REGISTRY_FIXTURE)
         notes_text = " ".join(plan["notes"])
-        assert "gaps" in notes_text.lower() or "gap" in notes_text.lower()
+        assert "wiki/gap/" in notes_text
+
+    def test_missing_gap_dir_produces_note(self, tmp_path):
+        vault = self._make_vault(tmp_path)  # no wiki/gap/ dir
+        plan = build_plan(str(vault), CONFIG_FIXTURE, REGISTRY_FIXTURE)
+        notes_text = " ".join(plan["notes"])
+        assert "wiki/gap/ not found" in notes_text
 
 
 # ---------------------------------------------------------------------------

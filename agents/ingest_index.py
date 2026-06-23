@@ -534,8 +534,8 @@ def _relevance_links(objective_ids: list[str], vault_root: Path) -> str:
     """Render a list of objective/GAP ids as Obsidian wikilinks.
 
     Resolution rules:
-    - GAP-## -> [[wiki/gaps]] (gaps are headings inside wiki/gaps.md; anchor form is fragile)
-      Displayed as: [[wiki/gaps]] (GAP-##)
+    - GAP-## -> GLOB <vault>/wiki/gap/GAP-##-*.md; if found emit [[wiki/gap/<stem>]];
+      else fall back to [[wiki/gap/index]] (GAP-##).
     - DIR-####, Q-####, QP-####, T-####, D-#### -> GLOB objective/<subdir>/<id>-*.md and
       emit [[objective/<subdir>/<stem>]]; if no file found fall back to [[<id>]].
     - Any other id -> [[<id>]] verbatim.
@@ -546,12 +546,23 @@ def _relevance_links(objective_ids: list[str], vault_root: Path) -> str:
         return ""
     parts: list[str] = []
     obj_root = vault_root / "objective"
+    gap_dir = vault_root / "wiki" / "gap"
     for oid in objective_ids:
         oid = oid.strip()
         if not oid:
             continue
         if _GAP_ID_RE.match(oid):
-            parts.append(f"[[wiki/gaps]] ({oid})")
+            # Normalize to uppercase for glob (GAP-08 not gap-08)
+            oid_upper = oid.upper()
+            try:
+                matches = list(gap_dir.glob(f"{oid_upper}-*.md"))
+            except OSError:
+                matches = []
+            if matches:
+                stem = matches[0].stem
+                parts.append(f"[[wiki/gap/{stem}]]")
+            else:
+                parts.append(f"[[wiki/gap/index]] ({oid_upper})")
             continue
         m = _OBJ_ID_RE.match(oid)
         if m:

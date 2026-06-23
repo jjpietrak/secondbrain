@@ -38,6 +38,11 @@ current; never store fact bodies here.
   web_rank + web_crawl orchestrator + web-scrape/web-rank skills. Live $0 demo passed (real arXiv+RSS
   -> 5 waiting_approval + digest; reject->sticky). 625 tests. Quality: enable `nomic-embed-text` for
   semantic rerank (RSS noisy on fallback). 3B paid + P4 nightly/agent-learn deferred. Restart to register.
+- [gap-readers-migration.md](gap-readers-migration.md) — 2026-06-23: gap readers migrated from
+  wiki/gaps.md (single file) to wiki/gap/GAP-NN-<slug>.md (per-file). parse_gaps new sig:
+  parse_gaps(gap_dir: str, *, trace=None). _relevance_links GAP glob -> [[wiki/gap/<stem>]] or
+  fallback [[wiki/gap/index]] (GAP-##). Both ingest_index.py + web_crawl.py inline copy updated.
+  814 tests green.
 
 ## Architecture
 - [retrieval-pipeline.md](retrieval-pipeline.md) — claude-obsidian hybrid retrieval
@@ -99,6 +104,13 @@ current; never store fact bodies here.
   Fixed wiki_gaps_gather parenthetical-header bug (293 tests green). PHASE 2 COMPLETE: user
   signed off the demo; R8 reconcile DONE (vault 88494fe: research/notes/ + drop legacy dirs).
   Next = Phase 3, GATED on the Web DECISION grill-me. P5 flag: re-key nlm sync to research/notes/.
+
+- [wiki-gaps-split.md](wiki-gaps-split.md) -- per-gap files DONE 2026-06-23: wiki/gap/GAP-NN-<slug>.md
+  structure + wiki/gap/index.md; scripts/wiki_gaps_split.py (slugify/parse_analysis/split);
+  scripts/templates/gap_template.md; SKILL.md updated (Step 5 pipes to splitter, Step 5b drops
+  template, lock on index.md); wiki_gaps_fill.py build_gaps_frontmatter deprecated (kept for
+  compat); web_decision.parse_gaps migrated to per-gap files (pre-existing change); 39 new tests +
+  1 test_web_crawl assertion updated; 814 tests total, all green.
 
 ## Open structural proposals
 - [reference-conflicts.md](reference-conflicts.md) — conflicts between the reference architectures
