@@ -231,6 +231,46 @@ def _paper_engine_for_entry(entry: dict) -> str:
     return ""
 
 
+# arXiv subject-category derivation map: registry entry id -> arXiv cat string
+_ARXIV_ID_TO_CATEGORY: dict[str, str] = {
+    "arxiv_cs_ar": "cs.AR",
+    "arxiv_cs_dc": "cs.DC",
+    "arxiv_cs_lg": "cs.LG",
+    "arxiv_eess_sp": "eess.SP",
+}
+
+import re as _re
+
+
+def _arxiv_category(entry: dict) -> str | None:
+    """Derive the arXiv subject category from a registry paper-publisher entry.
+
+    Derivation order:
+    1. Direct lookup in _ARXIV_ID_TO_CATEGORY by ``entry["id"]``.
+    2. Parse the ``rss_feed`` or ``url`` field for a path segment like
+       ``/list/cs.AR/rss`` or ``/list/eess.SP/recent``.
+    3. Return None when no category is derivable (generic arxiv call, deduped
+       as before).
+
+    Examples::
+        {"id": "arxiv_cs_ar", ...}          -> "cs.AR"
+        {"rss_feed": ".../list/cs.DC/rss"}  -> "cs.DC"
+        {"id": "openalex", ...}             -> None
+    """
+    entry_id = entry.get("id", "")
+    if entry_id in _ARXIV_ID_TO_CATEGORY:
+        return _ARXIV_ID_TO_CATEGORY[entry_id]
+
+    # Try to parse from rss_feed or url
+    for field in ("rss_feed", "url"):
+        value = entry.get(field) or ""
+        m = _re.search(r"/list/([A-Za-z]+\.[A-Z]+)/", value)
+        if m:
+            return m.group(1)
+
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Harvest dispatcher for a single target
 # ---------------------------------------------------------------------------
@@ -271,16 +311,18 @@ def _harvest_target(
     candidates: list[dict] = []
     seen_engines: set[str] = set()  # avoid duplicate forum calls per target
 
-    # Dedup harvest calls within this target: track (engine, key) pairs already
-    # executed.  key = query string for query_papers/query_forum, feed URL for
-    # poll_rss, repo URL for poll_github_releases.
-    # Example: arxiv_cs_ar / arxiv_cs_dc / arxiv_cs_lg all collapse to
-    # engine="arxiv", so 3 routed sources + 5 seed queries -> 5 unique arXiv
-    # calls instead of 15.
-    # NOTE (future): passing the arXiv CATEGORY (cs.AR / cs.DC / cs.LG) as a
-    # query parameter would make those meaningfully distinct calls; for now they
-    # are generic arxiv queries so deduping is strictly correct.
-    _executed_calls: set[tuple[str, str]] = set()
+    # Dedup harvest calls within this target.
+    # Key = (engine, query_or_url, category) where:
+    #   - engine: "arxiv" | "rss" | "github" | "hackernews" | ...
+    #   - query_or_url: the query string (for query_papers/query_forum) or the
+    #     feed/repo URL (for poll_rss / poll_github_releases)
+    #   - category: arXiv subject category string (e.g. "cs.AR") or "" for all
+    #     other engines and generic arxiv calls without a category.
+    #
+    # Using a 3-tuple means the same query against DIFFERENT arXiv categories
+    # (cs.AR vs cs.DC) runs as two distinct, meaningful API calls, while the
+    # same (engine, query, category) triple still deduplicates within the target.
+    _executed_calls: set[tuple[str, str, str]] = set()
 
     # For trace: track each engine call
     _trace_queries: list[dict] = []
@@ -298,18 +340,26 @@ def _harvest_target(
         return c
 
     # -- safe call wrapper with trace recording and per-target dedup --
-    def _call(fn, engine_label: str, query_str: str, *args, **kwargs) -> list[dict]:
-        call_key = (engine_label, query_str)
+    def _call(fn, engine_label: str, query_str: str, *args,
+              _arxiv_cat: str | None = None, **kwargs) -> list[dict]:
+        # 3-tuple dedup key: (engine, query_or_url, category).
+        # category="" for all non-arxiv engines and generic (no-category) arxiv calls.
+        call_key = (engine_label, query_str, _arxiv_cat or "")
         if call_key in _executed_calls:
-            # Duplicate (engine, key) within this target -- skip silently.
+            # Duplicate (engine, key, category) within this target -- skip silently.
             return []
         _executed_calls.add(call_key)
+        # Build the trace display string: append "[cat:X]" when a category is used
+        # so --explain shows which category each arXiv call targeted.
+        trace_query_str = (
+            f"{query_str} [cat:{_arxiv_cat}]" if _arxiv_cat else query_str
+        )
         try:
             results = fn(*args, **kwargs) or []
             if trace is not None:
                 _trace_queries.append({
                     "engine": engine_label,
-                    "query": query_str,
+                    "query": trace_query_str,
                     "n_returned": len(results),
                 })
             return results
@@ -319,7 +369,7 @@ def _harvest_target(
             if trace is not None:
                 _trace_queries.append({
                     "engine": engine_label,
-                    "query": query_str,
+                    "query": trace_query_str,
                     "n_returned": 0,
                     "error": str(exc),
                 })
@@ -365,10 +415,15 @@ def _harvest_target(
         if section_key == "paper-publisher":
             paper_engine = _paper_engine_for_entry(entry)
             if paper_engine:
+                # Derive the arXiv subject category (None for non-arXiv engines).
+                arxiv_cat = _arxiv_category(entry) if paper_engine == "arxiv" else None
                 for q in (queries or [_q()]):
+                    kw: dict = {"engine": paper_engine, "limit": per_source_limit}
+                    if arxiv_cat is not None:
+                        kw["category"] = arxiv_cat
                     results = _call(
                         wh.query_papers, paper_engine, q,
-                        q, engine=paper_engine, limit=per_source_limit
+                        q, _arxiv_cat=arxiv_cat, **kw
                     )
                     candidates.extend(_tag(c) for c in results)
             elif rss_feed:

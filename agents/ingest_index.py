@@ -81,6 +81,7 @@ _V3_DEFAULTS = {
     "proposed_at": None,
     "rejected_at": None,
     "rejection_reason": "",
+    "published": None,
 }
 
 _ARXIV = re.compile(r"(?:arxiv[:/ ]?)?\b(\d{4}\.\d{4,5})(v\d+)?\b", re.IGNORECASE)
@@ -350,7 +351,7 @@ def _normalize_enqueue_id(raw: str) -> tuple[str, str, str]:
 
 def enqueue(ident: str, *, title: str = "", rationale: str = "", score: float | None = None,
             discovered_by: str = "", objective_ids: list[str] | None = None,
-            name: str | None = None) -> dict:
+            published: str | None = None, name: str | None = None) -> dict:
     """Add a `waiting_approval` candidate (no file on disk). Idempotent / status-safe:
     - if the id is already `rejected` -> NO-OP (sticky; never re-proposed);
     - if the id already exists in any other status -> update metadata only, NEVER regress
@@ -388,6 +389,9 @@ def enqueue(ident: str, *, title: str = "", rationale: str = "", score: float | 
         row["objective_ids"] = merged
     if url and not row.get("url"):
         row["url"] = url
+    # published: only store when provided (do NOT clobber an existing value with None)
+    if published is not None:
+        row["published"] = published
     _save(name, data)
     render_md(name)
     return row
@@ -512,6 +516,65 @@ _STATUS_RANK = {"pending": 0, "waiting_approval": 1, "ingested": 2,
 _STATUS_MARK = {"pending": "⏳ pending", "ingested": "✅ ingested", "deleted": "🗑️ deleted",
                 "waiting_approval": "❓ waiting_approval", "rejected": "🚫 rejected"}
 
+# Objective id prefixes that map to a subdirectory name under objective/
+_OBJ_SUBDIR = {
+    "DIR": "direction",
+    "Q": "research_question",
+    "QP": "research_question_proposal",
+    "T": "topic",
+    "D": "decision",
+}
+# Regex matching a supported objective id: DIR-0001, Q-0007, QP-0001, T-0003, D-0001
+_OBJ_ID_RE = re.compile(r"^(DIR|QP|Q|T|D)-(\d+)$", re.IGNORECASE)
+# Regex matching a GAP id: GAP-01, GAP-08 etc.
+_GAP_ID_RE = re.compile(r"^GAP-\d+$", re.IGNORECASE)
+
+
+def _relevance_links(objective_ids: list[str], vault_root: Path) -> str:
+    """Render a list of objective/GAP ids as Obsidian wikilinks.
+
+    Resolution rules:
+    - GAP-## -> [[wiki/gaps]] (gaps are headings inside wiki/gaps.md; anchor form is fragile)
+      Displayed as: [[wiki/gaps]] (GAP-##)
+    - DIR-####, Q-####, QP-####, T-####, D-#### -> GLOB objective/<subdir>/<id>-*.md and
+      emit [[objective/<subdir>/<stem>]]; if no file found fall back to [[<id>]].
+    - Any other id -> [[<id>]] verbatim.
+
+    Never raises; returns "" when objective_ids is empty/None.
+    """
+    if not objective_ids:
+        return ""
+    parts: list[str] = []
+    obj_root = vault_root / "objective"
+    for oid in objective_ids:
+        oid = oid.strip()
+        if not oid:
+            continue
+        if _GAP_ID_RE.match(oid):
+            parts.append(f"[[wiki/gaps]] ({oid})")
+            continue
+        m = _OBJ_ID_RE.match(oid)
+        if m:
+            prefix = m.group(1).upper()
+            subdir = _OBJ_SUBDIR.get(prefix)
+            if subdir:
+                subdir_path = obj_root / subdir
+                try:
+                    # GLOB for files whose stem starts with the id (e.g. DIR-0004-*.md)
+                    matches = list(subdir_path.glob(f"{oid}-*.md"))
+                    if matches:
+                        stem = matches[0].stem
+                        parts.append(f"[[objective/{subdir}/{stem}]]")
+                        continue
+                except OSError:
+                    pass
+            # fallback: no file found or unknown prefix
+            parts.append(f"[[{oid}]]")
+            continue
+        # Unknown id format: emit verbatim wikilink
+        parts.append(f"[[{oid}]]")
+    return ", ".join(parts)
+
 
 def render_md(name: str | None = None) -> Path:
     data = _load(name)
@@ -538,15 +601,23 @@ def render_md(name: str | None = None) -> Path:
          f"_Generated: {_now()}. Canonical store: `meta/ingest_index.json` (keyed by stable "
          f"source id, not filename). **{ing} ingested, {pend} pending, {wait} waiting_approval, "
          f"{rej} rejected, {dele} deleted**, {len(rows)} total._\n",
-         "| Source ID | Status | Type | Title | File | URL | Wiki page |",
-         "|-----------|--------|------|-------|------|-----|-----------|"]
+         "| Source ID | Status | Type | Title | Date Published | Date Ingested | Rationale | Relevance | File | URL | Wiki page |",
+         "|-----------|--------|------|-------|----------------|---------------|-----------|-----------|------|-----|-----------|"]
     for r in rows:
         mk = _STATUS_MARK.get(r.get("status"), r.get("status", ""))
         url = f"[link]({r['url']})" if r.get("url") else ""
         title = (r.get("title") or "")[:80].replace("|", "\\|")
         fn = (r.get("filename") or "").replace("|", "\\|")
         sp = (r.get("source_page") or "").replace("|", "\\|")
-        L.append(f"| `{r.get('id','')}` | {mk} | {r.get('source_type','')} | {title} | {fn} | {url} | {sp} |")
+        published = (r.get("published") or "") or "—"
+        ingested_at = (r.get("ingested_at") or "") or "—"
+        rationale_raw = (r.get("rationale") or "")
+        rationale = (rationale_raw[:120] + "…" if len(rationale_raw) > 120 else rationale_raw).replace("|", "\\|") or "—"
+        relevance = _relevance_links(r.get("objective_ids") or [], vault).replace("|", "\\|") or "—"
+        L.append(
+            f"| `{r.get('id','')}` | {mk} | {r.get('source_type','')} | {title}"
+            f" | {published} | {ingested_at} | {rationale} | {relevance} | {fn} | {url} | {sp} |"
+        )
     out = vault / MIRROR_REL
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("\n".join(L) + "\n")
@@ -569,16 +640,17 @@ def _main(argv: list[str]) -> int:
     if "--id" in args:
         i = args.index("--id"); sid_opt = args[i + 1]; del args[i:i + 2]
     # v3 enqueue/reject options
-    opt_title = opt_rationale = opt_discovered = opt_reason = None
+    opt_title = opt_rationale = opt_discovered = opt_reason = opt_published = None
     opt_score = None
     opt_objectives: list[str] = []
-    for flag in ("--title", "--rationale", "--discovered-by", "--score", "--reason"):
+    for flag in ("--title", "--rationale", "--discovered-by", "--score", "--reason", "--published"):
         if flag in args:
             i = args.index(flag); val = args[i + 1]; del args[i:i + 2]
             if flag == "--title": opt_title = val
             elif flag == "--rationale": opt_rationale = val
             elif flag == "--discovered-by": opt_discovered = val
             elif flag == "--reason": opt_reason = val
+            elif flag == "--published": opt_published = val
             elif flag == "--score":
                 try: opt_score = float(val)
                 except ValueError: opt_score = None
@@ -625,10 +697,10 @@ def _main(argv: list[str]) -> int:
     elif cmd == "enqueue":
         if len(args) < 2:
             print("usage: enqueue <id|url> [--title --rationale --score "
-                  "--discovered-by --objective-ids ...]", file=sys.stderr); return 2
+                  "--discovered-by --published --objective-ids ...]", file=sys.stderr); return 2
         row = enqueue(args[1], title=opt_title or "", rationale=opt_rationale or "",
                       score=opt_score, discovered_by=opt_discovered or "",
-                      objective_ids=opt_objectives, name=name)
+                      objective_ids=opt_objectives, published=opt_published, name=name)
         if as_json:
             print(json.dumps(row, indent=2, sort_keys=True))
         else:
@@ -638,10 +710,18 @@ def _main(argv: list[str]) -> int:
         if as_json:
             print(json.dumps(rows, indent=2, sort_keys=True))
         else:
+            # Header
+            print(f"{'ID':<40}  {'Title':<50}  {'Published':<12}  {'Rationale':<50}  {'Relevance':<30}  {'Score':>5}  Status")
+            print("-" * 200)
             for r in rows:
                 sc = r.get("relevance_score")
-                print(f"  {r['id']}\t{(r.get('title') or '')[:50]}\t"
-                      f"score={sc if sc is not None else '-'}\tby={r.get('discovered_by','')}")
+                pub = (r.get("published") or "-")[:12]
+                rat = (r.get("rationale") or "-")[:50]
+                oids = ", ".join(r.get("objective_ids") or []) or "-"
+                title_s = (r.get("title") or "")[:50]
+                sc_s = f"{sc:.2f}" if sc is not None else "-"
+                status_s = r.get("status", "")
+                print(f"{r['id']:<40}  {title_s:<50}  {pub:<12}  {rat:<50}  {oids:<30}  {sc_s:>5}  {status_s}")
     elif cmd == "approve":
         if len(args) < 2:
             print("usage: approve <id>", file=sys.stderr); return 2

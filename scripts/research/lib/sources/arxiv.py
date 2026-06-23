@@ -22,18 +22,36 @@ class ArxivSource:
         self._session = http.get_session(retries=retries, backoff=1.0)
         self._ttl = load().cache_ttl_hours
 
-    def search(self, query: str, n: int = 10) -> list[Result]:
-        cached = cache.get(self.name, query, ttl_hours=self._ttl)
+    def search(self, query: str, n: int = 10, category: str | None = None) -> list[Result]:
+        """Search arXiv for papers matching query.
+
+        Args:
+            query: Search string.
+            n: Maximum number of results to return.
+            category: Optional arXiv subject category (e.g. "cs.AR", "cs.DC",
+                "cs.LG", "eess.SP").  When given, the API query is narrowed to
+                ``all:{query} AND cat:{category}`` so each category is a
+                meaningfully distinct call.  The cache key also includes the
+                category so cs.AR vs cs.DC results never collide.
+                When None (default), behaviour is identical to the previous
+                generic ``all:{query}`` search.
+        """
+        # Build a category-aware cache key so cs.AR != cs.DC results don't collide.
+        cache_query_key = f"{query}|cat:{category}" if category else query
+        cached = cache.get(self.name, cache_query_key, ttl_hours=self._ttl)
         if cached is not None:
             return [Result(**r) for r in cached]
 
-        params = {"search_query": f"all:{query}", "start": 0, "max_results": n}
+        search_query = (
+            f"all:{query} AND cat:{category}" if category else f"all:{query}"
+        )
+        params = {"search_query": search_query, "start": 0, "max_results": n}
         try:
             r = self._session.get(ENDPOINT, params=params, timeout=http.DEFAULT_TIMEOUT)
             if r.status_code != 200:
                 return []
             results = _parse(r.text)
-            cache.put(self.name, query, results)
+            cache.put(self.name, cache_query_key, results)
             return results
         except Exception:
             return []

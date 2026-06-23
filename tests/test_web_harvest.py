@@ -308,6 +308,54 @@ class TestQueryPapers:
             results = wh.query_papers("test", engine="arxiv")
         assert len(results[0]["snippet"]) <= 500
 
+    def test_arxiv_category_passed_to_search(self):
+        """query_papers(engine='arxiv', category='cs.AR') passes category to ArxivSource.search."""
+        wh = _import_web_harvest()
+        fake_source = MagicMock()
+        fake_source.search.return_value = _FAKE_ARXIV_RESULTS
+        with patch.object(wh, "_load_paper_source", return_value=fake_source):
+            results = wh.query_papers(
+                "kv cache disaggregation", engine="arxiv", category="cs.AR"
+            )
+        # search must have been called with category="cs.AR"
+        fake_source.search.assert_called_once()
+        _, call_kwargs = fake_source.search.call_args
+        assert call_kwargs.get("category") == "cs.AR", (
+            f"Expected category='cs.AR' in search() kwargs, got: {fake_source.search.call_args}"
+        )
+        # candidates are still returned normally
+        assert len(results) == 2
+
+    def test_arxiv_category_none_omits_category_kwarg(self):
+        """query_papers(engine='arxiv', category=None) does NOT pass category kwarg."""
+        wh = _import_web_harvest()
+        fake_source = MagicMock()
+        fake_source.search.return_value = _FAKE_ARXIV_RESULTS
+        with patch.object(wh, "_load_paper_source", return_value=fake_source):
+            wh.query_papers("kv cache", engine="arxiv", category=None)
+        fake_source.search.assert_called_once()
+        _, call_kwargs = fake_source.search.call_args
+        # When category=None, category kwarg should NOT be passed (backward-compatible).
+        assert "category" not in call_kwargs, (
+            f"category kwarg must be omitted when category=None; "
+            f"got: {fake_source.search.call_args}"
+        )
+
+    def test_non_arxiv_engine_ignores_category(self):
+        """category kwarg is silently ignored for non-arxiv engines."""
+        wh = _import_web_harvest()
+        fake_source = MagicMock()
+        fake_source.search.return_value = _FAKE_OPENALEX_RESULTS
+        with patch.object(wh, "_load_paper_source", return_value=fake_source):
+            results = wh.query_papers(
+                "memory disaggregation", engine="openalex", category="cs.DC"
+            )
+        # search is called without category (openalex doesn't support it)
+        fake_source.search.assert_called_once()
+        _, call_kwargs = fake_source.search.call_args
+        assert "category" not in call_kwargs
+        assert len(results) == 1
+
 
 # ===========================================================================
 # query_forum

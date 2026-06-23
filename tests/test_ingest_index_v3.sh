@@ -75,7 +75,7 @@ echo "== enqueue -> queue lists the candidate =="
 ii enqueue "arxiv:2501.12345" --title "Candidate paper" --rationale "relevant to objective" \
    --score 0.91 --discovered-by research --objective-ids OBJ-1 >/dev/null
 check "queue lists enqueued candidate"  'arxiv:2501.12345'        ii queue
-check "queue shows score"               'score=0.91'              ii queue
+check "queue shows score"               '0.91'                    ii queue
 check "enqueued row is waiting_approval" '"status": "waiting_approval"' ii get --id arxiv:2501.12345
 
 echo "== scan does NOT flip waiting_approval/rejected to deleted =="

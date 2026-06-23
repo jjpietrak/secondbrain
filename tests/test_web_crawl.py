@@ -503,6 +503,247 @@ class TestRoutingHelpers:
 
 
 # ===========================================================================
+# Tests: _arxiv_category helper
+# ===========================================================================
+
+class TestArxivCategory:
+    """_arxiv_category derives the arXiv subject category from a registry entry."""
+
+    def test_arxiv_cs_ar_by_id(self):
+        entry = {"id": "arxiv_cs_ar", "category": "preprint_repository",
+                 "url": "", "rss_feed": ""}
+        assert web_crawl._arxiv_category(entry) == "cs.AR"
+
+    def test_arxiv_cs_dc_by_id(self):
+        entry = {"id": "arxiv_cs_dc", "category": "preprint_repository",
+                 "url": "", "rss_feed": ""}
+        assert web_crawl._arxiv_category(entry) == "cs.DC"
+
+    def test_arxiv_cs_lg_by_id(self):
+        entry = {"id": "arxiv_cs_lg", "category": "preprint_repository",
+                 "url": "", "rss_feed": ""}
+        assert web_crawl._arxiv_category(entry) == "cs.LG"
+
+    def test_arxiv_eess_sp_by_id(self):
+        entry = {"id": "arxiv_eess_sp", "category": "preprint_repository",
+                 "url": "", "rss_feed": ""}
+        assert web_crawl._arxiv_category(entry) == "eess.SP"
+
+    def test_derivation_from_rss_feed_url(self):
+        """When id is unknown, parse the rss_feed URL for the category path segment."""
+        entry = {
+            "id": "arxiv_cs_ar_custom",
+            "category": "preprint_repository",
+            "url": "https://arxiv.org/list/cs.AR/recent",
+            "rss_feed": "https://arxiv.org/list/cs.AR/rss",
+        }
+        assert web_crawl._arxiv_category(entry) == "cs.AR"
+
+    def test_derivation_from_url_field(self):
+        """Falls back to url field when rss_feed is absent."""
+        entry = {
+            "id": "arxiv_cs_dc_custom",
+            "category": "preprint_repository",
+            "url": "https://arxiv.org/list/cs.DC/recent",
+            "rss_feed": "",
+        }
+        assert web_crawl._arxiv_category(entry) == "cs.DC"
+
+    def test_eess_sp_from_rss_url(self):
+        entry = {
+            "id": "arxiv_eess_sp_custom",
+            "category": "preprint_repository",
+            "url": "https://arxiv.org/list/eess.SP/recent",
+            "rss_feed": "https://arxiv.org/list/eess.SP/rss",
+        }
+        assert web_crawl._arxiv_category(entry) == "eess.SP"
+
+    def test_non_arxiv_entry_returns_none(self):
+        """A non-arxiv registry entry (e.g. blog) returns None."""
+        entry = {
+            "id": "nvidia_developer_blog",
+            "category": "vendor_blogs",
+            "url": "https://developer.nvidia.com/blog/",
+            "rss_feed": "https://developer.nvidia.com/blog/feed",
+        }
+        assert web_crawl._arxiv_category(entry) is None
+
+    def test_unknown_id_no_url_returns_none(self):
+        entry = {"id": "some_other_source", "category": "paper_api",
+                 "url": "", "rss_feed": ""}
+        assert web_crawl._arxiv_category(entry) is None
+
+    def test_openalex_entry_returns_none(self):
+        entry = {"id": "openalex", "category": "paper_api",
+                 "url": "https://api.openalex.org/", "rss_feed": ""}
+        assert web_crawl._arxiv_category(entry) is None
+
+
+# ===========================================================================
+# Tests: per-category query_papers routing in _harvest_target
+# ===========================================================================
+
+class TestArxivCategoryRouting:
+    """_harvest_target passes the correct category kwarg to query_papers."""
+
+    def _make_two_category_registry(self) -> dict:
+        """Registry with arxiv_cs_ar and arxiv_cs_dc entries."""
+        return {
+            "paper-publisher": {
+                "sources": [
+                    {
+                        "id": "arxiv_cs_ar",
+                        "name": "arXiv cs.AR",
+                        "url": "https://arxiv.org/list/cs.AR/recent",
+                        "rss_feed": "https://arxiv.org/list/cs.AR/rss",
+                        "category": "preprint_repository",
+                        "focus": "Hardware architectures",
+                        "relevance": 5,
+                        "priority": "critical",
+                    },
+                    {
+                        "id": "arxiv_cs_dc",
+                        "name": "arXiv cs.DC",
+                        "url": "https://arxiv.org/list/cs.DC/recent",
+                        "rss_feed": "https://arxiv.org/list/cs.DC/rss",
+                        "category": "preprint_repository",
+                        "focus": "Distributed computing",
+                        "relevance": 5,
+                        "priority": "critical",
+                    },
+                ]
+            },
+            "blog-newsfeed": {"sources": []},
+            "github-repos": {"repositories": []},
+        }
+
+    def test_two_arxiv_category_sources_one_query_two_calls(self):
+        """cs.AR + cs.DC routed for the same query -> 2 distinct category calls."""
+        registry = self._make_two_category_registry()
+        target = {
+            "target_id": "GAP-01",
+            "lane": "gap",
+            "origin_ids": ["GAP-01"],
+            "queries": ["disaggregated inference scheduling"],
+            "fillable_by": ["arxiv"],
+            "routed_sources": ["arxiv_cs_ar", "arxiv_cs_dc"],
+        }
+
+        call_log: list[tuple] = []
+
+        class _SpyHarvest:
+            def query_papers(self, q, *, engine, limit, category=None):
+                call_log.append((engine, q, category))
+                return list(CANNED_ARXIV)
+
+            def poll_rss(self, *a, **kw):
+                return []
+
+            def query_forum(self, *a, **kw):
+                return []
+
+            def poll_github_releases(self, *a, **kw):
+                return []
+
+        web_crawl._harvest_target(
+            target, registry, _PURPOSE_TEXT, per_source_limit=5,
+            _harvest_mod=_SpyHarvest()
+        )
+
+        # 2 categories x 1 query = 2 distinct calls
+        assert len(call_log) == 2, (
+            f"Expected 2 category-specific calls, got {len(call_log)}: {call_log}"
+        )
+        categories_seen = {c[2] for c in call_log}
+        assert "cs.AR" in categories_seen
+        assert "cs.DC" in categories_seen
+
+    def test_category_passed_as_kwarg_to_query_papers(self):
+        """category kwarg is explicitly passed (not None) for arxiv-category entries."""
+        registry = self._make_two_category_registry()
+        target = {
+            "target_id": "GAP-01",
+            "lane": "gap",
+            "origin_ids": ["GAP-01"],
+            "queries": ["kv cache scheduling"],
+            "fillable_by": ["arxiv"],
+            "routed_sources": ["arxiv_cs_ar"],
+        }
+
+        received_category: list = []
+
+        class _SpyHarvest:
+            def query_papers(self, q, *, engine, limit, category=None):
+                received_category.append(category)
+                return []
+
+            def poll_rss(self, *a, **kw):
+                return []
+
+            def query_forum(self, *a, **kw):
+                return []
+
+            def poll_github_releases(self, *a, **kw):
+                return []
+
+        web_crawl._harvest_target(
+            target, registry, _PURPOSE_TEXT, per_source_limit=5,
+            _harvest_mod=_SpyHarvest()
+        )
+
+        assert len(received_category) == 1
+        assert received_category[0] == "cs.AR", (
+            f"Expected category='cs.AR', got {received_category[0]!r}"
+        )
+
+    def test_trace_query_string_includes_cat_annotation(self):
+        """Trace query strings include [cat:cs.AR] annotation for arxiv-category calls."""
+        from web_decision import DecisionTrace
+
+        registry = self._make_two_category_registry()
+        target = {
+            "target_id": "GAP-01",
+            "lane": "gap",
+            "origin_ids": ["GAP-01"],
+            "queries": ["memory disaggregation"],
+            "fillable_by": ["arxiv"],
+            "routed_sources": ["arxiv_cs_ar", "arxiv_cs_dc"],
+        }
+
+        class _NopHarvest:
+            def query_papers(self, q, *, engine, limit, category=None):
+                return []
+
+            def poll_rss(self, *a, **kw):
+                return []
+
+            def query_forum(self, *a, **kw):
+                return []
+
+            def poll_github_releases(self, *a, **kw):
+                return []
+
+        trace = DecisionTrace()
+        web_crawl._harvest_target(
+            target, registry, _PURPOSE_TEXT,
+            per_source_limit=5, _harvest_mod=_NopHarvest(), trace=trace
+        )
+
+        harvest_recs = trace.find("harvest", "target")
+        assert len(harvest_recs) == 1
+        queries_in_trace = harvest_recs[0]["data"]["queries"]
+
+        # Both trace entries should carry [cat:...] annotations
+        annotated = [q["query"] for q in queries_in_trace if "[cat:" in q["query"]]
+        assert len(annotated) == 2, (
+            f"Expected 2 [cat:...]-annotated trace entries, "
+            f"got {len(annotated)}: {queries_in_trace}"
+        )
+        assert any("cs.AR" in q for q in annotated)
+        assert any("cs.DC" in q for q in annotated)
+
+
+# ===========================================================================
 # Tests: dry_run mode
 # ===========================================================================
 
@@ -1546,11 +1787,16 @@ _THREE_ARXIV_SOURCES_REG = {
 
 
 class TestHarvestCallDedup:
-    """Duplicate (engine, query) pairs within a single target fire ONCE, not N times.
+    """Dedup tests for harvest calls within a single target.
 
-    Scenario: 3 arxiv-category registry sources (cs.AR, cs.DC, cs.LG) all collapse
-    to engine="arxiv" + same query string.  With 2 seed queries that gives 2 unique
-    arXiv calls, not 3 x 2 = 6.
+    With the arXiv-CATEGORY routing enhancement, dedup keys are 3-tuples:
+    (engine, query, category).  Three arxiv-category registry sources (cs.AR,
+    cs.DC, cs.LG) each derive a DISTINCT category, so 3 sources x 2 seed
+    queries = 6 distinct (engine, query, category) calls -- NOT collapsed to 2.
+
+    The old generic dedup (2 calls for 3 sources) now only applies when no
+    category is derivable (category=None), e.g. generic "arxiv" routed sources
+    without an id-based or url-based category mapping.
     """
 
     def _make_three_arxiv_registry(self) -> dict:
@@ -1560,8 +1806,13 @@ class TestHarvestCallDedup:
             "github-repos": {"repositories": []},
         }
 
-    def test_three_arxiv_sources_two_queries_fires_exactly_two_calls(self):
-        """3 arxiv registry sources + 2 seed queries -> exactly 2 query_papers calls."""
+    def test_three_arxiv_sources_two_queries_fires_six_distinct_calls(self):
+        """3 arxiv-category sources + 2 seed queries -> 6 distinct per-category calls.
+
+        Each (engine, query, category) triple is unique, so all 6 fire.
+        This is the MEANINGFUL behaviour: cs.AR + query-A, cs.DC + query-A,
+        cs.LG + query-A, cs.AR + query-B, cs.DC + query-B, cs.LG + query-B.
+        """
         registry = self._make_three_arxiv_registry()
         target = {
             "target_id": "GAP-01",
@@ -1575,8 +1826,8 @@ class TestHarvestCallDedup:
         call_log: list[tuple] = []
 
         class _SpyHarvest:
-            def query_papers(self, q, *, engine, limit):
-                call_log.append((engine, q))
+            def query_papers(self, q, *, engine, limit, category=None):
+                call_log.append((engine, q, category))
                 return list(CANNED_ARXIV)
 
             def poll_rss(self, *a, **kw):
@@ -1593,15 +1844,95 @@ class TestHarvestCallDedup:
             target, registry, _PURPOSE_TEXT, per_source_limit=5, _harvest_mod=spy
         )
 
-        assert len(call_log) == 2, (
-            f"Expected exactly 2 query_papers calls (one per unique query), "
-            f"got {len(call_log)}: {call_log}"
+        # 3 categories x 2 queries = 6 distinct calls
+        assert len(call_log) == 6, (
+            f"Expected 6 distinct per-category query_papers calls "
+            f"(3 categories x 2 queries), got {len(call_log)}: {call_log}"
         )
-        assert call_log[0] == ("arxiv", "disaggregated LLM inference")
-        assert call_log[1] == ("arxiv", "prefill decode GPU scheduling")
+        # All calls are for engine="arxiv"
+        assert all(c[0] == "arxiv" for c in call_log)
+        # Each (engine, query, category) triple is unique (no duplicates)
+        assert len(set(call_log)) == 6, (
+            f"Duplicate (engine, query, category) tuples found: {call_log}"
+        )
+        # All 3 categories appear in the call log
+        categories_seen = {c[2] for c in call_log}
+        assert categories_seen == {"cs.AR", "cs.DC", "cs.LG"}, (
+            f"Expected categories cs.AR, cs.DC, cs.LG; got {categories_seen}"
+        )
+
+    def test_identical_engine_query_category_still_dedupes(self):
+        """Identical (engine, query, category) triple is deduped to 1 call."""
+        # Build a registry with two IDENTICAL arxiv_cs_ar entries (id collision
+        # is unusual but tests the dedup guard directly).
+        registry = {
+            "paper-publisher": {
+                "sources": [
+                    {
+                        "id": "arxiv_cs_ar",
+                        "name": "arXiv cs.AR (primary)",
+                        "url": "https://arxiv.org/list/cs.AR/recent",
+                        "rss_feed": "https://arxiv.org/list/cs.AR/rss",
+                        "category": "preprint_repository",
+                        "focus": "Hardware architectures",
+                        "relevance": 5,
+                        "priority": "critical",
+                    },
+                    {
+                        "id": "arxiv_cs_ar_dup",
+                        "name": "arXiv cs.AR (duplicate)",
+                        "url": "https://arxiv.org/list/cs.AR/recent",
+                        "rss_feed": "https://arxiv.org/list/cs.AR/rss",
+                        "category": "preprint_repository",
+                        "focus": "Hardware architectures",
+                        "relevance": 5,
+                        "priority": "critical",
+                    },
+                ]
+            },
+            "blog-newsfeed": {"sources": []},
+            "github-repos": {"repositories": []},
+        }
+        target = {
+            "target_id": "GAP-01",
+            "lane": "gap",
+            "origin_ids": ["GAP-01"],
+            "queries": ["kv cache hardware"],
+            "fillable_by": ["arxiv"],
+            "routed_sources": ["arxiv_cs_ar", "arxiv_cs_ar_dup"],
+        }
+
+        call_log: list[tuple] = []
+
+        class _SpyHarvest:
+            def query_papers(self, q, *, engine, limit, category=None):
+                call_log.append((engine, q, category))
+                return list(CANNED_ARXIV)
+
+            def poll_rss(self, *a, **kw):
+                return []
+
+            def query_forum(self, *a, **kw):
+                return []
+
+            def poll_github_releases(self, *a, **kw):
+                return []
+
+        spy = _SpyHarvest()
+        web_crawl._harvest_target(
+            target, registry, _PURPOSE_TEXT, per_source_limit=5, _harvest_mod=spy
+        )
+
+        # arxiv_cs_ar -> category=cs.AR (from _ARXIV_ID_TO_CATEGORY)
+        # arxiv_cs_ar_dup -> not in _ARXIV_ID_TO_CATEGORY but rss_feed contains
+        #   /list/cs.AR/ -> also resolves to cs.AR -> same triple -> deduped
+        assert len(call_log) == 1, (
+            f"Expected 1 call (duplicate cs.AR deduped), got {len(call_log)}: {call_log}"
+        )
+        assert call_log[0] == ("arxiv", "kv cache hardware", "cs.AR")
 
     def test_trace_has_no_duplicate_engine_query_rows(self):
-        """The harvest/target trace record has no duplicate (engine, query) entries."""
+        """The harvest/target trace has no duplicate (engine, query) rows for distinct categories."""
         from web_decision import DecisionTrace
 
         registry = self._make_three_arxiv_registry()
@@ -1615,7 +1946,7 @@ class TestHarvestCallDedup:
         }
 
         class _NopHarvest:
-            def query_papers(self, q, *, engine, limit):
+            def query_papers(self, q, *, engine, limit, category=None):
                 return list(CANNED_ARXIV)
 
             def poll_rss(self, *a, **kw):
@@ -1637,14 +1968,21 @@ class TestHarvestCallDedup:
         assert len(harvest_recs) == 1
         queries_in_trace = harvest_recs[0]["data"]["queries"]
 
-        # Build (engine, query) pairs from the trace and check for duplicates.
+        # Build (engine, query_display) pairs from the trace and check for duplicates.
         pairs = [(q["engine"], q["query"]) for q in queries_in_trace]
         assert len(pairs) == len(set(pairs)), (
             f"Duplicate (engine, query) rows in trace: {pairs}"
         )
-        # Exactly 2 unique calls recorded.
-        assert len(pairs) == 2, (
-            f"Expected 2 trace entries, got {len(pairs)}: {pairs}"
+        # 3 categories x 2 queries = 6 trace entries.
+        assert len(pairs) == 6, (
+            f"Expected 6 trace entries (3 categories x 2 queries), "
+            f"got {len(pairs)}: {pairs}"
+        )
+        # Trace query strings should include [cat:X] annotations
+        cat_annotated = [q["query"] for q in queries_in_trace if "[cat:" in q["query"]]
+        assert len(cat_annotated) == 6, (
+            f"Expected all 6 trace entries to include [cat:...], "
+            f"got {len(cat_annotated)}: {queries_in_trace}"
         )
 
     def test_distinct_feed_urls_are_not_deduped(self):

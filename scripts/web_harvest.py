@@ -243,6 +243,7 @@ def query_papers(
     *,
     engine: str = "arxiv",
     limit: int = 10,
+    category: str | None = None,
 ) -> list[dict]:
     """Query a paper API and return candidates.
 
@@ -250,13 +251,21 @@ def query_papers(
         query: Search string.
         engine: One of "arxiv", "openalex", "semantic_scholar", "crossref".
         limit: Maximum number of candidates to return.
+        category: Optional arXiv subject category (e.g. "cs.AR", "cs.DC",
+            "cs.LG", "eess.SP").  Only meaningful when engine="arxiv"; ignored
+            silently for all other engines.  Passed through to
+            ArxivSource.search() so each category becomes a distinct API call
+            with a distinct cache key.
 
     Returns:
         list of candidate dicts. Returns [] on network/import errors.
     """
     try:
         source = _load_paper_source(engine)
-        results = source.search(query, n=limit)
+        if engine == "arxiv" and category is not None:
+            results = source.search(query, n=limit, category=category)
+        else:
+            results = source.search(query, n=limit)
     except ValueError as exc:
         print(f"[web_harvest] {exc}", file=sys.stderr)
         return []
