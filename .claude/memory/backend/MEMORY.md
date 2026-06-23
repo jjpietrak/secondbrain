@@ -43,6 +43,12 @@ current; never store fact bodies here.
   parse_gaps(gap_dir: str, *, trace=None). _relevance_links GAP glob -> [[wiki/gap/<stem>]] or
   fallback [[wiki/gap/index]] (GAP-##). Both ingest_index.py + web_crawl.py inline copy updated.
   814 tests green.
+- [phase3b-perplexity.md](phase3b-perplexity.md) — 2026-06-23: (1) FIX ingest_index status didn't persist
+  on the live vault (report_approve VAULT_PATH env trick clobbered by VAULT=Inference-Disagg) -> explicit
+  `root=` kwarg threaded through _load/_save/approve/reject (load==save at vault_root). (2) Perplexity as a
+  GATED Tier-2 harvest engine: `web_harvest.query_perplexity` (reuses research/lib/perplexity citations) +
+  `web_crawl --perplexity` (skill arg) gated on paid_scrape.enabled+KEY, top-2 targets, cost-logged; decision/
+  rank/select/stage 100% reused. enabled=false default (no spend). 939 tests. PENDING: live $ test + Apify/crawl4AI.
 
 ## Architecture
 - [retrieval-pipeline.md](retrieval-pipeline.md) — claude-obsidian hybrid retrieval
