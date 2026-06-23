@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import sys
 from pathlib import Path
@@ -486,34 +485,22 @@ def apply(report_path: str, vault_root: str, *, dry_run: bool = True,
 
     candidates = parse_candidates(md_text)
 
-    # Resolve the vault by path rather than by registered name, so the function
-    # works with both named registered vaults and ad-hoc temp vaults (tests).
-    _prev_vault_path = os.environ.get("VAULT_PATH")
-    _prev_vault = os.environ.get("VAULT")
-
-    def _set_vault():
-        os.environ["VAULT_PATH"] = vault_root
-        os.environ.pop("VAULT", None)
-
-    def _restore_vault():
-        if _prev_vault_path is not None:
-            os.environ["VAULT_PATH"] = _prev_vault_path
-        else:
-            os.environ.pop("VAULT_PATH", None)
-        if _prev_vault is not None:
-            os.environ["VAULT"] = _prev_vault
+    # Pin the vault root as a Path object.  All ingest_index calls receive this as the
+    # explicit `root` keyword argument so they load and save to exactly
+    # <vault_root>/meta/ingest_index.json, regardless of any VAULT / VAULT_PATH env vars
+    # that may be set in the caller's environment (e.g. when the wiki agent has VAULT=<name>
+    # exported).  This replaces the previous VAULT_PATH env-variable manipulation, which was
+    # fragile and could silently diverge on registered named vaults.
+    _root = Path(vault_root)
 
     def _load_row(ident: str) -> dict | None:
-        """Load the ingest row for *ident* with the vault env set. Returns None on miss."""
+        """Return the ingest row for *ident* from the pinned vault root. None on miss."""
         try:
-            _set_vault()
-            data = ingest_index._load(None)
+            data = ingest_index._load(None, root=_root)
             sid, _, _ = ingest_index._normalize_enqueue_id(ident)
             return data["sources"].get(sid) or data["sources"].get(ident)
         except Exception:
             return None
-        finally:
-            _restore_vault()
 
     if mode == "report":
         # --- report mode ---
@@ -557,23 +544,17 @@ def apply(report_path: str, vault_root: str, *, dry_run: bool = True,
                 approved.append(ident)
                 if not dry_run:
                     try:
-                        _set_vault()
-                        ingest_index.approve(ident, name=None)
+                        ingest_index.approve(ident, name=None, root=_root)
                     except Exception:
                         pass
-                    finally:
-                        _restore_vault()
 
             elif action == "reject":
                 rejected.append({"id": ident, "reason": reason})
                 if not dry_run:
                     try:
-                        _set_vault()
-                        ingest_index.reject(ident, reason=reason, name=None)
+                        ingest_index.reject(ident, reason=reason, name=None, root=_root)
                     except Exception:
                         pass
-                    finally:
-                        _restore_vault()
 
         # Write deferred blocks to backlog.md (only if NOT dry_run and there are new blocks).
         if not dry_run and new_backlog_blocks:
@@ -669,24 +650,18 @@ def apply(report_path: str, vault_root: str, *, dry_run: bool = True,
                 approved.append(primary_id)
                 if not dry_run:
                     try:
-                        _set_vault()
-                        ingest_index.approve(primary_id, name=None)
+                        ingest_index.approve(primary_id, name=None, root=_root)
                     except Exception:
                         pass
-                    finally:
-                        _restore_vault()
                 # Block is dropped from backlog (not added to kept_blocks).
 
             elif action == "reject":
                 rejected.append({"id": primary_id, "reason": reason})
                 if not dry_run:
                     try:
-                        _set_vault()
-                        ingest_index.reject(primary_id, reason=reason, name=None)
+                        ingest_index.reject(primary_id, reason=reason, name=None, root=_root)
                     except Exception:
                         pass
-                    finally:
-                        _restore_vault()
                 # Block is dropped from backlog (not added to kept_blocks).
 
         # Rewrite backlog.md (only the kept blocks).

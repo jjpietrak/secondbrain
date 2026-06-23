@@ -1090,3 +1090,256 @@ updated: 2026-06-22
         monkeypatch.setenv("VAULT_PATH", str(vault))
         plan = apply(str(backlog), str(vault), dry_run=True, mode="backlog")
         assert plan["mode"] == "backlog"
+
+
+# ---------------------------------------------------------------------------
+# 9. Live-vault persistence: status flips persist to disk regardless of env vars.
+#    This is the regression test for the bug where a registered named vault with
+#    VAULT=<name> in the environment could cause load/save to diverge so the flip
+#    was silently discarded.
+# ---------------------------------------------------------------------------
+
+# Report with one approve (has URL) and one reject.
+_LIVE_REPORT_MD = """\
+---
+date: 2026-06-23
+title: Live Vault Test
+---
+
+## Candidates
+
+### 1. Source to Approve
+- [x] approve · `live:approve-me`
+- [ ] reject · `live:approve-me`
+    - reason:
+- **url**: https://arxiv.org/abs/2606.08635
+
+### 2. Source to Reject
+- [ ] approve · `live:reject-me`
+- [x] reject · `live:reject-me`
+    - reason: Stale, out-of-scope content
+- **url**: https://example.com/stale
+
+## Decision trace
+"""
+
+_LIVE_APPROVE = "live:approve-me"
+_LIVE_REJECT = "live:reject-me"
+
+
+def _make_live_vault(tmp_path: Path) -> tuple[Path, Path]:
+    """Simulate a registered named vault: vault dir with meta/ingest_index.json.
+
+    Returns (vault_root, report_path).
+    The vault dir name is set to 'My-Vault' to look like a registered named vault.
+    """
+    vault = tmp_path / "My-Vault"
+    meta = vault / "meta"
+    nightly = meta / "nightly_report"
+    nightly.mkdir(parents=True, exist_ok=True)
+
+    def _row(ident, url=""):
+        return {
+            "id": ident,
+            "id_type": "test",
+            "status": "waiting_approval",
+            "title": f"Test {ident}",
+            "filename": "",
+            "url": url,
+            "source_type": "arxiv",
+            "content_hash": "",
+            "first_seen": "2026-06-23T00:00:00+00:00",
+            "ingested_at": None,
+            "source_page": "",
+            "relevance_score": None,
+            "rationale": "",
+            "discovered_by": "",
+            "objective_ids": [],
+            "proposed_at": "2026-06-23T00:00:00+00:00",
+            "rejected_at": None,
+            "rejection_reason": "",
+            "published": None,
+        }
+
+    data = {
+        "version": 3,
+        "vault": "My-Vault",
+        "sources": {
+            _LIVE_APPROVE: _row(_LIVE_APPROVE, url="https://arxiv.org/abs/2606.08635"),
+            _LIVE_REJECT: _row(_LIVE_REJECT, url="https://example.com/stale"),
+        },
+    }
+    (meta / "ingest_index.json").write_text(json.dumps(data, indent=2))
+
+    report_path = nightly / "2026-06-23.md"
+    report_path.write_text(_LIVE_REPORT_MD, encoding="utf-8")
+    return vault, report_path
+
+
+class TestLiveVaultPersistence:
+    """Verify that approve/reject status flips persist to the correct file on disk
+    even when VAULT or VAULT_PATH env vars are set to something else (the live-vault
+    regression).  The fix uses root=Path(vault_root) in all ingest_index calls so
+    env vars are irrelevant."""
+
+    @pytest.fixture()
+    def live_vault(self, tmp_path):
+        return _make_live_vault(tmp_path)
+
+    def _reload_index(self, vault: Path) -> dict:
+        """Read meta/ingest_index.json from vault_root/meta/ingest_index.json."""
+        return json.loads((vault / "meta" / "ingest_index.json").read_text())
+
+    # --- report mode: approve persists ---
+
+    def test_report_approve_persists_no_env_set(self, live_vault):
+        """Approve flip persists when neither VAULT nor VAULT_PATH is in the env."""
+        vault, report = live_vault
+        # No monkeypatch -- env is clean.
+        plan = apply(str(report), str(vault), dry_run=False, mode="report")
+
+        assert _LIVE_APPROVE in plan["approved"], "approved must be in plan"
+        data = self._reload_index(vault)
+        assert data["sources"][_LIVE_APPROVE]["status"] == "pending", (
+            "approve flip must persist to disk"
+        )
+
+    def test_report_approve_persists_with_stale_vault_env(self, live_vault, monkeypatch):
+        """Approve flip persists even when VAULT is set to a different (stale) name."""
+        vault, report = live_vault
+        # Simulate the live wiki-agent environment: VAULT points to a registered vault
+        # name that differs from the tmp vault being tested.  The old env-var approach
+        # would have tried to load from the registered vault_path instead of vault_root.
+        monkeypatch.setenv("VAULT", "Inference-Disagg")
+        monkeypatch.delenv("VAULT_PATH", raising=False)
+
+        plan = apply(str(report), str(vault), dry_run=False, mode="report")
+
+        assert _LIVE_APPROVE in plan["approved"]
+        data = self._reload_index(vault)
+        assert data["sources"][_LIVE_APPROVE]["status"] == "pending", (
+            "approve must persist despite VAULT=Inference-Disagg in env"
+        )
+
+    def test_report_approve_persists_with_wrong_vault_path_env(self, live_vault, tmp_path,
+                                                                monkeypatch):
+        """Approve flip persists even when VAULT_PATH points to a different directory."""
+        vault, report = live_vault
+        other_dir = tmp_path / "other_vault"
+        other_dir.mkdir()
+        # VAULT_PATH points somewhere else entirely.
+        monkeypatch.setenv("VAULT_PATH", str(other_dir))
+        monkeypatch.delenv("VAULT", raising=False)
+
+        plan = apply(str(report), str(vault), dry_run=False, mode="report")
+
+        assert _LIVE_APPROVE in plan["approved"]
+        data = self._reload_index(vault)
+        assert data["sources"][_LIVE_APPROVE]["status"] == "pending", (
+            "approve must persist to vault_root, not VAULT_PATH"
+        )
+
+    # --- report mode: reject persists ---
+
+    def test_report_reject_persists_no_env_set(self, live_vault):
+        """Reject flip persists when no env vars are set."""
+        vault, report = live_vault
+        plan = apply(str(report), str(vault), dry_run=False, mode="report")
+
+        assert any(r["id"] == _LIVE_REJECT for r in plan["rejected"])
+        data = self._reload_index(vault)
+        row = data["sources"][_LIVE_REJECT]
+        assert row["status"] == "rejected", "reject flip must persist to disk"
+        assert "Stale" in row["rejection_reason"], "rejection_reason must be stored"
+
+    def test_report_reject_persists_with_stale_vault_env(self, live_vault, monkeypatch):
+        """Reject flip persists even when VAULT is set to a registered name."""
+        vault, report = live_vault
+        monkeypatch.setenv("VAULT", "Inference-Disagg")
+        monkeypatch.delenv("VAULT_PATH", raising=False)
+
+        plan = apply(str(report), str(vault), dry_run=False, mode="report")
+
+        assert any(r["id"] == _LIVE_REJECT for r in plan["rejected"])
+        data = self._reload_index(vault)
+        assert data["sources"][_LIVE_REJECT]["status"] == "rejected", (
+            "reject must persist despite VAULT=Inference-Disagg in env"
+        )
+
+    # --- backlog mode: approve persists and block removed ---
+
+    _LIVE_BACKLOG_MD = """\
+---
+type: nightly_backlog
+written_by: web
+updated: 2026-06-23
+---
+
+<!-- Items here are undecided (deferred) candidates from nightly reports.
+     Review with: python scripts/report_approve.py --mode backlog --vault <V> [--apply]
+     Tick approve or reject for each item, then re-run with --apply. -->
+
+### 1. Live Backlog Source
+- [x] approve · `live:bl-approve`
+- [ ] reject · `live:bl-approve`
+    - reason:
+- **url**: https://arxiv.org/abs/2606.08635
+- **search-date**: 2026-06-20
+
+### 2. Still Waiting
+- [ ] approve · `live:bl-wait`
+- [ ] reject · `live:bl-wait`
+    - reason:
+- **url**: https://example.com/wait
+- **search-date**: 2026-06-19
+"""
+
+    def _make_backlog_live_vault(self, tmp_path: Path) -> tuple[Path, Path]:
+        vault = tmp_path / "My-Vault"
+        meta = vault / "meta"
+        nightly = meta / "nightly_report"
+        nightly.mkdir(parents=True, exist_ok=True)
+
+        def _row(ident, url=""):
+            return {
+                "id": ident, "id_type": "test", "status": "waiting_approval",
+                "title": f"Test {ident}", "filename": "", "url": url,
+                "source_type": "arxiv", "content_hash": "",
+                "first_seen": "2026-06-20T00:00:00+00:00", "ingested_at": None,
+                "source_page": "", "relevance_score": None, "rationale": "",
+                "discovered_by": "", "objective_ids": [],
+                "proposed_at": "2026-06-20T00:00:00+00:00", "rejected_at": None,
+                "rejection_reason": "", "published": None,
+            }
+
+        data = {
+            "version": 3, "vault": "My-Vault",
+            "sources": {
+                "live:bl-approve": _row("live:bl-approve",
+                                        url="https://arxiv.org/abs/2606.08635"),
+                "live:bl-wait": _row("live:bl-wait", url="https://example.com/wait"),
+            },
+        }
+        (meta / "ingest_index.json").write_text(json.dumps(data, indent=2))
+
+        backlog_path = nightly / "backlog.md"
+        backlog_path.write_text(self._LIVE_BACKLOG_MD, encoding="utf-8")
+        return vault, backlog_path
+
+    def test_backlog_approve_persists_with_stale_vault_env(self, tmp_path, monkeypatch):
+        """Backlog-mode approve flip persists even when VAULT env var is set to another name."""
+        vault, backlog = self._make_backlog_live_vault(tmp_path)
+        monkeypatch.setenv("VAULT", "Inference-Disagg")
+        monkeypatch.delenv("VAULT_PATH", raising=False)
+
+        plan = apply(str(backlog), str(vault), dry_run=False, mode="backlog")
+
+        assert "live:bl-approve" in plan["approved"]
+        data = self._reload_index(vault)
+        assert data["sources"]["live:bl-approve"]["status"] == "pending", (
+            "backlog approve must persist despite stale VAULT env"
+        )
+        # The approved block must be removed from backlog.md.
+        text = backlog.read_text(encoding="utf-8")
+        assert "live:bl-approve" not in text, "approved block must be dropped from backlog"
+        assert "live:bl-wait" in text, "waiting block must remain in backlog"

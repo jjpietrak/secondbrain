@@ -115,8 +115,14 @@ def _migrate(data: dict) -> dict:
     return data
 
 
-def _load(name: str | None) -> dict:
-    p = _vault(name) / LEDGER_REL
+def _load(name: str | None, *, root: Path | None = None) -> dict:
+    """Load the ingest_index for *name* (or the active vault).
+
+    When *root* is provided it is used as the vault root directly, bypassing all
+    vault_config env-variable resolution.  This is the preferred path when the caller
+    already knows the absolute vault directory (e.g. report_approve.apply).
+    """
+    p = (root / LEDGER_REL) if root is not None else (_vault(name) / LEDGER_REL)
     if p.exists():
         try:
             data = json.loads(p.read_text())
@@ -127,10 +133,16 @@ def _load(name: str | None) -> dict:
     return {"version": SCHEMA_VERSION, "vault": vc.active_vault(name), "sources": {}}
 
 
-def _save(name: str | None, data: dict) -> None:
+def _save(name: str | None, data: dict, *, root: Path | None = None) -> None:
+    """Persist the ingest_index for *name* (or the active vault).
+
+    When *root* is provided it is used as the vault root directly, bypassing all
+    vault_config env-variable resolution.  Callers that supply *root* must pass the
+    same *root* to both _load and _save so load == save is guaranteed.
+    """
     data["version"] = SCHEMA_VERSION
     data["vault"] = vc.active_vault(name)
-    p = _vault(name) / LEDGER_REL
+    p = (root / LEDGER_REL) if root is not None else (_vault(name) / LEDGER_REL)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
 
@@ -416,34 +428,45 @@ def queue(name: str | None = None) -> list[dict]:
                   key=lambda r: (r.get("proposed_at") or "", r.get("id", "")))
 
 
-def approve(ident: str, name: str | None = None) -> dict | None:
+def approve(ident: str, name: str | None = None, *, root: Path | None = None) -> dict | None:
     """Flip a `waiting_approval` row -> `pending` (the wiki agent then fetches the source
-    into raw/ and wiki-ingest consumes it). Returns the row, or None if id unknown."""
+    into raw/ and wiki-ingest consumes it). Returns the row, or None if id unknown.
+
+    *root* (keyword-only) pins the vault root directory for all load/save/render calls,
+    bypassing vault_config env-variable resolution entirely.  Use this whenever the caller
+    already holds the absolute vault path (e.g. report_approve.apply).
+    """
     sid, _, _ = _normalize_enqueue_id(ident)
-    data = _load(name)
+    data = _load(name, root=root)
     row = data["sources"].get(sid) or data["sources"].get(ident)
     if row is None:
         return None
     if row.get("status") == "waiting_approval":
         row["status"] = "pending"
-    _save(name, data)
-    render_md(name)
+    _save(name, data, root=root)
+    render_md(name, root=root)
     return row
 
 
-def reject(ident: str, reason: str = "", name: str | None = None) -> dict | None:
+def reject(ident: str, reason: str = "", name: str | None = None,
+           *, root: Path | None = None) -> dict | None:
     """Flip a row -> `rejected` (sticky) and record rejected_at + rejection_reason.
-    A subsequent `enqueue` of the same id is a no-op. Returns the row, or None if unknown."""
+    A subsequent `enqueue` of the same id is a no-op. Returns the row, or None if unknown.
+
+    *root* (keyword-only) pins the vault root directory for all load/save/render calls,
+    bypassing vault_config env-variable resolution entirely.  Use this whenever the caller
+    already holds the absolute vault path (e.g. report_approve.apply).
+    """
     sid, _, _ = _normalize_enqueue_id(ident)
-    data = _load(name)
+    data = _load(name, root=root)
     row = data["sources"].get(sid) or data["sources"].get(ident)
     if row is None:
         return None
     row["status"] = "rejected"
     row["rejected_at"] = _now()
     row["rejection_reason"] = reason or ""
-    _save(name, data)
-    render_md(name)
+    _save(name, data, root=root)
+    render_md(name, root=root)
     return row
 
 
@@ -623,9 +646,9 @@ def _relevance_links(objective_ids: list[str], vault_root: Path) -> str:
     return ", ".join(parts)
 
 
-def render_md(name: str | None = None) -> Path:
-    data = _load(name)
-    vault = _vault(name)
+def render_md(name: str | None = None, *, root: Path | None = None) -> Path:
+    data = _load(name, root=root)
+    vault = root if root is not None else _vault(name)
     rows = sorted(data["sources"].values(),
                   key=lambda r: (_STATUS_RANK.get(r.get("status"), 0), r.get("id", "")))
     # Resolve + backfill titles before rendering.  This corrects existing rows whose
@@ -638,7 +661,7 @@ def render_md(name: str | None = None) -> Path:
             r["title"] = resolved
             dirty = True
     if dirty:
-        _save(name, data)
+        _save(name, data, root=root)
     ing = sum(1 for r in rows if r.get("status") == "ingested")
     pend = sum(1 for r in rows if r.get("status") == "pending")
     dele = sum(1 for r in rows if r.get("status") == "deleted")
