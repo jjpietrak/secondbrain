@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""web_crawl.py -- End-to-end Phase-3A FREE ($0) crawl orchestrator for Second Brain v0.2.
+"""web_crawl.py -- End-to-end Phase-3A/3B crawl orchestrator for Second Brain v0.2.
 
 Chains web_decision -> web_harvest -> web_rank -> ingest_index to produce a nightly
 candidate digest and approval queue entries.
@@ -51,19 +51,24 @@ Nightly report interactive format (one block per selected candidate):
 CLI:
   python scripts/web_crawl.py --vault <root> [--dry-run] [--allow-remote-ollama]
                                [--json] [--limit N] [--explain] [--trace-out PATH]
+                               [--perplexity]
 
   --explain      print the full decision trace to STDERR after the run.
   --trace-out    write the rendered trace markdown to PATH (export on request).
+  --perplexity   enable Tier-2 Perplexity harvest (GATED: requires
+                 paid_scrape.enabled=true in web-config.json AND PERPLEXITY_API_KEY).
+                 Refuses with exit 2 if either guard is missing.
 
 Exit codes:
   0  -- success
-  2  -- usage error
+  2  -- usage error / Perplexity guard refused
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from datetime import date
 from pathlib import Path
@@ -822,8 +827,9 @@ def crawl(
     today: str | None = None,
     per_source_limit: int = 8,
     trace=None,  # DecisionTrace | None -- if None, one is created internally
+    use_perplexity: bool = False,
 ) -> dict:
-    """End-to-end Phase-3A FREE crawl pipeline.
+    """End-to-end Phase-3A/3B crawl pipeline.
 
     Parameters
     ----------
@@ -844,6 +850,13 @@ def crawl(
         DecisionTrace is created internally so the nightly report always contains
         the full decision audit. Pass an existing trace to compose with a caller's
         trace context.
+    use_perplexity:
+        When True, attempt Tier-2 Perplexity harvest after the free Tier-0 harvest.
+        GATED: requires BOTH paid_scrape.enabled=true in web-config.json AND
+        PERPLEXITY_API_KEY set in the environment. If either guard is missing the
+        function prints a clear message to stderr and raises SystemExit(2) -- no
+        silent free-only fallback, no silent spend.
+        When False (default), behaves exactly as Phase-3A (free Tier-0 only).
 
     Returns
     -------
@@ -892,6 +905,124 @@ def crawl(
         all_candidates.extend(cands)
         end_idx = len(all_candidates)
         _target_cand_counts.append((target.get("target_id", ""), start_idx, end_idx))
+
+    # 3b. Tier-2 Perplexity harvest (GATED, opt-in via use_perplexity=True)
+    #
+    # Guard: BOTH paid_scrape.enabled must be True in web-config.json AND
+    # PERPLEXITY_API_KEY must be present in the environment. Either guard missing
+    # -> refuse with exit 2 (no silent fallback, no silent spend).
+    if use_perplexity:
+        paid_cfg = config.get("paid_scrape", {})
+        enabled = paid_cfg.get("enabled", False)
+        api_key = os.environ.get("PERPLEXITY_API_KEY", "")
+
+        if not enabled:
+            print(
+                "[web_crawl] Perplexity requested but paid_scrape.enabled is false "
+                "in web-config -- refusing (flip paid_scrape.enabled to true to proceed)",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
+
+        if not api_key:
+            print(
+                "[web_crawl] Perplexity requested but no PERPLEXITY_API_KEY in environment "
+                "-- refusing (set PERPLEXITY_API_KEY to proceed)",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
+
+        # Allocation: select the top max_calls_per_crawl targets by priority order:
+        # gap lane (high > med > low), then research, then news.
+        # TODO: smarter Perplexity target scheduling (TBD) -- e.g. prioritise targets
+        #       whose gap has been open longest, or whose last Perplexity call was oldest.
+        max_calls = int(paid_cfg.get("max_calls_per_crawl", 2))
+        _LANE_ORDER = {"gap": 0, "research": 1, "news": 2}
+        _PRIORITY_ORDER = {"high": 0, "med": 1, "medium": 1, "low": 2}
+
+        def _target_sort_key(t: dict) -> tuple:
+            lane_rank = _LANE_ORDER.get(t.get("lane", "news"), 3)
+            pri_rank = _PRIORITY_ORDER.get((t.get("priority") or "low").lower(), 2)
+            return (lane_rank, pri_rank)
+
+        sorted_targets = sorted(targets, key=_target_sort_key)
+        perplexity_targets = sorted_targets[:max_calls]
+
+        # Import cost_tracker lazily (monkeypatch-safe)
+        try:
+            from agents import cost_tracker as _ct
+        except ImportError:
+            _ct = None  # type: ignore[assignment]
+
+        for ptarget in perplexity_targets:
+            pqueries = ptarget.get("queries", [])
+            primary_query = pqueries[0] if pqueries else ptarget.get("target_id", "")
+            if not primary_query:
+                continue
+
+            try:
+                pcands_raw = wh.query_perplexity(primary_query, limit=per_source_limit)
+            except Exception as exc:
+                print(
+                    f"[web_crawl] Perplexity harvest error for {ptarget.get('target_id')!r}: "
+                    f"{exc}",
+                    file=sys.stderr,
+                )
+                pcands_raw = []
+
+            # Tag candidates with lane, origin_ids, expected_evidence (same as Tier-0)
+            plane = ptarget.get("lane", "gap")
+            porigin_ids = ptarget.get("origin_ids", [])
+            pexpected_evidence = ptarget.get("expected_evidence", "")
+            pcands: list[dict] = []
+            for c in pcands_raw:
+                c = dict(c)
+                c["lane"] = plane
+                c["origin_ids"] = list(porigin_ids)
+                c["expected_evidence"] = pexpected_evidence
+                pcands.append(c)
+
+            all_candidates.extend(pcands)
+
+            # Cost logging: one ledger row per Perplexity call.
+            # Perplexity Sonar does not return token counts in the citation response;
+            # record with best-effort zeros so spend is tracked (model=sonar).
+            if _ct is not None:
+                try:
+                    _ct.record(
+                        action="web-scrape-perplexity",
+                        role="harvest",
+                        provider="perplexity",
+                        model="sonar",
+                        input_tokens=0,
+                        output_tokens=0,
+                        cost_usd=0.0,  # best-effort: actual cost unknown without token counts
+                        source="pay-as-you-go",
+                        # estimated_cost_usd omitted -> estimate_cost("sonar", 0, 0) = 0
+                    )
+                except Exception as exc:
+                    print(
+                        f"[web_crawl] cost_tracker record failed: {exc}",
+                        file=sys.stderr,
+                    )
+
+            # Trace: record the Perplexity call in the harvest section so --explain shows it
+            if trace is not None:
+                trace.add(
+                    "harvest",
+                    "target",
+                    target_id=ptarget.get("target_id", ""),
+                    lane=plane,
+                    queries=[
+                        {
+                            "engine": "perplexity",
+                            "query": primary_query,
+                            "n_returned": len(pcands_raw),
+                        }
+                    ],
+                    n_candidates=len(pcands),
+                    seen_dropped=0,
+                )
 
     # 4. Dedup seen (persist cache only when not dry_run)
     seen_p = _seen_path()
@@ -1117,6 +1248,16 @@ def main(argv: list[str] | None = None) -> int:
         metavar="PATH",
         help="Write the rendered decision trace to PATH (creates parent dirs).",
     )
+    parser.add_argument(
+        "--perplexity",
+        action="store_true",
+        dest="use_perplexity",
+        help=(
+            "Enable Tier-2 Perplexity harvest (GATED: requires paid_scrape.enabled=true "
+            "in .claude/web/web-config.json AND PERPLEXITY_API_KEY set; exits 2 if either "
+            "is missing). Spends real $ capped at max_calls_per_crawl; cost-logged."
+        ),
+    )
 
     try:
         args = parser.parse_args(argv)
@@ -1131,6 +1272,7 @@ def main(argv: list[str] | None = None) -> int:
         allow_remote_ollama=args.allow_remote_ollama,
         today=date.today().isoformat(),
         per_source_limit=args.per_source_limit,
+        use_perplexity=args.use_perplexity,
     )
 
     trace = result.get("trace")

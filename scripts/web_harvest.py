@@ -1,10 +1,13 @@
-"""web_harvest.py -- Tier-0 FREE web harvester for Second Brain v0.2.
+"""web_harvest.py -- Tier-0/2 web harvester for Second Brain v0.2.
 
-Contract: ALL sources here are $0 / key-less.
+Contract:
 - Tier-0 (this module): RSS + free paper APIs + GitHub releases + forum APIs.
+  ALL sources are $0 / key-less.
 - Tier-1 (out of scope here): single-URL Claude WebFetch, invoked by the agent/skill
   at runtime when one canonical URL is already known.
-- Tier-2 (out of scope here): paid scrapers (Phase 3B).
+- Tier-2 (this module): query_perplexity -- Perplexity Sonar (paid, PERPLEXITY_API_KEY
+  required). Returns candidates in the SAME shape as Tier-0; flows into the existing
+  web_rank + select_candidates pipeline unchanged.
 
 Every function returns a list of candidate dicts with the PINNED shape:
   {
@@ -16,7 +19,7 @@ Every function returns a list of candidate dicts with the PINNED shape:
     "snippet": str,        # abstract / summary / first chars
     "engine": str,         # "rss" | "arxiv" | "openalex" | "semantic_scholar" |
                            # "crossref" | "hackernews" | "reddit" | "lobsters" |
-                           # "github"
+                           # "github" | "perplexity"
   }
 
 Lane and origin_ids are assigned later by the DECISION layer -- not here.
@@ -450,6 +453,131 @@ def poll_github_releases(
             engine="github",
         ))
 
+        if len(candidates) >= limit:
+            break
+
+    return candidates
+
+
+# ---------------------------------------------------------------------------
+# query_perplexity -- Tier-2 Perplexity Sonar adapter
+# ---------------------------------------------------------------------------
+
+def _doi_from_url(url: str) -> str | None:
+    """Extract a DOI string from a doi.org URL, or return None."""
+    m = re.search(r"doi\.org/(10\.[^?\s#]+)", url)
+    return m.group(1) if m else None
+
+
+def _domain_path_title(url: str) -> str:
+    """Derive a short title from a URL when no explicit title is available."""
+    try:
+        from urllib.parse import urlparse
+        p = urlparse(url)
+        host = p.hostname or url
+        path = p.path.rstrip("/") or ""
+        # Use only the last two path segments to keep it readable
+        parts = [x for x in path.split("/") if x]
+        short_path = "/".join(parts[-2:]) if parts else ""
+        return f"{host}/{short_path}" if short_path else host
+    except Exception:
+        return url
+
+
+def _citation_url_to_candidate(url: str, answer_snippet: str) -> dict:
+    """Map a single Perplexity citation URL to the pinned candidate shape."""
+    arxiv_id = _arxiv_id_from_url(url)
+    if arxiv_id:
+        id_type = "arxiv"
+        source_id = f"arxiv:{arxiv_id}"
+    else:
+        doi = _doi_from_url(url)
+        if doi:
+            id_type = "doi"
+            source_id = doi
+        else:
+            id_type = "url"
+            source_id = "perplexity"
+
+    return _candidate(
+        title=_domain_path_title(url),
+        url=url,
+        source_id=source_id,
+        id_type=id_type,
+        published="",
+        snippet=answer_snippet,
+        engine="perplexity",
+    )
+
+
+def query_perplexity(
+    query: str,
+    *,
+    limit: int = 8,
+    model: str | None = None,
+) -> list[dict]:
+    """Query Perplexity Sonar and return candidates from its citations array.
+
+    This is the Tier-2 adapter: it requires PERPLEXITY_API_KEY. When the key is
+    absent the function returns [] immediately (no API call, no exception). Network
+    or API errors also degrade gracefully to [].
+
+    The citation URLs from the Sonar response are mapped to the pinned candidate
+    shape so they flow directly into web_rank + select_candidates unchanged.
+
+    Args:
+        query: Search / research query string.
+        limit: Maximum number of candidates to return (default 8). Sonar typically
+               returns 3-10 citation URLs; this cap is applied after mapping.
+        model: Override the Perplexity model. If None, the lib default is used.
+
+    Returns:
+        list of candidate dicts with engine="perplexity". Empty on missing key,
+        network error, or API error.
+    """
+    api_key = os.environ.get("PERPLEXITY_API_KEY", "")
+    if not api_key:
+        print(
+            "[web_harvest] PERPLEXITY_API_KEY not set; query_perplexity skipped",
+            file=sys.stderr,
+        )
+        return []
+
+    try:
+        from lib import perplexity as _perplexity_mod
+    except ImportError as exc:
+        print(
+            f"[web_harvest] query_perplexity: cannot import lib.perplexity: {exc}",
+            file=sys.stderr,
+        )
+        return []
+
+    try:
+        result = _perplexity_mod.call(query, model=model)
+    except Exception as exc:
+        print(
+            f"[web_harvest] query_perplexity: Perplexity API error: {exc}",
+            file=sys.stderr,
+        )
+        return []
+
+    citations: list = result.get("citations") or []
+    answer_text: str = result.get("text") or ""
+    # Provide a short answer slice as the snippet for all citations
+    snippet = answer_text[:300]
+
+    candidates: list[dict] = []
+    for citation in citations:
+        if not citation:
+            continue
+        # Citations may be plain URL strings or dicts with a 'url' key
+        if isinstance(citation, dict):
+            url = citation.get("url") or ""
+        else:
+            url = str(citation)
+        if not url:
+            continue
+        candidates.append(_citation_url_to_candidate(url, snippet))
         if len(candidates) >= limit:
             break
 

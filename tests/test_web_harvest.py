@@ -54,7 +54,7 @@ _REQUIRED_KEYS = {"title", "url", "source_id", "id_type", "published", "snippet"
 _VALID_ID_TYPES = {"arxiv", "doi", "url", "github"}
 _VALID_ENGINES = {
     "rss", "arxiv", "openalex", "semantic_scholar", "crossref",
-    "hackernews", "reddit", "lobsters", "github",
+    "hackernews", "reddit", "lobsters", "github", "perplexity",
 }
 
 
@@ -858,6 +858,247 @@ class TestIsoDate:
     def test_none_returns_empty(self):
         wh = _import_web_harvest()
         assert wh._iso_date(None) == ""
+
+
+# ===========================================================================
+# query_perplexity (Tier-2 Perplexity Sonar adapter)
+# ===========================================================================
+
+# Canned Perplexity call() return value -- mimics the real lib.perplexity.call() shape.
+_FAKE_PERPLEXITY_RESULT = {
+    "text": "Disaggregated KV caches separate prefill and decode compute nodes, "
+            "improving GPU utilisation. This approach is used in Mooncake and vLLM.",
+    "citations": [
+        "https://arxiv.org/abs/2407.00079",
+        "https://github.com/vllm-project/vllm/releases/tag/v0.6.0",
+        "https://doi.org/10.1145/3620678.3624783",
+        "https://mooncake.readthedocs.io/en/latest/",
+        "https://news.ycombinator.com/item?id=40800000",
+    ],
+    "model": "sonar",
+    "raw": {},
+}
+
+# Variant with dict-style citations (some Sonar models return {url: ..., title: ...})
+_FAKE_PERPLEXITY_DICT_CITATIONS = {
+    "text": "Answer text here.",
+    "citations": [
+        {"url": "https://arxiv.org/abs/2401.09670", "title": "Disaggregated KV Paper"},
+        {"url": "https://example.com/blog", "title": "Blog Post"},
+    ],
+    "model": "sonar-pro",
+    "raw": {},
+}
+
+
+class TestQueryPerplexity:
+    """Hermetic tests for query_perplexity -- NO real network/API calls."""
+
+    def _patch_perplexity_call(self, fake_result: dict):
+        """Patch lib.perplexity.call inside the web_harvest module's imported reference."""
+        wh = _import_web_harvest()
+        # lib.perplexity is imported lazily inside query_perplexity; we patch the module
+        # in sys.modules so any import inside the function sees the mock.
+        mock_mod = types.ModuleType("lib.perplexity")
+        mock_call = MagicMock(return_value=fake_result)
+        mock_mod.call = mock_call
+        return mock_call, mock_mod
+
+    def test_happy_path_returns_candidates(self, monkeypatch):
+        """query_perplexity returns N candidates matching the pinned shape."""
+        wh = _import_web_harvest()
+        monkeypatch.setenv("PERPLEXITY_API_KEY", "test-key-abc")
+
+        # Patch lib.perplexity in sys.modules so the lazy import inside query_perplexity
+        # picks up our mock.
+        mock_call, mock_mod = self._patch_perplexity_call(_FAKE_PERPLEXITY_RESULT)
+        monkeypatch.setitem(sys.modules, "lib.perplexity", mock_mod)
+
+        results = wh.query_perplexity("disaggregated kv cache")
+
+        assert len(results) == 5
+        for c in results:
+            _assert_candidate(c, engine="perplexity")
+
+    def test_engine_is_perplexity(self, monkeypatch):
+        wh = _import_web_harvest()
+        monkeypatch.setenv("PERPLEXITY_API_KEY", "test-key")
+        mock_call, mock_mod = self._patch_perplexity_call(_FAKE_PERPLEXITY_RESULT)
+        monkeypatch.setitem(sys.modules, "lib.perplexity", mock_mod)
+
+        results = wh.query_perplexity("query")
+        assert all(c["engine"] == "perplexity" for c in results)
+
+    def test_arxiv_citation_gets_arxiv_id_type(self, monkeypatch):
+        """An arxiv.org citation URL should resolve to id_type='arxiv'."""
+        wh = _import_web_harvest()
+        monkeypatch.setenv("PERPLEXITY_API_KEY", "test-key")
+        mock_call, mock_mod = self._patch_perplexity_call(_FAKE_PERPLEXITY_RESULT)
+        monkeypatch.setitem(sys.modules, "lib.perplexity", mock_mod)
+
+        results = wh.query_perplexity("kv cache")
+        arxiv_cands = [c for c in results if "arxiv" in c["url"]]
+        assert len(arxiv_cands) >= 1
+        for c in arxiv_cands:
+            assert c["id_type"] == "arxiv", f"Expected arxiv id_type, got: {c}"
+            assert c["source_id"].startswith("arxiv:"), f"Expected arxiv: source_id, got: {c}"
+
+    def test_doi_citation_gets_doi_id_type(self, monkeypatch):
+        """A doi.org citation URL should resolve to id_type='doi'."""
+        wh = _import_web_harvest()
+        monkeypatch.setenv("PERPLEXITY_API_KEY", "test-key")
+        mock_call, mock_mod = self._patch_perplexity_call(_FAKE_PERPLEXITY_RESULT)
+        monkeypatch.setitem(sys.modules, "lib.perplexity", mock_mod)
+
+        results = wh.query_perplexity("inference")
+        doi_cands = [c for c in results if "doi.org" in c["url"]]
+        assert len(doi_cands) >= 1
+        for c in doi_cands:
+            assert c["id_type"] == "doi", f"Expected doi id_type, got: {c}"
+            # source_id is the extracted DOI string (no doi: prefix -- matches paper harvesters)
+            assert c["source_id"].startswith("10."), f"Expected bare DOI source_id, got: {c}"
+
+    def test_plain_url_citation_gets_url_id_type(self, monkeypatch):
+        """A plain web citation (not arxiv/doi) should get id_type='url'."""
+        wh = _import_web_harvest()
+        monkeypatch.setenv("PERPLEXITY_API_KEY", "test-key")
+        mock_call, mock_mod = self._patch_perplexity_call(_FAKE_PERPLEXITY_RESULT)
+        monkeypatch.setitem(sys.modules, "lib.perplexity", mock_mod)
+
+        results = wh.query_perplexity("inference")
+        plain_cands = [
+            c for c in results
+            if c["id_type"] == "url"
+        ]
+        assert len(plain_cands) >= 1
+        for c in plain_cands:
+            assert c["source_id"] == "perplexity"
+
+    def test_limit_respected(self, monkeypatch):
+        """limit kwarg caps the number of candidates returned."""
+        wh = _import_web_harvest()
+        monkeypatch.setenv("PERPLEXITY_API_KEY", "test-key")
+        mock_call, mock_mod = self._patch_perplexity_call(_FAKE_PERPLEXITY_RESULT)
+        monkeypatch.setitem(sys.modules, "lib.perplexity", mock_mod)
+
+        results = wh.query_perplexity("test query", limit=2)
+        assert len(results) == 2
+
+    def test_missing_api_key_returns_empty_no_call(self, monkeypatch):
+        """When PERPLEXITY_API_KEY is absent, return [] without calling the API."""
+        wh = _import_web_harvest()
+        monkeypatch.delenv("PERPLEXITY_API_KEY", raising=False)
+
+        mock_call = MagicMock()
+        mock_mod = types.ModuleType("lib.perplexity")
+        mock_mod.call = mock_call
+        monkeypatch.setitem(sys.modules, "lib.perplexity", mock_mod)
+
+        results = wh.query_perplexity("test query")
+        assert results == []
+        mock_call.assert_not_called()
+
+    def test_api_exception_returns_empty(self, monkeypatch):
+        """A RuntimeError from perplexity.call() degrades gracefully to []."""
+        wh = _import_web_harvest()
+        monkeypatch.setenv("PERPLEXITY_API_KEY", "test-key")
+
+        mock_call = MagicMock(side_effect=RuntimeError("API failed after 3 retries"))
+        mock_mod = types.ModuleType("lib.perplexity")
+        mock_mod.call = mock_call
+        monkeypatch.setitem(sys.modules, "lib.perplexity", mock_mod)
+
+        results = wh.query_perplexity("test query")
+        assert results == []
+
+    def test_network_exception_returns_empty(self, monkeypatch):
+        """A requests.RequestException from perplexity.call() also degrades to []."""
+        import requests as _req
+        wh = _import_web_harvest()
+        monkeypatch.setenv("PERPLEXITY_API_KEY", "test-key")
+
+        mock_call = MagicMock(side_effect=_req.exceptions.ConnectionError("timeout"))
+        mock_mod = types.ModuleType("lib.perplexity")
+        mock_mod.call = mock_call
+        monkeypatch.setitem(sys.modules, "lib.perplexity", mock_mod)
+
+        results = wh.query_perplexity("test query")
+        assert results == []
+
+    def test_empty_citations_returns_empty(self, monkeypatch):
+        """When citations array is empty, return []."""
+        wh = _import_web_harvest()
+        monkeypatch.setenv("PERPLEXITY_API_KEY", "test-key")
+
+        fake = {"text": "Some answer.", "citations": [], "model": "sonar", "raw": {}}
+        mock_call, mock_mod = self._patch_perplexity_call(fake)
+        monkeypatch.setitem(sys.modules, "lib.perplexity", mock_mod)
+
+        results = wh.query_perplexity("test query")
+        assert results == []
+
+    def test_dict_style_citations_accepted(self, monkeypatch):
+        """Citations as dicts with 'url' key are handled correctly."""
+        wh = _import_web_harvest()
+        monkeypatch.setenv("PERPLEXITY_API_KEY", "test-key")
+        mock_call, mock_mod = self._patch_perplexity_call(_FAKE_PERPLEXITY_DICT_CITATIONS)
+        monkeypatch.setitem(sys.modules, "lib.perplexity", mock_mod)
+
+        results = wh.query_perplexity("test query")
+        assert len(results) == 2
+        urls = {c["url"] for c in results}
+        assert "https://arxiv.org/abs/2401.09670" in urls
+        assert "https://example.com/blog" in urls
+
+    def test_candidate_urls_match_citations(self, monkeypatch):
+        """The url field of each candidate must match the original citation URL."""
+        wh = _import_web_harvest()
+        monkeypatch.setenv("PERPLEXITY_API_KEY", "test-key")
+        mock_call, mock_mod = self._patch_perplexity_call(_FAKE_PERPLEXITY_RESULT)
+        monkeypatch.setitem(sys.modules, "lib.perplexity", mock_mod)
+
+        results = wh.query_perplexity("test query")
+        expected_urls = _FAKE_PERPLEXITY_RESULT["citations"]
+        result_urls = [c["url"] for c in results]
+        assert result_urls == expected_urls
+
+    def test_snippet_is_slice_of_answer(self, monkeypatch):
+        """snippet should be a slice of the answer text (at most 300 chars)."""
+        wh = _import_web_harvest()
+        monkeypatch.setenv("PERPLEXITY_API_KEY", "test-key")
+        mock_call, mock_mod = self._patch_perplexity_call(_FAKE_PERPLEXITY_RESULT)
+        monkeypatch.setitem(sys.modules, "lib.perplexity", mock_mod)
+
+        results = wh.query_perplexity("kv cache")
+        for c in results:
+            assert len(c["snippet"]) <= 300
+            # snippet comes from the answer text
+            assert _FAKE_PERPLEXITY_RESULT["text"].startswith(c["snippet"])
+
+    def test_no_real_perplexity_call_when_mocked(self, monkeypatch):
+        """Confirm mock_call is called (not the real network) when key is set."""
+        wh = _import_web_harvest()
+        monkeypatch.setenv("PERPLEXITY_API_KEY", "test-key")
+        mock_call, mock_mod = self._patch_perplexity_call(_FAKE_PERPLEXITY_RESULT)
+        monkeypatch.setitem(sys.modules, "lib.perplexity", mock_mod)
+
+        wh.query_perplexity("disaggregated inference")
+        mock_call.assert_called_once()
+        # Confirm it was called with our query string
+        call_args = mock_call.call_args
+        assert call_args[0][0] == "disaggregated inference"
+
+    def test_model_kwarg_passed_through(self, monkeypatch):
+        """model= kwarg is forwarded to perplexity.call()."""
+        wh = _import_web_harvest()
+        monkeypatch.setenv("PERPLEXITY_API_KEY", "test-key")
+        mock_call, mock_mod = self._patch_perplexity_call(_FAKE_PERPLEXITY_RESULT)
+        monkeypatch.setitem(sys.modules, "lib.perplexity", mock_mod)
+
+        wh.query_perplexity("test query", model="sonar-pro")
+        mock_call.assert_called_once()
+        _, call_kwargs = mock_call.call_args
+        assert call_kwargs.get("model") == "sonar-pro"
 
 
 # ===========================================================================

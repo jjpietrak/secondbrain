@@ -134,11 +134,50 @@ The user reviews `meta/nightly_report/<date>.md` and picks **0-5**:
   `objective/direction|research_question|decision|purpose|topic`, `meta/health_report|cost_report`.
 - **No `Edit`** anywhere; analysis is Read/Grep/Glob + WebSearch/WebFetch only.
 
-## Phase 3B (deferred — NOT functional in 3A)
+## Phase 3B -- Perplexity Tier-2 harvest (opt-in, GATED)
 
-When `web-config.paid_scrape.enabled: true`: paid engines (Perplexity SP first, then Apify /
-crawl4AI) behind a per-crawl cost cap + `cost_tracker` logging, used only for JS-walled / bulk
-pages that Tier-0/1 cannot retrieve.
+Perplexity Sonar is wired as a **gated, opt-in** harvest source. It adds candidates to the
+SAME pool; decision / rank / select / stage are UNCHANGED -- Perplexity only adds candidates
+at the harvest step.
+
+### Dispatch
+
+```bash
+# /web-scrape perplexity
+.venv/bin/python scripts/web_crawl.py --vault "$VAULT_ROOT" --perplexity
+```
+
+`/web-scrape perplexity` passes `--perplexity` to `web_crawl.py`. Without the argument the
+crawl is free Tier-0 as before -- no Perplexity call is ever made.
+
+### Two-gate requirement (BOTH must be satisfied -- refuses with exit 2 if either is missing)
+
+1. `paid_scrape.enabled: true` in `.claude/web/web-config.json`
+   (default is `false`; the user flips it on to enable paid crawl).
+2. `PERPLEXITY_API_KEY` set in the environment.
+
+If `paid_scrape.enabled` is false: prints
+`"Perplexity requested but paid_scrape.enabled is false in web-config"` and exits 2.
+If `PERPLEXITY_API_KEY` is absent: prints
+`"Perplexity requested but no PERPLEXITY_API_KEY in environment"` and exits 2.
+No silent free-only fallback; no silent spend.
+
+### Allocation
+
+After Tier-0 harvest, the top `max_calls_per_crawl` (default 2) targets are selected by
+priority -- gap lane (high > med > low) first, then research, then news -- and one
+`query_perplexity` call is made per selected target using its primary seed query. Returned
+candidates are tagged with the target's lane, origin_ids, and expected_evidence (same as
+Tier-0), then appended to the same pool before dedup_seen / rank / select.
+
+### Cost discipline
+
+- Perplexity calls spend real $. Each call is logged to `cost_tracker` (action=
+  `web-scrape-perplexity`, provider=`perplexity`, model=`sonar`, source=`pay-as-you-go`).
+  One ledger row per call so spend is visible in `meta/cost_report/`.
+- Capped at `max_calls_per_crawl` (2) per crawl run.
+- `paid_scrape.enabled` stays `false` in the committed config; the user must explicitly
+  flip it (and export `PERPLEXITY_API_KEY`) to incur any spend.
 
 ## Feedback loop (persistence = Phase 4 `agent-learn`)
 

@@ -2924,3 +2924,297 @@ class TestEnqueuePublishedAndRationale:
             assert sid in data["sources"], (
                 f"Ident {ident!r} (sid={sid!r}) not found in ingest index"
             )
+
+
+# ===========================================================================
+# Tests: Perplexity Tier-2 gating and harvest (Phase 3B)
+# ===========================================================================
+
+# Canned Perplexity candidates (engine="perplexity", two distinct target IDs)
+CANNED_PERPLEXITY_GAP01 = [
+    {
+        "title": "arxiv.org/abs/2501.99001",
+        "url": "https://arxiv.org/abs/2501.99001",
+        "source_id": "arxiv:2501.99001",
+        "id_type": "arxiv",
+        "published": "",
+        "snippet": "Perplexity sonar answer for gap-01 query.",
+        "engine": "perplexity",
+    },
+    {
+        "title": "example.com/perp-result",
+        "url": "https://example.com/perp-result",
+        "source_id": "perplexity",
+        "id_type": "url",
+        "published": "",
+        "snippet": "Another Perplexity citation for gap-01.",
+        "engine": "perplexity",
+    },
+]
+
+CANNED_PERPLEXITY_GAP02 = [
+    {
+        "title": "arxiv.org/abs/2501.99002",
+        "url": "https://arxiv.org/abs/2501.99002",
+        "source_id": "arxiv:2501.99002",
+        "id_type": "arxiv",
+        "published": "",
+        "snippet": "Perplexity sonar answer for gap-02 query.",
+        "engine": "perplexity",
+    },
+]
+
+
+def _make_paid_config() -> dict:
+    """Return a web-config with paid_scrape.enabled=True and max_calls_per_crawl=2."""
+    cfg = dict(_WEB_CONFIG)
+    cfg["paid_scrape"] = {"enabled": True, "max_calls_per_crawl": 2, "engines": ["perplexity"]}
+    return cfg
+
+
+class TestPerplexityGating:
+    """Perplexity Tier-2: gating, allocation, cost logging, and trace recording."""
+
+    # ------------------------------------------------------------------
+    # Helper: mock cost_tracker.record so no real ledger file is written
+    # ------------------------------------------------------------------
+    def _mock_cost_tracker(self, monkeypatch):
+        """Patch agents.cost_tracker.record to a spy list; return the list."""
+        recorded: list[dict] = []
+
+        def _fake_record(action, role, provider, input_tokens=0, output_tokens=0,
+                         cost_usd=0.0, source="pay-as-you-go", model="",
+                         estimated_cost_usd=None):
+            recorded.append({
+                "action": action,
+                "role": role,
+                "provider": provider,
+                "model": model,
+                "source": source,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cost_usd": cost_usd,
+            })
+
+        try:
+            import agents.cost_tracker as _ct
+            monkeypatch.setattr(_ct, "record", _fake_record)
+        except ImportError:
+            pass
+        return recorded
+
+    def test_perplexity_enabled_calls_query_perplexity_for_top_targets(
+        self, tmp_path, monkeypatch
+    ):
+        """use_perplexity=True + paid_scrape.enabled=True + PERPLEXITY_API_KEY set:
+        query_perplexity is called for the top-2 targets; candidates enter the pool."""
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest(monkeypatch)
+        _patch_rank(monkeypatch)
+        # Override config to enable paid scrape
+        monkeypatch.setattr(web_crawl, "_load_config", lambda: _make_paid_config())
+        # Set PERPLEXITY_API_KEY in environment
+        monkeypatch.setenv("PERPLEXITY_API_KEY", "fake-key-for-test")
+        # Mock cost_tracker
+        self._mock_cost_tracker(monkeypatch)
+
+        # Monkeypatch query_perplexity to return canned candidates (NO real API call)
+        call_log: list[str] = []
+        import web_harvest as wh
+
+        def _fake_perplexity(query, *, limit=8, model=None):
+            call_log.append(query)
+            # Return different canned sets for each call
+            if len(call_log) == 1:
+                return list(CANNED_PERPLEXITY_GAP01)
+            return list(CANNED_PERPLEXITY_GAP02)
+
+        monkeypatch.setattr(wh, "query_perplexity", _fake_perplexity)
+
+        result = web_crawl.crawl(str(vault), dry_run=True, today="2026-06-22",
+                                 use_perplexity=True)
+
+        # query_perplexity was called for the top-2 targets (max_calls_per_crawl=2)
+        assert len(call_log) == 2, (
+            f"Expected 2 Perplexity calls (max_calls_per_crawl=2), got {len(call_log)}"
+        )
+
+        # At least one perplexity candidate should appear in the selected pool
+        # (or all_candidates -- check via trace or selected).
+        # The candidates were added to the pool; whether they survive rank/select depends
+        # on scoring.  We verify the engine="perplexity" tag appeared anywhere.
+        # Use the trace to confirm the harvest records include perplexity entries.
+        trace = result["trace"]
+        harvest_recs = trace.find("harvest", "target")
+        perp_recs = [
+            r for r in harvest_recs
+            if any(q.get("engine") == "perplexity"
+                   for q in r["data"].get("queries", []))
+        ]
+        assert len(perp_recs) >= 2, (
+            f"Expected at least 2 harvest trace records with engine=perplexity, "
+            f"got {len(perp_recs)}: {[r['data'] for r in perp_recs]}"
+        )
+
+    def test_perplexity_candidates_tagged_with_target_lane_and_origin(
+        self, tmp_path, monkeypatch
+    ):
+        """Perplexity candidates carry the target's lane, origin_ids, expected_evidence."""
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest(monkeypatch)
+        _patch_rank(monkeypatch)
+        monkeypatch.setattr(web_crawl, "_load_config", lambda: _make_paid_config())
+        monkeypatch.setenv("PERPLEXITY_API_KEY", "fake-key-for-test")
+        self._mock_cost_tracker(monkeypatch)
+
+        collected: list[dict] = []
+        import web_harvest as wh
+
+        def _fake_perplexity(query, *, limit=8, model=None):
+            cands = list(CANNED_PERPLEXITY_GAP01)
+            collected.extend(cands)
+            return cands
+
+        monkeypatch.setattr(wh, "query_perplexity", _fake_perplexity)
+
+        # Capture the candidate pool by inspecting selected + trace
+        result = web_crawl.crawl(str(vault), dry_run=True, today="2026-06-22",
+                                 use_perplexity=True)
+
+        # Confirm the trace records for perplexity targets carry a valid lane
+        trace = result["trace"]
+        harvest_recs = trace.find("harvest", "target")
+        perp_recs = [
+            r for r in harvest_recs
+            if any(q.get("engine") == "perplexity"
+                   for q in r["data"].get("queries", []))
+        ]
+        for rec in perp_recs:
+            assert rec["data"]["lane"] in {"gap", "research", "news"}, (
+                f"Perplexity harvest record has unexpected lane: {rec['data']}"
+            )
+
+    def test_perplexity_cost_tracker_row_recorded_per_call(
+        self, tmp_path, monkeypatch
+    ):
+        """One cost_tracker row is recorded per Perplexity call (action=web-scrape-perplexity)."""
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest(monkeypatch)
+        _patch_rank(monkeypatch)
+        monkeypatch.setattr(web_crawl, "_load_config", lambda: _make_paid_config())
+        monkeypatch.setenv("PERPLEXITY_API_KEY", "fake-key-for-test")
+        recorded = self._mock_cost_tracker(monkeypatch)
+
+        import web_harvest as wh
+        monkeypatch.setattr(
+            wh, "query_perplexity",
+            lambda q, *, limit=8, model=None: list(CANNED_PERPLEXITY_GAP01)
+        )
+
+        web_crawl.crawl(str(vault), dry_run=True, today="2026-06-22",
+                        use_perplexity=True)
+
+        # Two targets -> 2 calls -> 2 cost_tracker rows
+        perp_rows = [r for r in recorded if r["action"] == "web-scrape-perplexity"]
+        assert len(perp_rows) == 2, (
+            f"Expected 2 cost_tracker rows for 2 Perplexity calls, "
+            f"got {len(perp_rows)}: {perp_rows}"
+        )
+        for row in perp_rows:
+            assert row["provider"] == "perplexity"
+            assert row["model"] == "sonar"
+            assert row["source"] == "pay-as-you-go"
+
+    def test_perplexity_disabled_config_refuses_exit2(self, tmp_path, monkeypatch):
+        """use_perplexity=True + paid_scrape.enabled=False -> refuses; query_perplexity NOT called."""
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest(monkeypatch)
+        _patch_rank(monkeypatch)
+        # Config has paid_scrape.enabled=False (default _WEB_CONFIG)
+        monkeypatch.setenv("PERPLEXITY_API_KEY", "fake-key-for-test")
+        self._mock_cost_tracker(monkeypatch)
+
+        called: list[bool] = []
+        import web_harvest as wh
+
+        def _should_not_call(*a, **kw):
+            called.append(True)
+            return []
+
+        monkeypatch.setattr(wh, "query_perplexity", _should_not_call)
+
+        with pytest.raises(SystemExit) as exc_info:
+            web_crawl.crawl(str(vault), dry_run=True, today="2026-06-22",
+                            use_perplexity=True)
+
+        # Must exit with code 2
+        assert exc_info.value.code == 2, (
+            f"Expected SystemExit(2), got code={exc_info.value.code}"
+        )
+        # query_perplexity must NOT have been called
+        assert called == [], "query_perplexity must not be called when paid_scrape.enabled=False"
+
+    def test_perplexity_missing_api_key_refuses_exit2(self, tmp_path, monkeypatch):
+        """use_perplexity=True + no PERPLEXITY_API_KEY -> refuses; query_perplexity NOT called."""
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest(monkeypatch)
+        _patch_rank(monkeypatch)
+        # Enable paid scrape in config but do NOT set PERPLEXITY_API_KEY
+        monkeypatch.setattr(web_crawl, "_load_config", lambda: _make_paid_config())
+        monkeypatch.delenv("PERPLEXITY_API_KEY", raising=False)
+        self._mock_cost_tracker(monkeypatch)
+
+        called: list[bool] = []
+        import web_harvest as wh
+
+        def _should_not_call(*a, **kw):
+            called.append(True)
+            return []
+
+        monkeypatch.setattr(wh, "query_perplexity", _should_not_call)
+
+        with pytest.raises(SystemExit) as exc_info:
+            web_crawl.crawl(str(vault), dry_run=True, today="2026-06-22",
+                            use_perplexity=True)
+
+        assert exc_info.value.code == 2, (
+            f"Expected SystemExit(2), got code={exc_info.value.code}"
+        )
+        assert called == [], "query_perplexity must not be called when PERPLEXITY_API_KEY is absent"
+
+    def test_default_use_perplexity_false_never_calls_query_perplexity(
+        self, tmp_path, monkeypatch
+    ):
+        """use_perplexity=False (default) -> query_perplexity is NEVER called; behavior unchanged."""
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest(monkeypatch)
+        _patch_rank(monkeypatch)
+        # Even if paid_scrape.enabled=True and PERPLEXITY_API_KEY is set, it must NOT fire
+        monkeypatch.setattr(web_crawl, "_load_config", lambda: _make_paid_config())
+        monkeypatch.setenv("PERPLEXITY_API_KEY", "fake-key-for-test")
+        self._mock_cost_tracker(monkeypatch)
+
+        called: list[bool] = []
+        import web_harvest as wh
+
+        def _should_not_call(*a, **kw):
+            called.append(True)
+            return []
+
+        monkeypatch.setattr(wh, "query_perplexity", _should_not_call)
+
+        # Default: use_perplexity=False (not passed)
+        result = web_crawl.crawl(str(vault), dry_run=True, today="2026-06-22")
+
+        # Must complete successfully and never call query_perplexity
+        assert isinstance(result, dict)
+        assert "selected" in result
+        assert called == [], (
+            "query_perplexity must NEVER be called when use_perplexity=False (default)"
+        )
