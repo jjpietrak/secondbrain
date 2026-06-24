@@ -386,7 +386,7 @@ def _patch_loaders(monkeypatch, tmp_path: Path, vault: Path):
 
         def enqueue(self, ident, *, title="", rationale="", score=None,
                     discovered_by="", objective_ids=None, name=None,
-                    published=None, url=None):
+                    published=None, url=None, source_id="", engine=""):
             # Load existing data from vault directly
             index_path = vault / "meta" / "ingest_index.json"
             if index_path.exists():
@@ -459,7 +459,8 @@ def _patch_rank(monkeypatch):
     """Monkeypatch score_candidates to return input with canned scores (offline)."""
     import web_rank as wr
 
-    def _fake_score(candidates, query, *, registry=None, allow_remote_ollama=False, today=None):
+    def _fake_score(candidates, query, *, registry=None, allow_remote_ollama=False,
+                    today=None, learned=None, weights=None):
         # Assign scores from the candidate's existing score field or use index-based
         result = []
         for i, c in enumerate(candidates):
@@ -2360,7 +2361,7 @@ class TestEnqueueURL:
         class _URLCapture:
             def enqueue(self, ident, *, title="", rationale="", score=None,
                         discovered_by="", objective_ids=None, name=None,
-                        published=None, url=None):
+                        published=None, url=None, source_id="", engine=""):
                 enqueue_calls.append({"ident": ident, "url": url})
                 sid, id_type, derived_url = _real_ii._normalize_enqueue_id(ident)
                 resolved_url = url or derived_url or ""
@@ -2440,7 +2441,7 @@ class TestEnqueueURL:
         class _URLCapture:
             def enqueue(self, ident, *, title="", rationale="", score=None,
                         discovered_by="", objective_ids=None, name=None,
-                        published=None, url=None):
+                        published=None, url=None, source_id="", engine=""):
                 enqueue_calls.append({"ident": ident, "url": url})
                 sid, id_type, derived_url = _real_ii._normalize_enqueue_id(ident)
                 resolved_url = url or derived_url or ""
@@ -3218,3 +3219,211 @@ class TestPerplexityGating:
         assert called == [], (
             "query_perplexity must NEVER be called when use_perplexity=False (default)"
         )
+
+
+# ===========================================================================
+# Phase-4A: agent_learn wiring tests
+# ===========================================================================
+
+# Minimal learned dict returned by a seeded agent_learn mock
+_CANNED_LEARNED = {
+    "updated": "2026-06-24",
+    "sources": {"arxiv_cs_dc": {"accept": 3, "reject": 0, "rep": 0.5}},
+    "engines": {"arxiv": {"accept": 5, "reject": 1, "rep": 0.142857}},
+    "reject_patterns": {"keywords": []},
+    "calibration": {"accepted_score_mean": 0.72, "rejected_score_mean": 0.35, "n": 6},
+    "processed_ids": [],
+}
+_CANNED_BRIEFING = (
+    "## Learning briefing (applied from 2026-06-23 crawl)\n\n"
+    "**Sources updated:**\n"
+    "- `arxiv_cs_dc`: rep=+0.500 (new) | accept=3, reject=0\n\n"
+    "_3 new decision(s) processed._"
+)
+_CANNED_LEARN_RESULT = {
+    "learned": _CANNED_LEARNED,
+    "briefing": _CANNED_BRIEFING,
+    "delta": {"sources": {}, "engines": {}, "new_keywords": [], "calibration": {}, "n_new": 3},
+    "n_new": 3,
+}
+
+
+def _make_learn_enabled_config() -> dict:
+    """Minimal config with learn.enabled=true."""
+    cfg = dict(_WEB_CONFIG)
+    cfg["learn"] = {"enabled": True, "w_rep": 0.15, "w_rej": 0.2, "prior_strength": 1.0}
+    return cfg
+
+
+def _make_learn_disabled_config() -> dict:
+    """Minimal config with learn.enabled=false."""
+    cfg = dict(_WEB_CONFIG)
+    cfg["learn"] = {"enabled": False, "w_rep": 0.15, "w_rej": 0.2, "prior_strength": 1.0}
+    return cfg
+
+
+class TestAgentLearnWiring:
+    """Tests for the learn-at-start wiring in crawl()."""
+
+    def _patch_all(self, monkeypatch, tmp_path: Path, vault: Path, config=None):
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest(monkeypatch)
+        _patch_rank(monkeypatch)
+        if config is not None:
+            monkeypatch.setattr(web_crawl, "_load_config", lambda: config)
+
+    def test_learn_enabled_calls_agent_learn(self, tmp_path, monkeypatch):
+        """When learn.enabled=true, agent_learn.learn() is called with vault_root and apply."""
+        vault = _make_tmp_vault(tmp_path)
+        self._patch_all(monkeypatch, tmp_path, vault, config=_make_learn_enabled_config())
+
+        calls: list[dict] = []
+
+        class _FakeLearnMod:
+            def learn(self, vault_root, agent, *, apply, today=None):
+                calls.append({"vault_root": vault_root, "agent": agent, "apply": apply})
+                return dict(_CANNED_LEARN_RESULT)
+
+        monkeypatch.setattr(web_crawl, "_import_agent_learn", lambda: _FakeLearnMod())
+
+        web_crawl.crawl(str(vault), dry_run=False, today="2026-06-24")
+
+        assert len(calls) == 1, f"Expected 1 call to agent_learn.learn, got {len(calls)}"
+        assert calls[0]["vault_root"] == str(vault)
+        assert calls[0]["agent"] == "web"
+        assert calls[0]["apply"] is True  # live run -> apply=True
+
+    def test_dry_run_calls_agent_learn_with_apply_false(self, tmp_path, monkeypatch):
+        """In dry_run mode, agent_learn.learn() is called with apply=False."""
+        vault = _make_tmp_vault(tmp_path)
+        self._patch_all(monkeypatch, tmp_path, vault, config=_make_learn_enabled_config())
+
+        calls: list[dict] = []
+
+        class _FakeLearnMod:
+            def learn(self, vault_root, agent, *, apply, today=None):
+                calls.append({"apply": apply})
+                return dict(_CANNED_LEARN_RESULT)
+
+        monkeypatch.setattr(web_crawl, "_import_agent_learn", lambda: _FakeLearnMod())
+
+        web_crawl.crawl(str(vault), dry_run=True, today="2026-06-24")
+
+        assert len(calls) == 1
+        assert calls[0]["apply"] is False, "dry_run -> apply must be False"
+
+    def test_learn_disabled_does_not_call_agent_learn(self, tmp_path, monkeypatch):
+        """When learn.enabled=false, agent_learn.learn() is never called."""
+        vault = _make_tmp_vault(tmp_path)
+        self._patch_all(monkeypatch, tmp_path, vault, config=_make_learn_disabled_config())
+
+        calls: list[bool] = []
+
+        class _FakeLearnMod:
+            def learn(self, *a, **kw):
+                calls.append(True)
+                return dict(_CANNED_LEARN_RESULT)
+
+        monkeypatch.setattr(web_crawl, "_import_agent_learn", lambda: _FakeLearnMod())
+
+        result = web_crawl.crawl(str(vault), dry_run=True, today="2026-06-24")
+
+        assert calls == [], "agent_learn.learn must NOT be called when learn.enabled=false"
+        assert isinstance(result, dict)
+
+    def test_agent_learn_error_degrades_gracefully(self, tmp_path, monkeypatch):
+        """When agent_learn raises, crawl completes without crashing."""
+        vault = _make_tmp_vault(tmp_path)
+        self._patch_all(monkeypatch, tmp_path, vault, config=_make_learn_enabled_config())
+
+        class _BrokenLearnMod:
+            def learn(self, *a, **kw):
+                raise RuntimeError("simulated failure")
+
+        monkeypatch.setattr(web_crawl, "_import_agent_learn", lambda: _BrokenLearnMod())
+
+        # Must not raise
+        result = web_crawl.crawl(str(vault), dry_run=True, today="2026-06-24")
+        assert isinstance(result, dict)
+        assert "selected" in result
+
+    def test_report_contains_briefing_section_above_candidates(self, tmp_path, monkeypatch):
+        """Live run: nightly report contains ## Learning briefing BEFORE the first ### candidate."""
+        vault = _make_tmp_vault(tmp_path)
+        self._patch_all(monkeypatch, tmp_path, vault, config=_make_learn_enabled_config())
+
+        class _FakeLearnMod:
+            def learn(self, *a, **kw):
+                return dict(_CANNED_LEARN_RESULT)
+
+        monkeypatch.setattr(web_crawl, "_import_agent_learn", lambda: _FakeLearnMod())
+
+        result = web_crawl.crawl(str(vault), dry_run=False, today="2026-06-24")
+
+        report_text = Path(result["report_path"]).read_text(encoding="utf-8")
+        briefing_pos = report_text.find("## Learning briefing")
+        first_cand_pos = report_text.find("### 1.")
+
+        assert briefing_pos != -1, "Report must contain ## Learning briefing"
+        if first_cand_pos != -1:
+            assert briefing_pos < first_cand_pos, (
+                f"## Learning briefing ({briefing_pos}) must appear before "
+                f"first candidate block ### 1. ({first_cand_pos})"
+            )
+
+    def test_report_has_no_briefing_section_when_empty(self, tmp_path, monkeypatch):
+        """When briefing is empty (e.g. learn disabled), no ## Learning briefing in report."""
+        vault = _make_tmp_vault(tmp_path)
+        self._patch_all(monkeypatch, tmp_path, vault, config=_make_learn_disabled_config())
+
+        result = web_crawl.crawl(str(vault), dry_run=False, today="2026-06-24")
+
+        report_text = Path(result["report_path"]).read_text(encoding="utf-8")
+        assert "## Learning briefing" not in report_text
+
+    def test_learned_passed_to_score_candidates(self, tmp_path, monkeypatch):
+        """The learned dict is forwarded to score_candidates (spy via monkeypatch)."""
+        vault = _make_tmp_vault(tmp_path)
+        self._patch_all(monkeypatch, tmp_path, vault, config=_make_learn_enabled_config())
+
+        received_learned: list = []
+
+        class _FakeLearnMod:
+            def learn(self, *a, **kw):
+                return dict(_CANNED_LEARN_RESULT)
+
+        monkeypatch.setattr(web_crawl, "_import_agent_learn", lambda: _FakeLearnMod())
+
+        import web_rank as wr
+        original_score = wr.score_candidates
+
+        def _spy_score(candidates, query, *, registry=None, allow_remote_ollama=False,
+                       today=None, learned=None, weights=None):
+            received_learned.append(learned)
+            return original_score(
+                candidates, query, registry=registry,
+                allow_remote_ollama=allow_remote_ollama, today=today,
+                learned=learned, weights=weights,
+            )
+
+        monkeypatch.setattr(wr, "score_candidates", _spy_score)
+
+        web_crawl.crawl(str(vault), dry_run=True, today="2026-06-24")
+
+        assert len(received_learned) >= 1, "score_candidates must be called at least once"
+        # The learned dict should match what agent_learn returned
+        for ld in received_learned:
+            if ld is not None:
+                assert ld.get("sources") == _CANNED_LEARNED["sources"]
+
+    def test_no_config_learn_block_degrades_gracefully(self, tmp_path, monkeypatch):
+        """Config without a 'learn' block (old config) does not crash."""
+        vault = _make_tmp_vault(tmp_path)
+        cfg = dict(_WEB_CONFIG)
+        # No 'learn' key at all
+        cfg.pop("learn", None)
+        self._patch_all(monkeypatch, tmp_path, vault, config=cfg)
+
+        result = web_crawl.crawl(str(vault), dry_run=True, today="2026-06-24")
+        assert isinstance(result, dict)
+        assert "selected" in result

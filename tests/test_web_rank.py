@@ -604,3 +604,139 @@ class TestCli:
         parsed = json.loads(captured.out)
         assert len(parsed) == 1
         assert "score" in parsed[0]
+
+
+# ===========================================================================
+# Phase-4A learned-prior tests
+# ===========================================================================
+
+def _make_learned(source_id: str, rep: float, keywords: list | None = None) -> dict:
+    """Build a minimal learned dict seeded with one source reputation."""
+    return {
+        "updated": "2026-06-24",
+        "sources": {
+            source_id: {"accept": 3, "reject": 0, "rep": rep},
+        },
+        "engines": {},
+        "reject_patterns": {"keywords": keywords or []},
+        "calibration": {"accepted_score_mean": 0.7, "rejected_score_mean": 0.3, "n": 3},
+        "processed_ids": [],
+    }
+
+
+class TestLearnedPrior:
+    """score_candidates with a learned dict applies rep and reject adjustments."""
+
+    def test_positive_rep_boosts_score(self, monkeypatch):
+        """A source with positive rep scores higher than the same source with no learned."""
+        _ollama_off(monkeypatch)
+        query = "xxxxxxxxxxxxxxxxxxxx"  # no keyword overlap -> base score ~0
+        cand = _make_candidate("AAAA", source_id="good_source")
+
+        no_learned = web_rank.score_candidates([cand], query)
+        with_learned = web_rank.score_candidates(
+            [cand], query, learned=_make_learned("good_source", rep=+0.6)
+        )
+        assert with_learned[0]["score"] > no_learned[0]["score"]
+
+    def test_high_rep_source_outranks_neutral(self, monkeypatch):
+        """With learned, a high-rep source ranks above an otherwise-equal neutral source."""
+        _ollama_off(monkeypatch)
+        query = "xxxxxxxxxxxxxxxxxxxx"  # identical zero-overlap query for both
+        high_rep = _make_candidate("AAAA", source_id="good_src", url="https://example.com/a")
+        neutral = _make_candidate("AAAA", source_id="neutral_src", url="https://example.com/b")
+
+        learned = _make_learned("good_src", rep=+0.8)
+        ranked = web_rank.score_candidates([neutral, high_rep], query, learned=learned)
+        assert ranked[0]["source_id"] == "good_src"
+        assert ranked[0]["score"] > ranked[1]["score"]
+
+    def test_reject_keyword_lowers_score(self, monkeypatch):
+        """A candidate whose title hits a reject keyword scores lower than without learned."""
+        _ollama_off(monkeypatch)
+        query = "disaggregated inference"
+        cand = _make_candidate(
+            title="clickbait guide to inference",
+            source_id="any_src",
+        )
+        learned = _make_learned("other_src", rep=0.0, keywords=["clickbait"])
+
+        no_learned = web_rank.score_candidates([cand], query)
+        with_learned = web_rank.score_candidates([cand], query, learned=learned)
+        assert with_learned[0]["score"] < no_learned[0]["score"]
+
+    def test_reject_keyword_candidate_outranked_by_clean(self, monkeypatch):
+        """A clean candidate ranks above a keyword-penalised one when learned is active."""
+        _ollama_off(monkeypatch)
+        query = "xxxxxxxxxxxxxxxxxxxx"
+        dirty = _make_candidate("clickbait inference", source_id="s1", url="https://example.com/d")
+        clean = _make_candidate("AAAA BBBB", source_id="s2", url="https://example.com/c")
+
+        learned = _make_learned("s1", rep=0.0, keywords=["clickbait"])
+        ranked = web_rank.score_candidates([dirty, clean], query, learned=learned)
+        # clean should rank above dirty (dirty is penalised)
+        clean_idx = next(i for i, c in enumerate(ranked) if c["source_id"] == "s2")
+        dirty_idx = next(i for i, c in enumerate(ranked) if c["source_id"] == "s1")
+        assert clean_idx < dirty_idx, (
+            f"Expected clean (idx {clean_idx}) before dirty (idx {dirty_idx})"
+        )
+
+    def test_learned_none_identical_to_no_learned(self, monkeypatch):
+        """learned=None produces identical scores to omitting the argument."""
+        _ollama_off(monkeypatch)
+        query = "inference disaggregation"
+        cands = [
+            _make_candidate("inference disaggregation paper", source_id="a"),
+            _make_candidate("cookie recipe blog post", source_id="b"),
+        ]
+        without = web_rank.score_candidates(cands, query)
+        with_none = web_rank.score_candidates(cands, query, learned=None)
+        assert [c["score"] for c in without] == [c["score"] for c in with_none]
+        assert [c["source_id"] for c in without] == [c["source_id"] for c in with_none]
+
+    def test_weights_override_defaults(self, monkeypatch):
+        """weights dict overrides default w_rep/w_rej values."""
+        _ollama_off(monkeypatch)
+        query = "xxxxxxxxxxxxxxxxxxxx"
+        cand = _make_candidate("AAAA", source_id="good_src")
+        learned = _make_learned("good_src", rep=+0.5)
+
+        # Zero weight: reputation has no effect
+        zero_weights = {"w_rep": 0.0, "w_rej": 0.0}
+        no_weight_score = web_rank.score_candidates([cand], query, learned=learned, weights=zero_weights)[0]["score"]
+
+        # High weight: rep has large effect
+        high_weights = {"w_rep": 1.0, "w_rej": 0.0}
+        high_weight_score = web_rank.score_candidates([cand], query, learned=learned, weights=high_weights)[0]["score"]
+
+        assert high_weight_score > no_weight_score
+
+    def test_base_score_preserved_in_output(self, monkeypatch):
+        """When learned is used, base_score key is present on each candidate."""
+        _ollama_off(monkeypatch)
+        query = "inference"
+        cand = _make_candidate("inference paper", source_id="s1")
+        learned = _make_learned("s1", rep=+0.3)
+        ranked = web_rank.score_candidates([cand], query, learned=learned)
+        assert "base_score" in ranked[0], "base_score should be present when learned is used"
+
+    def test_does_not_crash_without_agent_learn_import(self, monkeypatch):
+        """If agent_learn cannot be imported, score_candidates falls back gracefully."""
+        _ollama_off(monkeypatch)
+        # Temporarily break agent_learn import
+        import sys
+        original = sys.modules.get("agent_learn")
+        sys.modules["agent_learn"] = None  # type: ignore[assignment]
+        try:
+            query = "inference"
+            cand = _make_candidate("inference paper", source_id="s1")
+            learned = _make_learned("s1", rep=+0.5)
+            # Should not raise
+            ranked = web_rank.score_candidates([cand], query, learned=learned)
+            assert len(ranked) == 1
+            assert "score" in ranked[0]
+        finally:
+            if original is None:
+                sys.modules.pop("agent_learn", None)
+            else:
+                sys.modules["agent_learn"] = original

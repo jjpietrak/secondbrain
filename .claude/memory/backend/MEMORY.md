@@ -49,6 +49,15 @@ current; never store fact bodies here.
   GATED Tier-2 harvest engine: `web_harvest.query_perplexity` (reuses research/lib/perplexity citations) +
   `web_crawl --perplexity` (skill arg) gated on paid_scrape.enabled+KEY, top-2 targets, cost-logged; decision/
   rank/select/stage 100% reused. enabled=false default (no spend). 939 tests. PENDING: live $ test + Apify/crawl4AI.
+- [phase4a-agent-learn.md](phase4a-agent-learn.md) — **Phase 4A (learning layer) Waves 1-2 DONE 2026-06-24.**
+  agent_learn.py (reusable; learn/rep_for/reject_penalty/render_briefing; smoothed-Beta reputation,
+  cold-start neutral; source_id+engine persisted on enqueue); WIRED into web_rank (learned prior) +
+  route_to_sources (rep reorder) + web_crawl (agent_learn at crawl start, `## Learning briefing` at
+  report top; back-compat when learned=None); web-config learn block; agent-learn SKILL. Auto-apply +
+  always briefed. reject-keyword SAFETY fix (freq>=2 + PURPOSE/topic guard — never penalizes core terms;
+  caught live pulling `disaggregation`). Live $0 demo (real /wiki-approve): calibration accepted 0.70 vs
+  rejected 0.33 (ranker predictive), reject keywords none, reputation empty (old rows pre-date plumbing).
+  learned.json = runtime state, gitignored. 1023 tests. DEFERRED: step-2 query reformulation; 4B nightly.
 - [phase3-conclusion.md](phase3-conclusion.md) — **PHASE 3 CLOSED 2026-06-23 (user sign-off): functionally
   works OK w/ minor bugs, but relevance/accuracy NOT good enough + DECISION is obscure.** Perplexity returned
   only slightly-relevant results; arXiv path better but not great. NOT production-trusted — do NOT auto-wire web

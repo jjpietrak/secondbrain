@@ -350,6 +350,54 @@ class TestEdgeCases:
         assert "blocked" in plan
         assert plan["blocked"] == []
 
+    def test_report_with_leading_learning_briefing_parses_correctly(self):
+        """A report with a ## Learning briefing section before the candidates still parses.
+
+        The briefing section is a pure informational block that must not confuse
+        the checkbox parser. parse_report must return the same decisions as without it.
+        """
+        briefing_prefix = (
+            "## Learning briefing (applied from 2026-06-23 crawl)\n\n"
+            "**Sources updated:**\n"
+            "- `arxiv_cs_dc`: rep=+0.500 (new) | accept=3, reject=0\n\n"
+            "_3 new decision(s) processed._\n\n"
+        )
+        report_with_briefing = (
+            "# Nightly Report 2026-06-24\n\n"
+            + briefing_prefix
+            + "### 1. Some Paper\n"
+            "- [x] approve \xb7 `arxiv:2606.08635v1`\n"
+            "- [ ] reject \xb7 `arxiv:2606.08635v1`\n"
+            "    - reason:\n"
+            "- **url**: https://arxiv.org/abs/2606.08635\n\n"
+            "### 2. Another Paper\n"
+            "- [ ] approve \xb7 `arxiv:2606.11111v1`\n"
+            "- [x] reject \xb7 `arxiv:2606.11111v1`\n"
+            "    - reason: not relevant\n"
+            "- **url**: https://arxiv.org/abs/2606.11111\n\n"
+            "## Decision trace\n\n"
+            "- [x] approve \xb7 `arxiv:9999.99999v1`\n"
+        )
+        results = parse_report(report_with_briefing)
+        ids = {r["id"]: r["action"] for r in results}
+
+        # Approve + reject inside the candidate blocks must be found
+        assert "arxiv:2606.08635v1" in ids, "Approved id must be found"
+        assert ids["arxiv:2606.08635v1"] == "approve"
+        assert "arxiv:2606.11111v1" in ids, "Rejected id must be found"
+        assert ids["arxiv:2606.11111v1"] == "reject"
+
+        # Stray approve inside ## Decision trace must be IGNORED
+        assert "arxiv:9999.99999v1" not in ids, (
+            "Id inside ## Decision trace must be ignored"
+        )
+
+        # No phantom entries from the briefing section itself
+        for r in results:
+            assert "arxiv_cs_dc" not in r["id"], (
+                "Source id mentioned in briefing section must not appear as a decision"
+            )
+
 
 # ---------------------------------------------------------------------------
 # 5. URL gate in apply() -- approve blocked without a valid URL

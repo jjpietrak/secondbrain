@@ -7,5 +7,6 @@
   },
   "spillover_order": ["gap", "research", "news"],
   "registry_boost": 0.25,
-  "paid_scrape": {"enabled": false, "max_calls_per_crawl": 2, "engines": ["perplexity"]}
+  "paid_scrape": {"enabled": true, "max_calls_per_crawl": 2, "engines": ["perplexity"]},
+  "learn": {"enabled": true, "w_rep": 0.15, "w_rej": 0.2, "prior_strength": 1.0, "min_reject_freq": 2}
 }

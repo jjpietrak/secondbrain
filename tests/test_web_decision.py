@@ -1892,3 +1892,165 @@ class TestRenderHarvestAndRank:
         # Harvest before Rank, Rank before Selection
         assert harvest_pos < rank_pos
         assert rank_pos < selection_pos
+
+
+# ---------------------------------------------------------------------------
+# Phase-4A: learned kwarg on route_to_sources + build_plan
+# ---------------------------------------------------------------------------
+
+
+def _make_learned_routing(source_id: str, rep: float) -> dict:
+    """Minimal learned dict seeded with one source reputation for routing tests."""
+    return {
+        "updated": "2026-06-24",
+        "sources": {
+            source_id: {"accept": 5, "reject": 0, "rep": rep},
+        },
+        "engines": {},
+        "reject_patterns": {"keywords": []},
+        "calibration": {"accepted_score_mean": 0.7, "rejected_score_mean": 0.3, "n": 5},
+        "processed_ids": [],
+    }
+
+
+class TestRouteToSourcesLearned:
+    """route_to_sources uses learned rep to reorder within each fillable_by class."""
+
+    def _reg_with_two_arxiv(self) -> dict:
+        """Registry with two arxiv sources: A (relevance=3) and B (relevance=5)."""
+        return {
+            "paper-publisher": {
+                "sources": [
+                    {
+                        "id": "arxiv_low_rel",
+                        "name": "arXiv low",
+                        "category": "preprint_repository",
+                        "relevance": 3,
+                        "rss_feed": "",
+                        "url": "",
+                    },
+                    {
+                        "id": "arxiv_high_rel",
+                        "name": "arXiv high",
+                        "category": "preprint_repository",
+                        "relevance": 5,
+                        "rss_feed": "",
+                        "url": "",
+                    },
+                ]
+            },
+            "blog-newsfeed": {"sources": []},
+            "github-repos": {"repositories": []},
+        }
+
+    def _target_arxiv(self) -> dict:
+        return {
+            "target_id": "GAP-01",
+            "lane": "gap",
+            "origin_ids": ["GAP-01"],
+            "queries": ["test query"],
+            "fillable_by": ["arxiv"],
+            "routed_sources": [],
+            "_gap": None,
+            "_dir": None,
+        }
+
+    def test_learned_none_uses_default_ordering(self):
+        """learned=None leaves ordering by relevance unchanged."""
+        reg = self._reg_with_two_arxiv()
+        target = self._target_arxiv()
+        sources = route_to_sources(target, reg, learned=None)
+        # High relevance (5) should come first
+        assert sources[0] == "arxiv_high_rel"
+        assert sources[1] == "arxiv_low_rel"
+
+    def test_high_rep_source_promoted_above_higher_relevance(self):
+        """A source with strong rep+enough to beat the relevance gap is promoted first."""
+        reg = self._reg_with_two_arxiv()
+        target = self._target_arxiv()
+        # arxiv_low_rel has relevance=3; we give it rep=+2.5, so total = 5.5 > 5.0
+        learned = _make_learned_routing("arxiv_low_rel", rep=2.5)
+        sources = route_to_sources(target, reg, learned=learned)
+        # low_rel + big rep should now sort ahead of high_rel
+        assert sources[0] == "arxiv_low_rel", (
+            f"Expected arxiv_low_rel first (rep boost), got {sources}"
+        )
+
+    def test_neutral_rep_does_not_change_order(self):
+        """A source with rep=0.0 does not change the existing order."""
+        reg = self._reg_with_two_arxiv()
+        target = self._target_arxiv()
+        learned = _make_learned_routing("arxiv_low_rel", rep=0.0)
+        sources_no_learned = route_to_sources(target, reg, learned=None)
+        sources_neutral = route_to_sources(target, reg, learned=learned)
+        assert sources_no_learned == sources_neutral
+
+    def test_web_tag_rep_boosts_blog_source(self):
+        """rep_for boosts a blog-newsfeed source in the web tag path."""
+        reg = {
+            "paper-publisher": {"sources": []},
+            "blog-newsfeed": {
+                "sources": [
+                    {"id": "blog_low",  "name": "low",  "relevance": 2, "category": "vendor_blogs", "focus": "test"},
+                    {"id": "blog_high", "name": "high", "relevance": 4, "category": "vendor_blogs", "focus": "test"},
+                ]
+            },
+            "github-repos": {"repositories": []},
+        }
+        target = {
+            "target_id": "GAP-01", "lane": "gap", "origin_ids": ["GAP-01"],
+            "queries": ["test"], "fillable_by": ["web"], "routed_sources": [],
+            "_gap": None, "_dir": None,
+        }
+        # blog_low has relevance=2; give it rep=+3.0 -> total 5.0 >= blog_high (4.0)
+        learned = _make_learned_routing("blog_low", rep=3.0)
+        sources = route_to_sources(target, reg, learned=learned)
+        assert sources[0] == "blog_low", f"Expected blog_low first, got {sources}"
+
+    def test_build_plan_threads_learned_into_routing(self, tmp_path):
+        """build_plan(..., learned=...) threads learned through to route_to_sources."""
+        vault = tmp_path / "vault"
+        gap_dir = vault / "wiki" / "gap"
+        gap_dir.mkdir(parents=True)
+        (gap_dir / "GAP-04-llm.md").write_text(GAP_04_FILE, encoding="utf-8")
+        (vault / "objective" / "direction").mkdir(parents=True)
+        (vault / "meta").mkdir(parents=True)
+
+        # Give arxiv_cs_dc a strong rep so it sorts ahead of everything else
+        reg = {
+            "paper-publisher": {
+                "sources": [
+                    {
+                        "id": "arxiv_cs_dc",
+                        "name": "arXiv cs.DC",
+                        "category": "preprint_repository",
+                        "relevance": 3,
+                        "rss_feed": "",
+                        "url": "",
+                    },
+                    {
+                        "id": "arxiv_cs_ar",
+                        "name": "arXiv cs.AR",
+                        "category": "preprint_repository",
+                        "relevance": 5,
+                        "rss_feed": "",
+                        "url": "",
+                    },
+                ]
+            },
+            "blog-newsfeed": {"sources": []},
+            "github-repos": {"repositories": []},
+        }
+        config = dict(CONFIG_FIXTURE)
+        learned = _make_learned_routing("arxiv_cs_dc", rep=3.0)  # rep=3 boosts cs.DC above cs.AR (rel=5)
+
+        plan = build_plan(str(vault), config, reg, learned=learned)
+        targets = plan["targets"]
+        # At least one target should have arxiv_cs_dc first in routed_sources
+        gap_targets = [t for t in targets if t["lane"] == "gap"]
+        # With rep=3 on arxiv_cs_dc (total 3+3=6) vs arxiv_cs_ar (5+0=5), cs.DC should sort first
+        for t in gap_targets:
+            if t.get("routed_sources"):
+                assert t["routed_sources"][0] == "arxiv_cs_dc", (
+                    f"Expected arxiv_cs_dc first in {t['routed_sources']}"
+                )

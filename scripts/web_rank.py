@@ -197,6 +197,8 @@ def score_candidates(
     registry: dict | None = None,
     allow_remote_ollama: bool = False,
     today: str | None = None,
+    learned: dict | None = None,
+    weights: dict | None = None,
 ) -> list[dict]:
     """Score and rank web crawl candidates by relevance to query.
 
@@ -214,6 +216,16 @@ def score_candidates(
         Passed through to ollama_url(); default False (localhost-only).
     today:
         ISO-8601 date string used as recency reference. Defaults to today's date.
+    learned:
+        Optional learned.json dict (from agent_learn.learn() or loaded directly).
+        When provided, adds a reputation prior to the base score:
+          score = base + w_rep * rep_for(learned, source_id, engine)
+                       - w_rej * reject_penalty(learned, candidate)
+        When None (default), behaviour is identical to before -- no change.
+    weights:
+        Optional dict with keys ``w_rep`` and ``w_rej`` that override the
+        defaults (w_rep=0.15, w_rej=0.2) from web-config learn block.
+        Ignored when learned is None.
 
     Returns
     -------
@@ -226,6 +238,36 @@ def score_candidates(
 
     today_s = _today_str(today)
     query_tokens = _tokenize(query)
+
+    # Resolve learned-prior weights (only used when learned is provided)
+    _w_rep: float = 0.15
+    _w_rej: float = 0.2
+    if learned and weights:
+        _w_rep = float(weights.get("w_rep", _w_rep))
+        _w_rej = float(weights.get("w_rej", _w_rej))
+
+    # Lazy import of agent_learn (only when learned is provided)
+    _agent_learn = None
+    if learned:
+        try:
+            import sys as _sys
+            import os as _os
+            _scripts = str(Path(__file__).resolve().parent)
+            if _scripts not in _sys.path:
+                _sys.path.insert(0, _scripts)
+            import agent_learn as _agent_learn
+        except ImportError:
+            _agent_learn = None
+
+    def _apply_learned_prior(cand: dict, base: float) -> float:
+        """Apply learned reputation/reject adjustment to a base score."""
+        if not learned or _agent_learn is None:
+            return base
+        src_id = cand.get("source_id", "") or ""
+        engine = cand.get("engine", "") or ""
+        rep = _agent_learn.rep_for(learned, src_id, engine)
+        rej = _agent_learn.reject_penalty(learned, cand)
+        return base + _w_rep * rep - _w_rej * rej
 
     # Shallow-copy all candidates so we don't mutate caller's dicts
     result = [dict(c) for c in candidates]
@@ -253,10 +295,12 @@ def score_candidates(
                 cand_text = title + ". " + snippet
                 try:
                     c_emb = embed_one(url, DEFAULT_MODEL, cand_text)
-                    cand["score"] = float(cosine(q_emb, c_emb))
+                    base = float(cosine(q_emb, c_emb))
                 except Exception:
                     # Fallback to deterministic for this candidate
-                    cand["score"] = _deterministic_score(cand, query_tokens, registry, today_s)
+                    base = _deterministic_score(cand, query_tokens, registry, today_s)
+                cand["base_score"] = base
+                cand["score"] = _apply_learned_prior(cand, base)
 
             # Sort: desc by score, tie-break by source_id (stable)
             result.sort(key=lambda c: (-c["score"], c.get("source_id", "")))
@@ -264,7 +308,9 @@ def score_candidates(
 
     # ---- Deterministic fallback ----
     for cand in result:
-        cand["score"] = _deterministic_score(cand, query_tokens, registry, today_s)
+        base = _deterministic_score(cand, query_tokens, registry, today_s)
+        cand["base_score"] = base
+        cand["score"] = _apply_learned_prior(cand, base)
 
     # Sort: desc by score, tie-break by source_id for deterministic stability
     result.sort(key=lambda c: (-c["score"], c.get("source_id", "")))

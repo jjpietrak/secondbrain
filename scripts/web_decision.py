@@ -800,6 +800,8 @@ def route_to_sources(
     target: dict,
     registry: dict,
     trace: "DecisionTrace | None" = None,
+    *,
+    learned: dict | None = None,
 ) -> list[str]:
     """Map fillable_by tags to registry source ids.
 
@@ -809,11 +811,34 @@ def route_to_sources(
       web -> blog-newsfeed sources (rank by relevance + focus-keyword overlap)
       forum/x -> [] (handled by API engines, not registry)
 
+    When ``learned`` is provided, a source's reputation score (from agent_learn.rep_for)
+    is added to its sort key so higher-reputation sources sort first WITHIN their
+    fillable_by class.  ``learned=None`` leaves ordering unchanged (backward-compatible).
+
     Returns registry ids best-first, capped at 5.
     """
     fillable_by = target.get("fillable_by", [])
     result_ids: list[str] = []
     seen: set[str] = set()
+
+    # Lazy import of agent_learn for rep_for (only when learned is provided)
+    _agent_learn = None
+    if learned:
+        try:
+            import sys as _sys
+            from pathlib import Path as _Path
+            _scripts = str(_Path(__file__).resolve().parent)
+            if _scripts not in _sys.path:
+                _sys.path.insert(0, _scripts)
+            import agent_learn as _agent_learn
+        except ImportError:
+            _agent_learn = None
+
+    def _rep(source_id: str) -> float:
+        """Return learned reputation for source_id (0.0 when not available)."""
+        if learned and _agent_learn is not None:
+            return _agent_learn.rep_for(learned, source_id, "")
+        return 0.0
 
     # For trace: collect all candidates considered with scoring details
     _trace_considered: list[dict] = []
@@ -827,7 +852,9 @@ def route_to_sources(
                 s for s in paper_sources
                 if s.get("category", "") in _ARXIV_CATEGORIES
             ]
-            arxiv_sources.sort(key=lambda s: -int(s.get("relevance", 0)))
+            arxiv_sources.sort(
+                key=lambda s: -(int(s.get("relevance", 0)) + _rep(s["id"]))
+            )
             for s in arxiv_sources:
                 chosen = s["id"] not in seen and len(result_ids) < 5
                 reason = "chosen" if chosen else ("already-seen" if s["id"] in seen else "cap-5")
@@ -846,7 +873,9 @@ def route_to_sources(
 
         elif tag == "github":
             repos = registry.get("github-repos", {}).get("repositories", [])
-            repos_sorted = sorted(repos, key=lambda s: -int(s.get("relevance", 0)))
+            repos_sorted = sorted(
+                repos, key=lambda s: -(int(s.get("relevance", 0)) + _rep(s["id"]))
+            )
             for s in repos_sorted:
                 chosen = s["id"] not in seen and len(result_ids) < 5
                 reason = "chosen" if chosen else ("already-seen" if s["id"] in seen else "cap-5")
@@ -872,7 +901,7 @@ def route_to_sources(
                 rel = float(s.get("relevance", 0))
                 focus = (s.get("focus", "") + " " + s.get("name", "")).lower()
                 overlap = sum(1 for kw in target_keywords if kw.lower() in focus)
-                return rel + overlap * 0.5
+                return rel + overlap * 0.5 + _rep(s["id"])
 
             blog_sorted = sorted(blog_sources, key=lambda s: -_web_score(s))
             for s in blog_sorted:
@@ -964,8 +993,14 @@ def build_plan(
     config: dict,
     registry: dict,
     trace: "DecisionTrace | None" = None,
+    *,
+    learned: dict | None = None,
 ) -> dict:
     """Orchestrate parse -> merge -> lanes -> news -> route.
+
+    When ``learned`` is provided it is threaded into ``route_to_sources`` so
+    higher-reputation sources sort earlier within each fillable_by class.
+    ``learned=None`` (default) leaves all ordering unchanged.
 
     Returns {"targets": [...ordered: gap, research, news...], "config": config, "notes": [...]}.
     """
@@ -994,7 +1029,9 @@ def build_plan(
 
     # Route to sources
     for target in lanes["gap"] + lanes["research"]:
-        target["routed_sources"] = route_to_sources(target, registry, trace=trace)
+        target["routed_sources"] = route_to_sources(
+            target, registry, trace=trace, learned=learned
+        )
 
     # News target
     purpose_text = ""

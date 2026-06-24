@@ -115,6 +115,12 @@ def _import_ingest_index():
     return _ii
 
 
+def _import_agent_learn():
+    """Lazy import of agent_learn (monkeypatch-safe)."""
+    import agent_learn as _al
+    return _al
+
+
 # ---------------------------------------------------------------------------
 # Config / registry / PURPOSE loaders (reuse web_decision's loaders)
 # ---------------------------------------------------------------------------
@@ -735,6 +741,7 @@ def _write_nightly_report(
     today: str,
     selected: list[dict],
     trace=None,  # DecisionTrace | None
+    briefing: str = "",
 ) -> Path:
     """Write meta/nightly_report/<today>.md with one interactive block per candidate.
 
@@ -752,6 +759,12 @@ def _write_nightly_report(
 
       **Relevance** -- <relevance paragraph>
 
+    When ``briefing`` is non-empty, a ``## Learning briefing`` section is inserted
+    at the TOP of the body (right after the intro instruction line, BEFORE the first
+    ``### N.`` candidate block).  report_approve.py already stops at ``## Decision
+    trace`` and keys on the candidate checkbox lines, so a top briefing section does
+    NOT affect parsing.
+
     The approve/reject/reason lines are UNCHANGED from the previous format so
     report_approve.py continues to parse them correctly.
     Frontmatter and '## Decision trace' section are preserved unchanged.
@@ -766,6 +779,9 @@ def _write_nightly_report(
     # Build candidate blocks
     if selected:
         blocks: list[str] = [_REPORT_INSTRUCTION + "\n\n"]
+        # Embed the learning briefing BEFORE the first candidate block
+        if briefing:
+            blocks.append(briefing + "\n\n")
         for n, c in enumerate(selected, start=1):
             ident = _cand_ident(c)
             origin_ids = c.get("origin_ids") or []
@@ -880,9 +896,25 @@ def crawl(
     purpose_text = _load_purpose(vault_root)
     ingest_rows = _load_ingest_rows(vault_root)
 
+    # 1b. Run agent_learn at crawl start (reads PREVIOUS run outcomes, updates learned.json)
+    #     Degrades gracefully: on any error or if learn.enabled is false, set learned={}.
+    learned: dict = {}
+    briefing: str = ""
+    if config.get("learn", {}).get("enabled"):
+        try:
+            al = _import_agent_learn()
+            _apply = not dry_run
+            learn_result = al.learn(vault_root, "web", apply=_apply, today=today_s)
+            learned = learn_result.get("learned", {})
+            briefing = learn_result.get("briefing", "")
+        except Exception as exc:
+            print(f"[web_crawl] agent_learn failed (degrading gracefully): {exc}", file=sys.stderr)
+            learned = {}
+            briefing = ""
+
     # 2. Build plan (threads trace into parse/merge/lanes/route steps)
     wd = _import_web_decision()
-    plan = wd.build_plan(vault_root, config, registry, trace=trace)
+    plan = wd.build_plan(vault_root, config, registry, trace=trace, learned=learned)
     targets = plan.get("targets", [])
 
     # 3. Harvest: one call per target; failures degrade gracefully
@@ -1063,6 +1095,8 @@ def crawl(
         registry=registry,
         allow_remote_ollama=allow_remote_ollama,
         today=today_s,
+        learned=learned or None,
+        weights=config.get("learn") if learned else None,
     )
 
     # Record the rank/scores trace step
@@ -1132,13 +1166,17 @@ def crawl(
                 objective_ids=list(origin_ids),
                 published=published,
                 url=enqueue_url,
+                source_id=c.get("source_id", ""),
+                engine=c.get("engine", ""),
             )
             enqueued_ids.append(row.get("id", ident))
         except Exception as exc:
             print(f"[web_crawl] enqueue({ident!r}) failed: {exc}", file=sys.stderr)
 
-    # Write nightly report (with embedded decision trace)
-    report_path = _write_nightly_report(vault_root, today_s, selected, trace=trace)
+    # Write nightly report (with embedded decision trace and learning briefing)
+    report_path = _write_nightly_report(
+        vault_root, today_s, selected, trace=trace, briefing=briefing
+    )
 
     return {
         "selected": selected,

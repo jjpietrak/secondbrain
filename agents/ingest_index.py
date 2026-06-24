@@ -83,6 +83,8 @@ _V3_DEFAULTS = {
     "rejected_at": None,
     "rejection_reason": "",
     "published": None,
+    "source_id": "",
+    "engine": "",
 }
 
 _ARXIV = re.compile(r"(?:arxiv[:/ ]?)?\b(\d{4}\.\d{4,5})(v\d+)?\b", re.IGNORECASE)
@@ -365,7 +367,8 @@ def _normalize_enqueue_id(raw: str) -> tuple[str, str, str]:
 def enqueue(ident: str, *, url: str | None = None, title: str = "",
             rationale: str = "", score: float | None = None,
             discovered_by: str = "", objective_ids: list[str] | None = None,
-            published: str | None = None, name: str | None = None) -> dict:
+            published: str | None = None, name: str | None = None,
+            source_id: str = "", engine: str = "") -> dict:
     """Add a `waiting_approval` candidate (no file on disk). Idempotent / status-safe:
     - if the id is already `rejected` -> NO-OP (sticky; never re-proposed);
     - if the id already exists in any other status -> update metadata only, NEVER regress
@@ -415,6 +418,11 @@ def enqueue(ident: str, *, url: str | None = None, title: str = "",
     # published: only store when provided (do NOT clobber an existing value with None)
     if published is not None:
         row["published"] = published
+    # source_id / engine: only store non-empty values; never clobber with ""
+    if source_id:
+        row["source_id"] = source_id
+    if engine:
+        row["engine"] = engine
     _save(name, data)
     render_md(name)
     return row
