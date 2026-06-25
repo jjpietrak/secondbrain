@@ -1,64 +1,26 @@
-# Research Agent -- Memory index
+# Research agent memory
 
-One line per memory. Fact files live beside this index (one fact per file). Keep this index
-current; never store fact bodies here.
+Research agent: manages the objective graph (`objective/`) and produces synthesis over
+the local vault (`research/`). Owns direction tracking, question lifecycle
+(promote/solve), and deep synthesis. Works only with local vault content -- no web
+browsing.
 
-## Project context
+Add one fact per file and link it here with a one-line pointer. Never duplicate facts
+that are derivable from vault contents or the code.
 
-- Second Brain v0.2 build on branch `claude/v2-prototype` in `/home/jpietrak/second_brain`.
-- Active vault: Inference-Disagg (inference disaggregation research).
-- Vault PURPOSE: resolve the role of memory-bandwidth disaggregation in serving large language
-  models at scale (see `objective/purpose/PURPOSE.md` once seeded by the user).
-- Phase 2 plan: `plans/phase-2-objectives.md`. Research agent definition: `.claude/agents/research.md`.
-- Authoritative docs (frozen, read-only): `docs/{requirements,agents,vault-schema,skills-description}.md`.
+## Index
 
-## Phase 2 - what was built (populate after Phase 2 completes)
+_(link fact files here as you add them)_
 
-- [ ] W1d shipped: `.claude/agents/research.md` created (Phase 2 Wave 1).
-- [ ] `scripts/rbac_guard.py` extended with `research` role + R4 sanction signal.
-- [ ] W2: skills obj-query, obj-synth, deep-synthesis, wiki-gaps created.
-- [ ] W3: skills question-promote, question-solve, obj-reconcile created.
-- [ ] W4: `objective/` scaffold applied to Inference-Disagg vault; user seeded purpose/topic/questions.
+## Standing conventions
 
-## obj-reconcile run (2026-06-22)
-
-- All 5 passes clean: 0 stale dirs, 0 dup proposals, 0 no-topic Qs.
-- D-0001 (no-web) blocks validation proxy -> any future ambiguous-duplicate case must go to TODO, not adjudication.
-- No TODO nodes created; no direction or proposal files modified.
-
-## Objective graph state (updated 2026-06-24)
-
-- Current open research questions: 6 (Q-0001..Q-0003, Q-0005..Q-0007); Q-0004 SOLVED.
-- Current open directions: 6 (DIR-0001..DIR-0006), DIR-0006 is the Q-0004 solve provenance record.
-- Current proposals: 2 (QP-0001 software disagg primitives, QP-0002 Iris Tetra optical node extension), both pending user approval.
-- Last skill run: question-solve Q-0004, 2026-06-24.
-- Q-0004 SOLVED. DIR-0002 unblocked (PIM path is Iris Tetra extension template). Q-0002 is the next deep-synthesis candidate.
-
-## Synthesis decisions (updated 2026-06-22)
-
-- `--json` IS supported but it is a GLOBAL flag that must come BEFORE the verb:
-  `python -m agents.objectives --json frontier` / `--json decisions` (NOT `frontier --json`).
-  Post-verb `--json` errors with "unrecognized arguments" - that is placement, not absence.
-- next-id uses hyphen not underscore: `next-id direction`, `next-id research_question_proposal`.
-- Write files to vault via wsl.exe bash + python3 (Windows path EPERM blocks Write tool).
-- Heredoc in wsl.exe bash breaks on parentheses in content; use python3 inline or Write tool
-  to UNC path (\\wsl.localhost\ubuntu\tmp\...) then copy with python3.
-- gather_local_context + excerpts_to_wiki_baseline work correctly for keyword scoring.
-- obj-synth reasoning pattern: B_rank formula derivation from Baidu sources is strong signal.
-- Deep zone analysis: H800 dead zone for DeepSeek-V3 at NF<=2; Step-3 essentially immune.
-- Minimum B_ScaleOut to eliminate dead zone at NF=X for DeepSeek-V3: 20*X GB/s.
-
-## Question -> answer linkage
-
-- Q-0001 -> research/Q-0001.md (partial, 2026-06-22): criteria A+B answered analytically;
-  criterion C (optical fabric scale-out BW) deferred to Phase 3 (DIR-0004 needed).
-- Q-0004 -> SOLVED (2026-06-24): solved: yes; answer_ref: wiki/sources/llmservingsim-2-2602.23036.md.
-  All 3 acceptance criteria met. No separate research/Q-0004.md written; source page is the answer ref.
-  question-solve used SB_SANCTIONED_SKILL=question-solve; index updated (6 open, 1 solved); relink applied.
-- Q-0002..Q-0003, Q-0005..Q-0006 -> no reports yet.
-
-## RBAC R4 contract reminder
-
-The `question-promote` and `question-solve` skills MUST export `SB_SANCTIONED_SKILL` before
-writing to `objective/research_question/`. See `.claude/agents/research.md` for the full contract.
-Wave-3 skill authors: enforce this or the RBAC guard will block the write.
+- Write allowlist: `objective/research_question_proposal/`, `objective/direction/`,
+  `objective/agent_todo/`, `objective/hot.md`, `objective/index.md`, `research/`,
+  `meta/nightly_report/`. Never `wiki/`, `raw/`, `meta/{health,cost}_report/`, `docs/`.
+  A PreToolUse RBAC hook enforces this -- see [[rbac]] in backend memory.
+- R4 exception: writing to `objective/research_question/` requires
+  `export SB_SANCTIONED_SKILL=question-promote` (or `question-solve`) set in the
+  subagent's shell environment before the write, unset after.
+- `python -m agents.objectives --json <verb>` -- the `--json` flag is GLOBAL and must
+  come before the verb. Post-verb placement errors with "unrecognized arguments".
+- `next-id` uses hyphens: `next-id direction`, `next-id research_question_proposal`.

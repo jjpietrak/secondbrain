@@ -1,227 +1,224 @@
-# HOWTO — using the Second Brain agent
+# HOWTO -- Second Brain day-to-day guide
 
-Day-to-day reference for working with the Claude Code agent in `/home/jpietrak/second_brain`.
-For architecture, setup, and config see [`README.md`](README.md); for the agent contract see
-[`CLAUDE.md`](CLAUDE.md).
+Day-to-day reference for working with the Claude Code agents.
+For architecture, install, and config see `README.md`; for the agent contract see `CLAUDE.md`.
 
 ---
 
 ## Quick start
 
 ```bash
-cd /home/jpietrak/second_brain
-claude                       # interactive session on the ACTIVE vault
+# Launch an interactive session against the active vault
+claude
+# or, to target a specific vault:
+VAULT=my-vault claude
 ```
-At session start the agent resolves the active vault, reads its `_CLAUDE.md` (rules + PURPOSE),
-and reads `wiki/hot.md` for working context. Then just type a `/command` or talk to it.
 
-**Everything is filtered by the vault PURPOSE.** Each vault has one research subject (its
-`_CLAUDE.md` → "## Vault purpose"). Ingest, research, and discovery prioritise on-purpose
-material and flag off-purpose content rather than dropping it. A direct instruction from you
-overrides the filter for that one action.
+At session start the agents resolve the active vault, load its PURPOSE, and read `wiki/hot.md`
+for working context. Then type a skill command or talk to the agent directly.
+
+**Everything is filtered by the vault PURPOSE.** Each vault has one research subject defined in
+`config/vaults/<name>/vault.yaml` (`purpose:`). Ingest, research, and discovery prioritise
+on-purpose material and flag off-purpose content rather than dropping it silently. A direct
+instruction overrides the filter for that one action.
 
 ---
 
 ## Active vault (multi-vault)
 
-One vault is active per run, chosen by the `VAULT` env var (default in `config/secondbrain.yaml`).
+One vault is active per session, chosen by the `VAULT` env var (default in
+`config/secondbrain.yaml`).
 
 ```bash
-python -m agents.vault_config name        # active vault name        (e.g. Inference-Disagg)
-python -m agents.vault_config path        # active vault root         ($VAULT_ROOT)
+python -m agents.vault_config name        # active vault name
+python -m agents.vault_config path        # active vault root path
 python -m agents.vault_config purpose      # the PURPOSE one-liner
-python -m agents.vault_config notebook     # the vault's NotebookLM notebook id/alias
 python -m agents.vault_config list         # all registered vaults
 
-VAULT=OtherVault claude                    # run the agent against a different vault
+VAULT=other-vault claude                   # run against a different vault
 ```
-Per-vault config lives in `config/vaults/<name>/{vault,topics,budget}.yaml`; rules + PURPOSE
-live in `<vault>/_CLAUDE.md`. The LiteLLM proxy and API keys (`.env`) are shared across vaults.
+
+Per-vault config: `config/vaults/<name>/{vault,topics,budget}.yaml`.
+Shared across vaults: the LiteLLM proxy config and API keys in `.env`.
 
 ---
 
-## Commands (slash commands in an interactive `claude` session)
+## Skills (slash commands in a `claude` session)
 
-### Capture & ingest
+### Capture and ingest
+
 | Command | What it does |
 |---------|--------------|
-| `wiki-ingest <file\|url\|text>` | Absorb one source — the vault rewrites itself: updates entities, rewrites stale claims, synthesises concepts, resolves contradictions. Raw saved to `raw/` (immutable). |
-| `wiki-ingest` *(no arg, or `--new` / `--all`)* | **Batch**: ingest every raw source not yet ingested. Deduped by stable source-id index — safe to re-run; only new/changed files are processed. |
+| `wiki-ingest <file>` | Absorb one source (PDF, Markdown, plain text). The vault rewrites itself: updates entities, rewrites stale claims, synthesises concepts, resolves contradictions. Raw file saved to `raw/` (immutable). |
+| `wiki-ingest` (no arg) | Batch ingest: process every raw source not yet ingested. Deduped by stable source-id index -- safe to re-run. |
 | `wiki-save` | Save everything worth keeping from the current conversation into the vault. |
 
-> **Retired (v0.1 personal-PKM):** `/obsidian-capture`, `/obsidian-daily`, `/obsidian-task` are deleted. They referenced a `daily/` folder and kanban boards not present in the v0.2 vault schema.
+### Research and synthesis
 
-### Research
 | Command | What it does |
 |---------|--------------|
-| `/obsidian-research <topic> [--claude\|--perplexity\|--free]` | v0.1; superseded by `research` skill (Phase 2, not yet built). Still functional. |
-| `/obsidian-research-deep <topic> [--claude\|--perplexity\|--free]` | v0.1; superseded by `research-deep` skill (Phase 2, not yet built). Still functional. |
-| `/obsidian-notebooklm <topic>` | v0.1; superseded by `nlm` skill (Phase 5, not yet built). Still functional. |
-| `/obsidian-youtube <url>` | v0.1; superseded by `youtube` skill (Phase 5, not yet built). Still functional. |
-| `/obsidian-architect <path>` | v0.1; superseded by `code` agent (backlog, Phase 7). Still functional. |
+| `obj-synth` | Synthesise the objective graph: scan open questions, generate research directions, propose new questions from gaps. |
+| `deep-synthesis <question>` | Deep research pass on a specific research question; writes `research/deep/<id>.md`. |
+| `obj-query <q>` | Query the objective graph: find relevant questions, directions, decisions. |
+| `obj-reconcile` | Find and resolve contradictions or redundancy in the objective graph. |
+| `question-promote <QP-id>` | Promote a pending question proposal to a confirmed research question. |
+| `question-solve <Q-id>` | Mark a research question as solved, linking to the answer. |
+| `wiki-synth` | Synthesise across wiki pages on a topic; produces a synthesis page. |
 
-**Research engine** (`/obsidian-research[-deep]`). Precedence: a flag in the command >
-the vault default (`research_engine` in `config/vaults/<vault>/vault.yaml`, check with
-`python -m agents.vault_config engine`) > `claude`.
-| Engine | Backend | Cost |
-|--------|---------|------|
-| `--claude` *(default)* | Claude's native **WebSearch + WebFetch** (+ the `deep-research` skill for the deep variant) | **$0** — subscription / Agent SDK credit, no API key |
-| `--perplexity` | Perplexity Sonar / sonar-deep-research (+ Grok for X) | metered (~$0.20–0.80 deep); needs `PERPLEXITY_API_KEY` |
-| `--free` | key-less sources (arXiv, HN, Reddit, Wikipedia, Semantic Scholar) | $0, shallow |
+### Search and query
 
-The `claude` engine **replaces Perplexity** with Claude's own agentic web research — same
-citation-grounded shape, at $0 marginal cost. Change the default per vault by editing
-`research_engine:` in that vault's `vault.yaml`.
-
-### NotebookLM (real notebook, via `nlm` CLI — $0)
 | Command | What it does |
 |---------|--------------|
-| `/obsidian-notebooklm-sync [id\|alias]` | v0.1; superseded by `nlm` skill (Phase 5, not yet built). Still functional. Bidirectional sync with the vault's real Google NotebookLM notebook. |
+| `wiki-query <q>` | Smart vault search: BM25 + contextual-prefix + Ollama cosine rerank (falls back to BM25 if Ollama unavailable). |
+| `wiki-retrieve <q>` | Lower-level retrieval; returns a ranked list of candidate pages. |
+| `wiki-gaps` | Identify knowledge gaps: pages with dead links or under-developed concepts; writes `wiki/gap/` files. |
 
-### Search & maintenance
+### Maintenance and health
+
 | Command | What it does |
 |---------|--------------|
-| `wiki-query <q>` | Smart vault search — BM25 + contextual-prefix + ollama cosine rerank. |
-| `wiki-lint` | Structural lint (orphans, dead links, missing frontmatter, stale pages, stubs). |
-| `wiki-health` | Full health report with scoring → `meta/health_report/`. |
-| `wiki-reconcile` | Find and resolve contradictions across the vault. |
-| `/obsidian-sync` | `git add/commit/push` the vault repo. Run after substantive changes. |
-| `/cost-report` | Today's spend per action/provider + remaining budget → `meta/cost_report.md`. |
+| `wiki-lint` | Structural lint: orphans, dead links, missing frontmatter, stale pages, stubs. |
+| `wiki-health` | Full health report with scoring -> `meta/health_report/`. |
+| `wiki-stats` | Page counts, type breakdown, status distribution. |
+| `wiki-reconcile` | Find and resolve factual contradictions across the vault. |
+| `wiki-init` | Scaffold a fresh vault or reconcile an existing vault to the v0.2 schema. |
+| `wiki-cite` | Validate source citations: check AI-first rules compliance, citation quality. |
+| `vault-health` | Backend-level audit: RBAC, cross-area link checks, orphan detection. |
+| `vault-push` | Commit and push the vault repo (git). Run after substantive changes. |
+| `cost-report` | Today's spend per action/provider + remaining budget -> `meta/cost_report.md`. |
+
+### Reasoning skills
+
+| Command | What it does |
+|---------|--------------|
+| `think <topic>` | Structured thinking pass: break down a complex question, enumerate assumptions. |
+| `challenge <claim>` | Steelman + challenge: generate the strongest objection to a claim. |
+| `connect <a> <b>` | Find non-obvious connections between two concepts or pages. |
 
 ---
 
-## Automations (shell / Python, run from `/home/jpietrak/second_brain` in WSL)
+## Automations (shell / Python)
 
-### Nightly run — `agents/nightly_run.sh`
-Tier-2 local maintenance (pull → ingest new `raw/` → **research due topics** → lint → health →
-NotebookLM sync → commit/push), all on Agent SDK credit ($0). Per-vault budget gate + 20h
-catch-up guard. Research **always uses the `--claude` engine** (never Perplexity in unattended
-runs); topics due = `daily` every night + `weekly` on Mondays, capped by `NIGHTLY_RESEARCH_MAX`.
+### Nightly run -- `agents/nightly_run.sh`
+
+Tier-2 local maintenance (pull -> ingest new `raw/` -> research due topics -> lint -> health ->
+commit/push), all on Agent SDK credit ($0). Per-vault budget gate + 20h catch-up guard.
+
 ```bash
-DRY_RUN=1 bash agents/nightly_run.sh          # rehearse the active vault (no writes)
-bash agents/nightly_run.sh                     # run the active vault for real
+DRY_RUN=1 bash agents/nightly_run.sh          # rehearse (no writes)
+bash agents/nightly_run.sh                     # run the active vault
 VAULT=all bash agents/nightly_run.sh           # process every enabled vault
-NIGHTLY_RESEARCH_MAX=5 bash agents/nightly_run.sh   # raise the per-night research cap (default 3)
-bash scripts/setup_cron.sh                     # register the 2 AM Windows Task Scheduler job
 ```
 
-### NotebookLM sync — `scripts/research/notebooklm_sync.py`
-Same engine as `/obsidian-notebooklm-sync`. Requires `nlm login` (cookies, ~20 min sessions).
-```bash
-uv run -m scripts.research.notebooklm_sync --notebook "$(python -m agents.vault_config notebook)"
-#   --dry-run     preview actions, change nothing
-#   --pull-only   only pull notebook notes down
-#   --push-only   only push push/*.md up as sources
-#   --prune       delete remote sources whose local push/ file was removed
-#   --probe       dump raw nlm JSON shapes (debugging)
-```
-Folder: `<vault>/research/notebooklm/<notebook-slug>/` — `push/` (you → notebook),
-`notes/` (notebook → you), `.nlm-sync.json` (manifest). Conflicts back up to `.conflicts/`.
+Topics due = `daily` every night + `weekly` on Mondays. Configure in
+`config/vaults/<name>/topics.yaml`.
 
-### Ingest index — `agents/ingest_index.py`
-Per-vault registry of which sources are ingested vs pending. Canonical store
-`<vault>/meta/ingest_index.json`; human-readable table `<vault>/meta/ingest_index.md`.
-**Keyed by a stable source id — arXiv/DOI/YouTube/URL/content-hash, NOT the filename** — so a
-renamed file is never mistaken for a new source. Each row also keeps `filename`, `url`, title,
-type, and the `source_page` it produced. Powers batch `wiki-ingest` and the nightly step.
-```bash
-python -m agents.ingest_index scan              # reconcile vs disk: register new + mark deleted
-python -m agents.ingest_index status            # total / ingested / pending / deleted counts
-python -m agents.ingest_index pending           # raw files new or changed since last ingest
-python -m agents.ingest_index deleted           # sources whose file was removed from raw/
-python -m agents.ingest_index id <relpath>      # show the derived source id for one file
-python -m agents.ingest_index mark <relpath> --source-page <wiki/sources/x.md>   # record ingested
-python -m agents.ingest_index report            # (re)write the meta/ingest_index.md table
-```
-Status of a row: **pending** (id new, or content hash changed → re-ingest), **ingested**, or
-**deleted** (file removed from `raw/` — `scan` marks it, row kept for history; if the file
-reappears it flips back to pending). The nightly runs `scan` first, so deletions auto-reconcile.
-IDs: `arxiv:2401.12345`, `doi:10.…`, `youtube:<id>`, `url:<canonical>`, `sha256:<hash>`.
+### PDF to Markdown -- `scripts/pdf_extract.py`
 
-### PDF → Markdown — `scripts/pdf_extract.py`
-Used by `wiki-ingest` for PDFs (PyMuPDF via `pymupdf4llm`) — far cheaper and more reliable
-than vision-reading pages, especially multi-column papers. Text PDFs only (no OCR).
+Used automatically by `wiki-ingest` for PDFs (PyMuPDF). Text PDFs only (no OCR).
+
 ```bash
-uv run -m scripts.pdf_extract <file.pdf>                 # clean Markdown to stdout
-uv run -m scripts.pdf_extract <file.pdf> --pages 0-15 --max-chars 80000 --out notes.md
+uv run -m scripts.pdf_extract <file.pdf>                          # Markdown to stdout
+uv run -m scripts.pdf_extract <file.pdf> --pages 0-15 --out out.md
 ```
 
-### Cost & health — `agents/cost_tracker.py`, `agents/vault_health.py`
+### Ingest index -- `agents/ingest_index.py`
+
+Per-vault registry of which sources have been ingested. Canonical store:
+`<vault>/meta/ingest_index.json`; human-readable: `<vault>/meta/ingest_index.md`.
+
 ```bash
-python agents/cost_tracker.py check            # exit 1 if today's paid spend ≥ daily cap
+python -m agents.ingest_index scan              # register new + mark deleted
+python -m agents.ingest_index status            # total / ingested / pending / deleted
+python -m agents.ingest_index pending           # raw files not yet ingested
+```
+
+### Cost and health
+
+```bash
+python agents/cost_tracker.py check            # exit 1 if today's paid spend >= daily cap
 python agents/cost_tracker.py report           # write <vault>/meta/cost_report.md
-python agents/vault_health.py                  # structural audit → <vault>/meta/health_report.md
+python agents/vault_health.py                  # structural audit -> meta/health_report/
 ```
 
-### Research backends — `scripts/research/*.py`
-These power the `--perplexity` and `--free` engines; the default `--claude` engine is
-agent-native (WebSearch/WebFetch, no script). Runnable directly:
-```bash
-uv run -m scripts.research.research "<topic>" [--free]       # perplexity/free web dossier
-uv run -m scripts.research.research_deep "<topic>" [--free]  # perplexity/free deep research
-uv run -m scripts.research.notebooklm --topic "<t>"          # Gemini File Search grounded synthesis
-```
+### Unattended Claude -- `scripts/claude_agent.sh`
 
-### Unattended Claude — `scripts/claude_agent.sh`
 Wrapper for `claude -p` automation: loads `CLAUDE_CODE_OAUTH_TOKEN` (Agent SDK credit, $0) and
 unsets `ANTHROPIC_API_KEY` so calls never hit the metered API. Used by the nightly run.
 
-### Obsidian REST API — `scripts/obsidian_api.sh`
-Helpers for live edits while Obsidian is running (HTTPS :27124):
+### Obsidian REST API -- `scripts/obsidian_api.sh`
+
+Helpers for live edits while Obsidian is open (HTTPS, port 27124; requires the Local REST API
+plugin):
+
 ```bash
-source scripts/obsidian_api.sh && obsidian_ping      # also: obsidian_list / _get_file / _put_file / _search
+source scripts/obsidian_api.sh && obsidian_ping
+# also: obsidian_list, obsidian_get_file, obsidian_put_file, obsidian_search
+```
+
+### NotebookLM sync -- `scripts/research/notebooklm_sync.py`
+
+Bidirectional sync with a real Google NotebookLM notebook via the `nlm` CLI ($0, uses Google
+cookies). Set the notebook in `config/vaults/<name>/vault.yaml` (`notebooklm_notebook:`).
+
+```bash
+# Authenticate once:
+nlm login
+# Then sync:
+uv run -m scripts.research.notebooklm_sync \
+    --notebook "$(python -m agents.vault_config notebook)"
+#   --dry-run      preview actions, no writes
+#   --pull-only    only pull notebook notes down
+#   --push-only    only push vault files up as sources
 ```
 
 ---
 
 ## Recipes
 
-**Ingest a paper and grow the wiki**
+**Ingest a paper and grow the wiki:**
 ```
-wiki-ingest /mnt/c/Obsidian/Inference-Disagg/raw/papers/some-paper.pdf
-wiki-lint            # check structural health afterward
-/obsidian-sync       # commit + push
-```
-
-**Research a topic, vault-aware**
-```
-/obsidian-research-deep disaggregated prefill/decode KV-cache transfer
-# v0.1 command - still works; replaced by research-deep skill in Phase 2
-# scans the vault, fills gaps, synthesises a delta, propagates into the wiki
+# Drop the PDF into <vault>/raw/papers/, then in Claude Code:
+wiki-ingest
+wiki-lint
+vault-push
 ```
 
-**Two-way NotebookLM**
+**Research a question, vault-aware:**
 ```
-# 1. drop on-purpose notes into <vault>/research/notebooklm/<slug>/push/
-# 2. sync (pulls the notebook's notes down, pushes your push/ files up as sources):
-/obsidian-notebooklm-sync
-# v0.1 command - still works; replaced by nlm skill in Phase 5
+# First make sure your vault has an objective graph (run setup.sh + edit PURPOSE.md).
+obj-synth
+deep-synthesis Q-0001
 ```
 
-**Daily upkeep (or let the nightly do it)**
+**Batch process a folder of PDFs:**
+```
+wiki-ingest --all
+wiki-stats
+```
+
+**Add a new vault:**
+```bash
+scripts/setup.sh --vault-path /path/to/new-vault --name new-vault \
+    --purpose "One sentence purpose."
+# Then restart Claude Code and: VAULT=new-vault claude
+```
+
+**Daily upkeep (or let the nightly do it):**
 ```
 wiki-lint
-/cost-report
-/obsidian-sync
-```
-
-**Add a new vault**
-```
-1. Create the vault folder in Obsidian with its own _CLAUDE.md ("## Vault purpose").
-2. mkdir config/vaults/<Name>/ ; add vault.yaml (path, purpose) [+ topics.yaml, budget.yaml].
-3. Register it under `vaults:` in config/secondbrain.yaml.
-4. VAULT=<Name> claude         # work on it;  VAULT=all in the nightly includes it.
+cost-report
+vault-push
 ```
 
 ---
 
-## Billing — route to the cheapest pool (details in [`README.md`](README.md))
+## Billing
 
-- **Interactive subscription** ($0): your normal `claude` sessions.
-- **Agent SDK credit** ($0): `claude -p` automation via `scripts/claude_agent.sh`.
-- **Pay-as-you-go**: LiteLLM → Ollama (free) / Gemini (free tier) / Anthropic Haiku (metered).
-  Guarded by the per-vault `daily_usd_cap` and a hard limit on the Console key.
-- **NotebookLM (`nlm`)**: $0 — uses your Google account cookies, no API pool.
+- **Interactive subscription ($0):** normal `claude` sessions.
+- **Agent SDK credit ($0):** `claude -p` automation via `scripts/claude_agent.sh`.
+- **Pay-as-you-go:** LiteLLM -> Ollama (free) / Gemini (free tier) / Anthropic Haiku
+  (metered). Guarded by `daily_usd_cap` in `config/vaults/<name>/budget.yaml`.
 
-Never export `ANTHROPIC_API_KEY` into a `claude -p` shell (it would bill pay-as-you-go instead
-of drawing Agent SDK credit). `scripts/claude_agent.sh` enforces this.
+Never export `ANTHROPIC_API_KEY` into a `claude -p` shell.
+`scripts/claude_agent.sh` enforces this automatically.

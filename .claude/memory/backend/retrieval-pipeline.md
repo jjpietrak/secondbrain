@@ -1,24 +1,43 @@
-# Fact: claude-obsidian hybrid retrieval pipeline (copy whole)
+---
+type: reference/architecture
+---
+# Fact: hybrid retrieval pipeline
 
-Source: `.co_reference/scripts/` + `.co_reference/skills/wiki-retrieve/SKILL.md`. Based on Anthropic's
-Sept-2024 contextual-retrieval research. Drives our `wiki-retrieve` (wiki, P1) and `web-rank` (web, P3).
+Related: [[locking]], [[rbac]], [[cost-ledger]]
 
-Pipeline:
-1. **contextual-prefix.py** (505 lines, ingest-side): chunk each page on paragraph boundaries
-   (~500-token target, 200-char overlap); add a 1-2 sentence contextual prefix per chunk; write
-   `.vault-meta/chunks/<page-address>/chunk-NNN.json` (`raw_text`, `contextualized_text`, `body_hash`,
-   `page_address`, `page_path`, `chunk_index`). Prefix tiers: (1) Anthropic API Haiku + prompt cache
-   GATED behind `--allow-egress`; (2) `claude` CLI subprocess; (3) synthetic (title+first-para, local, default).
-2. **bm25-index.py** (293 lines): pure-stdlib Okapi BM25 (k1=1.5, b=0.75) over `contextualized_text`;
-   Unicode tokenizer; fcntl-locked atomic write to `.vault-meta/bm25/index.json`; `build`/`query`/`stats`.
-3. **rerank.py** (312 lines): cosine over `nomic-embed-text` via local ollama (127.0.0.1:11434);
-   embedding cache keyed by `body_hash`; localhost-only guard (off-localhost needs
-   `--allow-remote-ollama`); degrades to no-op (BM25 order) if ollama/model absent.
-4. **retrieve.py** (195 lines, orchestrator): bm25 top-20 -> rerank top-5 -> dedupe by page-address ->
-   JSON candidates with `absolute_path`. Exit 10 = not provisioned (caller falls back to legacy
-   hot->index->drill). Imports siblings as modules.
+The wiki-retrieve feature uses a single hybrid retrieval stack built on three
+scripts under `scripts/`: `contextual-prefix.py`, `bm25-index.py`, `rerank.py`, and
+`retrieve.py` (the orchestrator). The design follows Anthropic's Sept-2024 contextual-retrieval
+research and delivers a purely local ($0) default path.
 
-Provision via `bin/setup-retrieve.sh`. Default path is fully local ($0); only egress is the
-contextual-prefix API tier and remote ollama, both double-consent-gated - matches our $0/free-route
-discipline. Benchmark claim: +32pp top-1, +41% error reduction vs page-level baseline.
-`web-rank` reuses the same `rerank.py`.
+## Pipeline stages
+
+1. **Contextual-prefix (ingest-side)** -- `scripts/contextual-prefix.py`. Chunks each page on
+   paragraph boundaries (~500-token target, 200-char overlap). Adds a 1-2 sentence contextual
+   prefix per chunk and writes chunks to `.vault-meta/chunks/<page-address>/chunk-NNN.json`
+   (fields: `raw_text`, `contextualized_text`, `body_hash`, `page_address`, `page_path`,
+   `chunk_index`). Prefix generation tiers (first available wins):
+   - Anthropic API Haiku + prompt cache: gated behind `--allow-egress` (metered).
+   - `claude` CLI subprocess: local credit-pool call.
+   - Synthetic (title + first paragraph): fully local, default, $0.
+
+2. **BM25 index** -- `scripts/bm25-index.py`. Pure-stdlib Okapi BM25 (k1=1.5, b=0.75) over
+   `contextualized_text`. Unicode tokenizer. fcntl-locked atomic write to
+   `.vault-meta/bm25/index.json`. Verbs: `build`, `query`, `stats`.
+
+3. **Cosine rerank** -- `scripts/rerank.py`. Embeds chunks with `nomic-embed-text` via local
+   ollama (127.0.0.1:11434). Embedding cache keyed on `body_hash`. localhost-only guard
+   (remote ollama requires `--allow-remote-ollama`). Degrades gracefully to a no-op (BM25
+   order unchanged) when ollama or the model is absent.
+
+4. **Orchestrator** -- `scripts/retrieve.py`. BM25 top-20 -> rerank top-5 -> dedupe by
+   page-address -> returns JSON candidates with `absolute_path`. Exit code 10 = not
+   provisioned (caller falls back to legacy hot/index/drill path).
+
+## Cost posture
+
+The default execution path is fully local ($0): synthetic prefix + BM25 + rerank absent
+(or with local ollama). The only egress paths are the contextual-prefix API tier
+(`--allow-egress`) and remote ollama (`--allow-remote-ollama`), both requiring explicit
+opt-in -- consistent with the system-wide $0/free-route discipline. Provision with
+`scripts/setup-retrieve.sh`.

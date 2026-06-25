@@ -21,6 +21,7 @@ vaults:
   - name: example
     enabled: true
 
+
 # Shared infrastructure (NOT per-vault).
 shared:
   env_file: .env                            # API keys / tokens / ports
