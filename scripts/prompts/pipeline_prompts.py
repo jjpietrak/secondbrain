@@ -227,6 +227,69 @@ End with one final line: "READY".
 
 
 # ===========================================================================
+# WEB AGENT -- QUERY REFORMULATION (Phase 4A step 2)
+# ===========================================================================
+
+# Web agent, crawl-time query reformulation (scripts/web_query.py).
+# Takes the current crawl-plan targets (each carrying origin gap/direction ids,
+# expected_evidence, wiki-context delta, and old seed queries) and returns
+# per-engine, PURPOSE-aligned query variants.
+#
+# Placeholders (filled by web_query._try_llm_reformulate):
+#   {purpose}              -- vault PURPOSE (<=300 chars)
+#   {max_per_engine}       -- integer cap on queries per engine
+#   {engine_rules}         -- per-engine phrasing rules block (built inline)
+#   {target_section}       -- one block per target (see format below)
+#   {learned_terms_blurb}  -- learned reject keywords to avoid (or "(none)")
+#
+# Output contract (machine-parsed by web_query._parse_llm_queries):
+#   ONLY a single fenced JSON block, no preamble, no prose.
+#   Each target key maps to:
+#     "queries_by_engine": {engine: [str, ...]}  (only engines in fillable_by)
+#     "rationale": str                            (one line)
+WEB_QUERY_REFORMULATION_PROMPT = """You are the Second Brain Web Agent reformulating search queries for an upcoming crawl.
+
+VAULT PURPOSE (the fixed mission -- every query must serve this):
+{purpose}
+
+GOAL: For each target below, produce <= {max_per_engine} search queries PER ENGINE that target the DELTA -- what the vault still needs to know, NOT what it already contains. Queries must be engine-appropriate and PURPOSE-relevant.
+
+{engine_rules}
+
+TARGETS TO REFORMULATE:
+{target_section}
+
+LEARNED SIGNAL (use this to improve query precision):
+{learned_terms_blurb}
+
+RULES:
+1. Use the wiki_context_delta to understand what is ALREADY KNOWN -- do NOT query for what the vault already has.
+2. Use expected_evidence to understand the KIND of source needed -- shape queries to find that kind.
+3. Use old_seed_queries only as a baseline to improve on; do not repeat them verbatim unless they are already ideal.
+4. Only include engines listed in the target's fillable_by. Omit engines not in fillable_by entirely.
+5. arxiv queries: precise technical noun phrases (2-6 tokens), no question words.
+6. semantic_scholar / web queries: well-formed questions or natural-language phrases.
+7. forum queries: 2-4 keyword tokens, no question framing.
+8. Each query <= 120 characters.
+9. Return ONLY the fenced JSON block below. No preamble, no explanation, no trailing text.
+
+```json
+{{
+  "<target_id>": {{
+    "queries_by_engine": {{
+      "arxiv": ["<query>"],
+      "semantic_scholar": ["<query>"],
+      "web": ["<query>"],
+      "forum": ["<query>"]
+    }},
+    "rationale": "<one line>"
+  }}
+}}
+```
+"""
+
+
+# ===========================================================================
 # PARSERS (draft) - turn SYNTHESIS output into structured records
 # ===========================================================================
 

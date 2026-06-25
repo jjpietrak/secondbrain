@@ -51,13 +51,15 @@ Nightly report interactive format (one block per selected candidate):
 CLI:
   python scripts/web_crawl.py --vault <root> [--dry-run] [--allow-remote-ollama]
                                [--json] [--limit N] [--explain] [--trace-out PATH]
-                               [--perplexity]
+                               [--perplexity] [--no-reformulate]
 
-  --explain      print the full decision trace to STDERR after the run.
-  --trace-out    write the rendered trace markdown to PATH (export on request).
-  --perplexity   enable Tier-2 Perplexity harvest (GATED: requires
-                 paid_scrape.enabled=true in web-config.json AND PERPLEXITY_API_KEY).
-                 Refuses with exit 2 if either guard is missing.
+  --explain         print the full decision trace to STDERR after the run.
+  --trace-out       write the rendered trace markdown to PATH (export on request).
+  --perplexity      enable Tier-2 Perplexity harvest (GATED: requires
+                    paid_scrape.enabled=true in web-config.json AND PERPLEXITY_API_KEY).
+                    Refuses with exit 2 if either guard is missing.
+  --no-reformulate  force-skip query reformulation (overrides config query.reformulate).
+                    Use for testing / back-compat / debugging the seed-query path.
 
 Exit codes:
   0  -- success
@@ -119,6 +121,12 @@ def _import_agent_learn():
     """Lazy import of agent_learn (monkeypatch-safe)."""
     import agent_learn as _al
     return _al
+
+
+def _import_web_query():
+    """Lazy import of web_query (monkeypatch-safe)."""
+    import web_query as _wq
+    return _wq
 
 
 # ---------------------------------------------------------------------------
@@ -333,10 +341,20 @@ def _harvest_target(
 
     lane = target.get("lane", "gap")
     queries = target.get("queries", [])
+    queries_by_engine = target.get("queries_by_engine", {})
     routed = target.get("routed_sources", [])
     fillable = target.get("fillable_by", [])
     origin_ids = target.get("origin_ids", [])
     target_id = target.get("target_id", "")
+
+    # Helper: return the per-engine query list when queries_by_engine is available
+    # and non-empty for the given engine key; else fall back to the flat queries list.
+    def _engine_queries(engine_key: str) -> list[str]:
+        if queries_by_engine:
+            eng_qs = queries_by_engine.get(engine_key, [])
+            if eng_qs:
+                return eng_qs
+        return queries
 
     candidates: list[dict] = []
     seen_engines: set[str] = set()  # avoid duplicate forum calls per target
@@ -450,7 +468,11 @@ def _harvest_target(
             if paper_engine:
                 # Derive the arXiv subject category (None for non-arXiv engines).
                 arxiv_cat = _arxiv_category(entry) if paper_engine == "arxiv" else None
-                for q in (queries or [_q()]):
+                # Use engine-specific queries when available (from reformulation),
+                # falling back to the flat queries list (original behaviour).
+                engine_key = paper_engine  # "arxiv" | "semantic_scholar" | "openalex"
+                paper_qs = _engine_queries(engine_key) or [_q()]
+                for q in paper_qs:
                     kw: dict = {"engine": paper_engine, "limit": per_source_limit}
                     if arxiv_cat is not None:
                         kw["category"] = arxiv_cat
@@ -471,7 +493,10 @@ def _harvest_target(
     # --- forum fillable_by ---
     if "forum" in fillable and "forum" not in seen_engines:
         seen_engines.add("forum")
-        for q in (queries[:2] if queries else [_q()]):
+        # Use forum-specific queries when available; else fall back to flat queries
+        forum_qs = _engine_queries("forum")
+        forum_qs = forum_qs[:2] if forum_qs else [_q()]
+        for q in forum_qs:
             results = _call(
                 wh.query_forum, "hackernews", q,
                 q, engine="hackernews", limit=per_source_limit
@@ -480,7 +505,9 @@ def _harvest_target(
 
     # --- research lane fallback: empty routed_sources -> arxiv ---
     if lane == "research" and not routed:
-        for q in (queries or [_q()]):
+        # Use arxiv-specific queries when available; else fall back to flat queries
+        research_qs = _engine_queries("arxiv") or [_q()]
+        for q in research_qs:
             results = _call(
                 wh.query_papers, "arxiv", q,
                 q, engine="arxiv", limit=per_source_limit
@@ -844,6 +871,7 @@ def crawl(
     per_source_limit: int = 8,
     trace=None,  # DecisionTrace | None -- if None, one is created internally
     use_perplexity: bool = False,
+    use_reformulate: bool | None = None,
 ) -> dict:
     """End-to-end Phase-3A/3B crawl pipeline.
 
@@ -873,6 +901,9 @@ def crawl(
         function prints a clear message to stderr and raises SystemExit(2) -- no
         silent free-only fallback, no silent spend.
         When False (default), behaves exactly as Phase-3A (free Tier-0 only).
+    use_reformulate:
+        Override the config's query.reformulate flag.  None (default) means read from
+        config.  True forces reformulation on; False forces it off (--no-reformulate).
 
     Returns
     -------
@@ -916,6 +947,55 @@ def crawl(
     wd = _import_web_decision()
     plan = wd.build_plan(vault_root, config, registry, trace=trace, learned=learned)
     targets = plan.get("targets", [])
+
+    # 2b. Query reformulation (Phase 4A step-2, Design B)
+    #     Runs AFTER build_plan (which supplies seed queries) and AFTER agent_learn
+    #     (which supplies learned reject keywords).  Gated by:
+    #       - config.query.reformulate  (true/false, default false)
+    #       - use_reformulate param     (None = follow config, True/False = override)
+    #     --no-reformulate / use_reformulate=False always skips regardless of config.
+    #     Runs in both real and dry_run (read-only, cheap; preview value in dry-run).
+    _do_reformulate: bool
+    if use_reformulate is False:
+        _do_reformulate = False
+    elif use_reformulate is True:
+        _do_reformulate = True
+    else:
+        _do_reformulate = bool(config.get("query", {}).get("reformulate", False))
+
+    if _do_reformulate and targets:
+        try:
+            wq = _import_web_query()
+            _use_llm = bool(config.get("query", {}).get("use_llm", True))
+            _max_per_engine = int(config.get("query", {}).get("max_queries_per_engine", 3))
+            reformulated = wq.reformulate(
+                targets,
+                purpose=purpose_text,
+                vault_root=vault_root,
+                learned=learned or None,
+                use_llm=_use_llm,
+                agent="web",
+                max_per_engine=_max_per_engine,
+            )
+            # Record per-target reformulation in the trace
+            for orig_t, ref_t in zip(targets, reformulated):
+                ref_rec = ref_t.get("reformulation", {})
+                trace.add(
+                    "reformulate",
+                    "target",
+                    target_id=ref_t.get("target_id", ""),
+                    method=ref_rec.get("method", "fallback"),
+                    old_queries=ref_rec.get("old_queries", []),
+                    new_by_engine=ref_t.get("queries_by_engine", {}),
+                    rationale=ref_rec.get("rationale", ""),
+                )
+            targets = reformulated
+        except Exception as _ref_exc:
+            print(
+                f"[web_crawl] query reformulation failed (degrading gracefully): {_ref_exc}",
+                file=sys.stderr,
+            )
+            # targets unchanged -- keep original seed queries
 
     # 3. Harvest: one call per target; failures degrade gracefully
     #    Track per-target candidate ids so we can compute seen_dropped after dedup.
@@ -1296,6 +1376,16 @@ def main(argv: list[str] | None = None) -> int:
             "is missing). Spends real $ capped at max_calls_per_crawl; cost-logged."
         ),
     )
+    parser.add_argument(
+        "--no-reformulate",
+        action="store_true",
+        dest="no_reformulate",
+        default=False,
+        help=(
+            "Force-skip query reformulation regardless of config. "
+            "Use for testing or to ensure the exact seed-query path."
+        ),
+    )
 
     try:
         args = parser.parse_args(argv)
@@ -1311,6 +1401,7 @@ def main(argv: list[str] | None = None) -> int:
         today=date.today().isoformat(),
         per_source_limit=args.per_source_limit,
         use_perplexity=args.use_perplexity,
+        use_reformulate=False if args.no_reformulate else None,
     )
 
     trace = result.get("trace")

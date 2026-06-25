@@ -68,6 +68,20 @@ forwards to the ranker; `--limit N` bounds per-source harvest.
    `news`), `lane` (`gap`|`research`|`news`), `origin_ids` (`[GAP-..,DIR-..]`), `priority`,
    `queries`, `expected_evidence`, `fillable_by`, `routed_sources` (registry ids). A direction
    that targets the same need as a gap is **merged** into it (origin keeps gap precedence).
+1b. **REFORMULATE** (Phase 4A step-2, `scripts/web_query.py`) -- after planning and after the
+   learning briefing, `web_query.reformulate` rewrites each target's queries per engine from the
+   vault PURPOSE + the wiki-context delta (gap missing/shows_up_in pages) + expected_evidence +
+   learned reject keywords, via one cheap batched LLM call (Design B); falls back deterministically
+   (Design A: term-extraction) if no LLM is available or the call fails. Each target gets:
+   - `queries_by_engine` -- {arxiv: [...], semantic_scholar: [...], web: [...], forum: [...]}
+     shaped for each engine's strengths (precise title-phrase for arXiv; natural-language question
+     for Semantic Scholar/web; short keyword tokens for forum).
+   - `queries` -- flat union (back-compat with the original seed-query path).
+   - `reformulation` -- {method: "llm"|"fallback", old_queries: [...], rationale: str}.
+   Harvest (step 2) then routes each engine to its tailored query list; the decision trace
+   (--explain) shows the old->new queries, method, and rationale in a `## Reformulate` section.
+   Gated by `web-config.json` `query.reformulate: true`; use `--no-reformulate` to skip.
+   Runs in both real and dry-run (read-only; the preview value is the same either way).
 2. **HARVEST** (free Tier-0, `scripts/web_harvest.py`): per target, by `routed_sources`/`fillable_by`
    — `poll_rss` (registry feeds), `query_papers` (arxiv/openalex/semantic_scholar/crossref),
    `query_forum` (hackernews/reddit/lobsters), `poll_github_releases`. Research-lane targets with

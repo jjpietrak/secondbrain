@@ -3427,3 +3427,437 @@ class TestAgentLearnWiring:
         result = web_crawl.crawl(str(vault), dry_run=True, today="2026-06-24")
         assert isinstance(result, dict)
         assert "selected" in result
+
+
+# ===========================================================================
+# Phase-4A step-2: query reformulation wiring tests
+# ===========================================================================
+
+# Canned per-engine queries returned by the mocked reformulate
+_CANNED_QBE = {
+    "arxiv": ["disaggregated prefill decode separation latency"],
+    "semantic_scholar": ["how does KV cache disaggregation reduce decode latency"],
+    "web": ["what is prefill decode disaggregation inference"],
+    "forum": ["disaggregated serving KV cache"],
+}
+
+# A fake reformulate that adds queries_by_engine + reformulation record
+def _fake_reformulate(
+    targets, *, purpose, vault_root, learned=None, use_llm=True,
+    agent="web", max_per_engine=3
+):
+    """Monkeypatch stub: adds canned queries_by_engine to each target. NO real LLM call."""
+    out = []
+    for t in targets:
+        new_t = dict(t)
+        new_t["queries_by_engine"] = dict(_CANNED_QBE)
+        new_t["reformulation"] = {
+            "method": "llm",
+            "old_queries": list(t.get("queries", [])),
+            "rationale": "canned LLM reformulation for tests",
+        }
+        # Also update the flat queries list (union)
+        flat = []
+        seen_f: set = set()
+        for eng in ("arxiv", "semantic_scholar", "web", "forum"):
+            for q in _CANNED_QBE.get(eng, []):
+                if q not in seen_f:
+                    seen_f.add(q)
+                    flat.append(q)
+        new_t["queries"] = flat
+        out.append(new_t)
+    return out
+
+
+def _make_reformulate_enabled_config() -> dict:
+    """Config with query.reformulate=true and use_llm=true."""
+    cfg = dict(_WEB_CONFIG)
+    cfg["query"] = {"reformulate": True, "use_llm": True, "max_queries_per_engine": 3}
+    return cfg
+
+
+def _make_reformulate_disabled_config() -> dict:
+    """Config with query.reformulate=false (default off)."""
+    cfg = dict(_WEB_CONFIG)
+    cfg["query"] = {"reformulate": False, "use_llm": False, "max_queries_per_engine": 3}
+    return cfg
+
+
+class TestQueryReformulation:
+    """Phase-4A step-2: query reformulation integration tests.
+
+    All tests are hermetic -- NO real LLM or network calls.
+    web_query.reformulate is always monkeypatched to _fake_reformulate.
+    """
+
+    def _patch_all(
+        self, monkeypatch, tmp_path: Path, vault: Path, config=None
+    ):
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest(monkeypatch)
+        _patch_rank(monkeypatch)
+        if config is not None:
+            monkeypatch.setattr(web_crawl, "_load_config", lambda: config)
+
+    def test_reformulate_called_when_config_enabled(self, tmp_path, monkeypatch):
+        """With query.reformulate=true, web_query.reformulate is called during crawl."""
+        vault = _make_tmp_vault(tmp_path)
+        self._patch_all(
+            monkeypatch, tmp_path, vault, config=_make_reformulate_enabled_config()
+        )
+
+        call_log: list[bool] = []
+
+        def _spy_reformulate(targets, *, purpose, vault_root, learned=None,
+                             use_llm=True, agent="web", max_per_engine=3):
+            call_log.append(True)
+            return _fake_reformulate(
+                targets, purpose=purpose, vault_root=vault_root,
+                learned=learned, use_llm=use_llm, agent=agent,
+                max_per_engine=max_per_engine,
+            )
+
+        import web_query as wq
+        monkeypatch.setattr(wq, "reformulate", _spy_reformulate)
+        monkeypatch.setattr(web_crawl, "_import_web_query", lambda: wq)
+
+        web_crawl.crawl(str(vault), dry_run=True, today="2026-06-25")
+
+        assert len(call_log) >= 1, (
+            "web_query.reformulate must be called when query.reformulate=true"
+        )
+
+    def test_reformulate_not_called_when_config_disabled(self, tmp_path, monkeypatch):
+        """With query.reformulate=false, web_query.reformulate is NEVER called."""
+        vault = _make_tmp_vault(tmp_path)
+        self._patch_all(
+            monkeypatch, tmp_path, vault, config=_make_reformulate_disabled_config()
+        )
+
+        call_log: list[bool] = []
+
+        def _should_not_call(*a, **kw):
+            call_log.append(True)
+            return _fake_reformulate(*a, **kw)
+
+        import web_query as wq
+        monkeypatch.setattr(wq, "reformulate", _should_not_call)
+        monkeypatch.setattr(web_crawl, "_import_web_query", lambda: wq)
+
+        result = web_crawl.crawl(str(vault), dry_run=True, today="2026-06-25")
+        assert isinstance(result, dict)
+        assert call_log == [], (
+            "web_query.reformulate must NOT be called when query.reformulate=false"
+        )
+
+    def test_no_reformulate_flag_overrides_config_true(self, tmp_path, monkeypatch):
+        """use_reformulate=False (--no-reformulate) skips reformulation even if config is true."""
+        vault = _make_tmp_vault(tmp_path)
+        self._patch_all(
+            monkeypatch, tmp_path, vault, config=_make_reformulate_enabled_config()
+        )
+
+        call_log: list[bool] = []
+
+        def _should_not_call(*a, **kw):
+            call_log.append(True)
+            return _fake_reformulate(*a, **kw)
+
+        import web_query as wq
+        monkeypatch.setattr(wq, "reformulate", _should_not_call)
+        monkeypatch.setattr(web_crawl, "_import_web_query", lambda: wq)
+
+        result = web_crawl.crawl(
+            str(vault), dry_run=True, today="2026-06-25",
+            use_reformulate=False,
+        )
+        assert isinstance(result, dict)
+        assert call_log == [], (
+            "use_reformulate=False must skip reformulation regardless of config"
+        )
+
+    def test_harvest_uses_arxiv_queries_for_paper_engine(self, tmp_path, monkeypatch):
+        """With reformulation enabled, paper-publisher (arxiv) engine gets arxiv queries."""
+        vault = _make_tmp_vault(tmp_path)
+        self._patch_all(
+            monkeypatch, tmp_path, vault, config=_make_reformulate_enabled_config()
+        )
+
+        import web_query as wq
+        monkeypatch.setattr(wq, "reformulate", _fake_reformulate)
+        monkeypatch.setattr(web_crawl, "_import_web_query", lambda: wq)
+
+        # Spy on query_papers to record the query strings it receives
+        arxiv_queries_received: list[str] = []
+        import web_harvest as wh
+
+        original_query_papers = wh.query_papers
+
+        def _spy_query_papers(q, *, engine, limit, category=None):
+            if engine == "arxiv":
+                arxiv_queries_received.append(q)
+            return list(CANNED_ARXIV)
+
+        monkeypatch.setattr(wh, "query_papers", _spy_query_papers)
+
+        web_crawl.crawl(str(vault), dry_run=True, today="2026-06-25")
+
+        # The arxiv engine must have received the reformulated arxiv query
+        expected_arxiv_q = _CANNED_QBE["arxiv"][0]
+        assert any(expected_arxiv_q in q for q in arxiv_queries_received), (
+            f"Expected arxiv engine to receive reformulated query "
+            f"{expected_arxiv_q!r}; got {arxiv_queries_received}"
+        )
+
+    def test_harvest_uses_forum_queries_for_forum_engine(self, tmp_path, monkeypatch):
+        """With reformulation enabled, forum fillable targets get forum-specific queries."""
+        vault = _make_tmp_vault(tmp_path)
+        self._patch_all(
+            monkeypatch, tmp_path, vault, config=_make_reformulate_enabled_config()
+        )
+
+        import web_query as wq
+        monkeypatch.setattr(wq, "reformulate", _fake_reformulate)
+        monkeypatch.setattr(web_crawl, "_import_web_query", lambda: wq)
+
+        forum_queries_received: list[str] = []
+        import web_harvest as wh
+
+        def _spy_query_forum(q, *, engine, limit):
+            forum_queries_received.append(q)
+            return list(CANNED_FORUM)
+
+        monkeypatch.setattr(wh, "query_forum", _spy_query_forum)
+        monkeypatch.setattr(wh, "query_papers", lambda *a, **kw: list(CANNED_ARXIV))
+        monkeypatch.setattr(wh, "poll_rss", lambda *a, **kw: list(CANNED_RSS))
+        monkeypatch.setattr(wh, "poll_github_releases", lambda *a, **kw: list(CANNED_GITHUB))
+
+        # Use a target that has fillable_by=forum to trigger the forum path
+        registry = {
+            "paper-publisher": {"sources": []},
+            "blog-newsfeed": {"sources": []},
+            "github-repos": {"repositories": []},
+        }
+        monkeypatch.setattr(web_crawl, "_load_registry", lambda: registry)
+
+        # Build a target with forum fillable directly and call _harvest_target
+        target = {
+            "target_id": "GAP-01",
+            "lane": "gap",
+            "origin_ids": ["GAP-01"],
+            "queries": ["old seed query"],
+            "queries_by_engine": dict(_CANNED_QBE),
+            "fillable_by": ["forum"],
+            "routed_sources": [],
+        }
+
+        forum_calls: list[str] = []
+
+        class _SpyHarvest:
+            def query_forum(self, q, *, engine, limit):
+                forum_calls.append(q)
+                return list(CANNED_FORUM)
+
+            def query_papers(self, *a, **kw):
+                return []
+
+            def poll_rss(self, *a, **kw):
+                return []
+
+            def poll_github_releases(self, *a, **kw):
+                return []
+
+        web_crawl._harvest_target(
+            target, registry, _PURPOSE_TEXT, per_source_limit=5,
+            _harvest_mod=_SpyHarvest()
+        )
+
+        # Forum engine should have received the canned forum query, NOT the old seed query
+        expected_forum_q = _CANNED_QBE["forum"][0]
+        assert any(expected_forum_q in q for q in forum_calls), (
+            f"Expected forum engine to use reformulated query {expected_forum_q!r}; "
+            f"got {forum_calls}"
+        )
+        # The OLD seed query should NOT appear (it was replaced)
+        assert "old seed query" not in forum_calls, (
+            f"Forum engine should not use old seed query; got {forum_calls}"
+        )
+
+    def test_harvest_falls_back_to_flat_queries_when_no_qbe(self, tmp_path, monkeypatch):
+        """When queries_by_engine is absent, harvest falls back to flat queries list."""
+        # Build a target WITHOUT queries_by_engine (no reformulation)
+        registry = _make_registry()
+        target = {
+            "target_id": "GAP-01",
+            "lane": "gap",
+            "origin_ids": ["GAP-01"],
+            "queries": ["original flat query"],
+            # NO queries_by_engine key
+            "fillable_by": ["arxiv"],
+            "routed_sources": ["arxiv_cs_dc"],
+        }
+
+        arxiv_calls: list[str] = []
+
+        class _SpyHarvest:
+            def query_papers(self, q, *, engine, limit, category=None):
+                if engine == "arxiv":
+                    arxiv_calls.append(q)
+                return list(CANNED_ARXIV)
+
+            def poll_rss(self, *a, **kw):
+                return []
+
+            def query_forum(self, *a, **kw):
+                return []
+
+            def poll_github_releases(self, *a, **kw):
+                return []
+
+        web_crawl._harvest_target(
+            target, registry, _PURPOSE_TEXT, per_source_limit=5,
+            _harvest_mod=_SpyHarvest()
+        )
+
+        # Must use the flat "original flat query" (no reformulation fallback happened)
+        assert "original flat query" in arxiv_calls, (
+            f"Expected fallback to flat queries; got {arxiv_calls}"
+        )
+
+    def test_reformulate_raising_degrades_gracefully(self, tmp_path, monkeypatch):
+        """When web_query.reformulate raises, crawl completes on the original queries."""
+        vault = _make_tmp_vault(tmp_path)
+        self._patch_all(
+            monkeypatch, tmp_path, vault, config=_make_reformulate_enabled_config()
+        )
+
+        def _raise_reformulate(*a, **kw):
+            raise RuntimeError("simulated reformulation failure")
+
+        import web_query as wq
+        monkeypatch.setattr(wq, "reformulate", _raise_reformulate)
+        monkeypatch.setattr(web_crawl, "_import_web_query", lambda: wq)
+
+        # Must NOT raise; crawl completes using original seed queries
+        result = web_crawl.crawl(str(vault), dry_run=True, today="2026-06-25")
+        assert isinstance(result, dict)
+        assert "selected" in result
+
+    def test_trace_has_reformulate_record_when_enabled(self, tmp_path, monkeypatch):
+        """With reformulation enabled, trace contains at least one reformulate/target record."""
+        vault = _make_tmp_vault(tmp_path)
+        self._patch_all(
+            monkeypatch, tmp_path, vault, config=_make_reformulate_enabled_config()
+        )
+
+        import web_query as wq
+        monkeypatch.setattr(wq, "reformulate", _fake_reformulate)
+        monkeypatch.setattr(web_crawl, "_import_web_query", lambda: wq)
+
+        result = web_crawl.crawl(str(vault), dry_run=True, today="2026-06-25")
+        trace = result["trace"]
+        ref_recs = trace.find("reformulate", "target")
+        assert len(ref_recs) >= 1, (
+            "Trace must contain at least one reformulate/target record when enabled"
+        )
+
+    def test_trace_reformulate_record_has_expected_fields(self, tmp_path, monkeypatch):
+        """Each reformulate/target trace record has: target_id, method, old_queries,
+        new_by_engine, rationale."""
+        vault = _make_tmp_vault(tmp_path)
+        self._patch_all(
+            monkeypatch, tmp_path, vault, config=_make_reformulate_enabled_config()
+        )
+
+        import web_query as wq
+        monkeypatch.setattr(wq, "reformulate", _fake_reformulate)
+        monkeypatch.setattr(web_crawl, "_import_web_query", lambda: wq)
+
+        result = web_crawl.crawl(str(vault), dry_run=True, today="2026-06-25")
+        trace = result["trace"]
+        ref_recs = trace.find("reformulate", "target")
+        assert len(ref_recs) >= 1
+
+        for rec in ref_recs:
+            d = rec["data"]
+            assert "target_id" in d, f"Missing target_id in {d}"
+            assert "method" in d, f"Missing method in {d}"
+            assert "old_queries" in d, f"Missing old_queries in {d}"
+            assert "new_by_engine" in d, f"Missing new_by_engine in {d}"
+            assert "rationale" in d, f"Missing rationale in {d}"
+            assert isinstance(d["new_by_engine"], dict), (
+                f"new_by_engine must be a dict; got {type(d['new_by_engine'])}"
+            )
+            assert d["method"] in ("llm", "fallback"), (
+                f"method must be 'llm' or 'fallback'; got {d['method']!r}"
+            )
+
+    def test_trace_has_no_reformulate_record_when_disabled(self, tmp_path, monkeypatch):
+        """With reformulation disabled, trace has NO reformulate/target records."""
+        vault = _make_tmp_vault(tmp_path)
+        self._patch_all(
+            monkeypatch, tmp_path, vault, config=_make_reformulate_disabled_config()
+        )
+
+        import web_query as wq
+        call_log: list[bool] = []
+
+        def _should_not_call(*a, **kw):
+            call_log.append(True)
+            return _fake_reformulate(*a, **kw)
+
+        monkeypatch.setattr(wq, "reformulate", _should_not_call)
+        monkeypatch.setattr(web_crawl, "_import_web_query", lambda: wq)
+
+        result = web_crawl.crawl(str(vault), dry_run=True, today="2026-06-25")
+        trace = result["trace"]
+        ref_recs = trace.find("reformulate", "target")
+        assert ref_recs == [], (
+            f"Expected no reformulate records when disabled; got {ref_recs}"
+        )
+        assert call_log == [], "reformulate must not be called when disabled"
+
+    def test_report_trace_contains_reformulate_section_when_enabled(
+        self, tmp_path, monkeypatch
+    ):
+        """Live run: nightly report contains ## Reformulate section from the trace."""
+        vault = _make_tmp_vault(tmp_path)
+        self._patch_all(
+            monkeypatch, tmp_path, vault, config=_make_reformulate_enabled_config()
+        )
+
+        import web_query as wq
+        monkeypatch.setattr(wq, "reformulate", _fake_reformulate)
+        monkeypatch.setattr(web_crawl, "_import_web_query", lambda: wq)
+
+        result = web_crawl.crawl(str(vault), dry_run=False, today="2026-06-25")
+        report_text = Path(result["report_path"]).read_text(encoding="utf-8")
+        assert "## Reformulate" in report_text, (
+            "Nightly report must contain '## Reformulate' section when reformulation ran"
+        )
+
+    def test_no_real_llm_call_in_monkeypatched_tests(self, tmp_path, monkeypatch):
+        """Confirm that the fake reformulate never calls _invoke_llm or subprocess.run."""
+        vault = _make_tmp_vault(tmp_path)
+        self._patch_all(
+            monkeypatch, tmp_path, vault, config=_make_reformulate_enabled_config()
+        )
+
+        import web_query as wq
+        monkeypatch.setattr(wq, "reformulate", _fake_reformulate)
+        monkeypatch.setattr(web_crawl, "_import_web_query", lambda: wq)
+
+        # Also guard against _invoke_llm being called accidentally
+        llm_calls: list[bool] = []
+
+        def _guard_invoke_llm(*a, **kw):
+            llm_calls.append(True)
+            return ""  # empty means fallback
+
+        monkeypatch.setattr(wq, "_invoke_llm", _guard_invoke_llm)
+
+        web_crawl.crawl(str(vault), dry_run=True, today="2026-06-25")
+
+        assert llm_calls == [], (
+            "No real LLM calls (_invoke_llm) must occur in monkeypatched tests"
+        )

@@ -1482,6 +1482,27 @@ def render_trace_markdown(trace: DecisionTrace) -> str:
             lines.append(f"**Routed to:** {', '.join(routed) if routed else '(none)'}")
             lines.append("")
 
+    # ------------------------------------------------------------------ reformulate
+    ref_recs = trace.find("reformulate", "target")
+    if ref_recs:
+        _h(2, "Reformulate")
+        lines.append("| target_id | method | old_queries | new_engines | rationale |")
+        lines.append("|-----------|--------|-------------|-------------|-----------|")
+        for rec in ref_recs:
+            d = rec["data"]
+            tid = d.get("target_id", "")
+            method = d.get("method", "")
+            old_qs = ", ".join(d.get("old_queries", []))[:60]
+            new_by_engine = d.get("new_by_engine", {})
+            engine_summary = "; ".join(
+                f"{eng}: {qs[0][:30] if qs else ''}" for eng, qs in new_by_engine.items()
+            )[:80]
+            rationale = (d.get("rationale") or "")[:60]
+            lines.append(
+                f"| {tid} | {method} | {old_qs} | {engine_summary} | {rationale} |"
+            )
+        lines.append("")
+
     # ------------------------------------------------------------------ harvest
     harvest_recs = trace.find("harvest", "target")
     if harvest_recs:
