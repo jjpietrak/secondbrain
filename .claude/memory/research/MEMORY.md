@@ -26,12 +26,13 @@ current; never store fact bodies here.
 - D-0001 (no-web) blocks validation proxy -> any future ambiguous-duplicate case must go to TODO, not adjudication.
 - No TODO nodes created; no direction or proposal files modified.
 
-## Objective graph state (updated 2026-06-22)
+## Objective graph state (updated 2026-06-24)
 
-- Current open research questions: 7 (Q-0001..Q-0007), none solved.
-- Current open directions: 5 (DIR-0001..DIR-0005), all emitted 2026-06-22 by obj-synth.
-- Current proposals: 1 (QP-0001 software disagg primitives), pending user approval.
-- Last synthesis run: obj-synth + deep-synthesis (Q-0001), 2026-06-22.
+- Current open research questions: 6 (Q-0001..Q-0003, Q-0005..Q-0007); Q-0004 SOLVED.
+- Current open directions: 6 (DIR-0001..DIR-0006), DIR-0006 is the Q-0004 solve provenance record.
+- Current proposals: 2 (QP-0001 software disagg primitives, QP-0002 Iris Tetra optical node extension), both pending user approval.
+- Last skill run: question-solve Q-0004, 2026-06-24.
+- Q-0004 SOLVED. DIR-0002 unblocked (PIM path is Iris Tetra extension template). Q-0002 is the next deep-synthesis candidate.
 
 ## Synthesis decisions (updated 2026-06-22)
 
@@ -51,7 +52,10 @@ current; never store fact bodies here.
 
 - Q-0001 -> research/Q-0001.md (partial, 2026-06-22): criteria A+B answered analytically;
   criterion C (optical fabric scale-out BW) deferred to Phase 3 (DIR-0004 needed).
-- Q-0002..Q-0007 -> no reports yet.
+- Q-0004 -> SOLVED (2026-06-24): solved: yes; answer_ref: wiki/sources/llmservingsim-2-2602.23036.md.
+  All 3 acceptance criteria met. No separate research/Q-0004.md written; source page is the answer ref.
+  question-solve used SB_SANCTIONED_SKILL=question-solve; index updated (6 open, 1 solved); relink applied.
+- Q-0002..Q-0003, Q-0005..Q-0006 -> no reports yet.
 
 ## RBAC R4 contract reminder
 

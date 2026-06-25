@@ -7,6 +7,10 @@ vault contents or the code.
 ## Index
 - [2026-06-21-ingest-map.md](2026-06-21-ingest-map.md) -- source->page map for arXiv 2602.09721 (Baidu AFD challenges); key AFD dead zone finding; optical bandwidth niche for Iris Tetra.
 - [2026-06-22-gaps-run.md](2026-06-22-gaps-run.md) -- wiki-gaps run results: 68 pages scanned, 32 open-question items harvested (parenthetical header bug), 10 gaps, 5 self-contained tasks.
+- [2026-06-23-approve-run.md](2026-06-23-approve-run.md) -- wiki-approve 2026-06-23: 2 approved/ingested (Cronus 2509.17357, SARATHI 2308.16369), 2 rejected, 1 deferred. 10 sources now in vault.
+- 2026-06-23 session 2: ingested raw/notes/Iris Tetra Roofline BW.md -> wiki/sources/iris-tetra-roofline-bw-note.md. Iris Tetra design targets: int4 33K TFLOPs, PCIe BW min 256 GB/s, memory TBD. Fixed stale ingest_index pending entries for SARATHI + Cronus. 11 sources in vault.
+- 2026-06-24: ingested raw/papers/2602.23036v2.pdf (LLMServingSim 2.0, KAIST) + 2 code stubs. New: wiki/sources/llmservingsim-2-2602.23036.md, wiki/entities/llmservingsim.md, wiki/sources/astra-sim-repo.md, wiki/sources/llmservingsim-repo.md. Patched: astra-sim entity, prefill-decode-disaggregation + heterogeneous-disaggregation concepts, GAP-04 (partially-closed). Fixed all stale hash entries; ingest_index pending=0. TBD-6 closed. 14 sources in vault (17 ingested including code stubs + note).
+- 2026-06-24 health-fix: (1) gap/index.md GAP table links changed from [[wiki/gap/GAP-N-...]] to bare [[GAP-N-...]] slugs -- all 10 gap pages now reachable. (2) astra-sim-repo + llmservingsim-repo source stubs linked from their entity pages. (3) entities/step-3.md + sources/step-3.md confirmed as correctly-typed distinct pages (model entity vs paper). (4) 176 dead links confirmed as intentional forward-refs (distserve, mooncake, cerebras, tenstorrent, etc.).
 
 ## Standing reminders
 - No web. Ingest only what is in `raw/` and approved; new-source discovery is the Research

@@ -111,3 +111,47 @@ idempotency; reject-keyword extraction; calibration; briefing content; rank/rout
 Live: run `agent_learn` over the real vault outcomes from your `/wiki-approve` run, show the
 `learned.json` + briefing, then a crawl that opens with the briefing and reorders sources by
 reputation.
+
+---
+
+## Step 2 — query reformulation (Design B, + C-escalation TODO)
+
+The "formulating" weakest-link fix. Today queries are static `seed_queries` (frozen at obj-synth
+time, PURPOSE-blind at crawl time, engine-agnostic, ignore what the wiki already knows). Step 2
+makes query formation a **crawl-time, inspectable, LLM-reformulated** step (Design **B**), with a
+**deterministic fallback** (Design A) and **TODO hooks for selective escalation** (Design C).
+
+### `scripts/web_query.py` — `reformulate(targets, *, purpose, vault_root, learned=None, use_llm=True)`
+- For each target, build the **wiki-context delta**: read the origin gap's `shows_up_in`
+  `[[wiki/...]]` pages -> a short "already known" snippet, so the LLM queries for the MISSING piece,
+  not the whole topic. (The single biggest quality lever.)
+- **LLM path** (default): ONE batched `scripts/claude_agent.sh --agent web` call rewrites ALL
+  targets into 2-3 **per-engine** queries each (arxiv = precise terms/title; semantic_scholar/web =
+  natural-language; forum = keywords), conditioned on PURPOSE + gap `missing` + `expected_evidence`
+  + the wiki-context delta + learned good-query terms. Output = fenced JSON, defensively parsed.
+  Cost-ledgered via `claude_agent.sh` (~$0 on the agent pool; one call per crawl).
+- **Deterministic fallback** (`_deterministic_queries`, Design A): when LLM is unavailable / disabled
+  / parse fails -> term-extraction from gap.missing + expected_evidence + PURPOSE -> per-engine
+  variants. The crawl ALWAYS produces queries ($0, no hard dependency on the LLM).
+- Returns targets with `queries` (+ `queries_by_engine`) replaced, plus a per-target reformulation
+  record (old -> new, method=llm|fallback, rationale) for the **trace**.
+- Config: `web-config.json` `query: {reformulate: true, use_llm: true, max_queries_per_engine: 3}`.
+
+### Integration (`web_crawl`)
+After `build_plan`, before harvest: `web_query.reformulate(targets, purpose, vault_root, learned)`
+-> harvest uses the reformulated per-engine queries. The DecisionTrace records the old->new queries +
+method + rationale (so `--explain`/the report show exactly what was searched and why). Back-compat:
+`reformulate=false` -> the old seed_queries path, unchanged.
+
+### TODO — Design C (selective escalation, deferred)
+Leave clear `# TODO` notes at the reformulation site: eventually reformulate **selectively** — only
+targets flagged with a **low retrieval/learning score** (origin gap/topic with low `calibration`,
+repeated rejects, or thin yield in `learned.json`) — instead of all targets every crawl, to save LLM
+calls and focus effort. Requires the learning signal to warm up first; for now reformulate all
+enabled targets. (This is Design C built on top of B.)
+
+### Tests + demo
+Hermetic: mock the `claude_agent.sh` subprocess (canned structured queries) -> per-engine queries
+produced; `--no-llm`/error/parse-fail -> deterministic fallback; wiki-context read from a tmp vault;
+trace records the reformulation. No real LLM call in tests. Live: `--explain` shows static
+seed_queries replaced by reformulated, delta-aware, per-engine queries.
