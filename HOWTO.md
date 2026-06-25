@@ -99,19 +99,8 @@ Shared across vaults: API keys / tokens in `.env`.
 
 ## Automations (shell / Python)
 
-### Nightly run -- `agents/nightly_run.sh`
-
-Tier-2 local maintenance (pull -> ingest new `raw/` -> research due topics -> lint -> health ->
-commit/push), all on Agent SDK credit ($0). Per-vault budget gate + 20h catch-up guard.
-
-```bash
-DRY_RUN=1 bash agents/nightly_run.sh          # rehearse (no writes)
-bash agents/nightly_run.sh                     # run the active vault
-VAULT=all bash agents/nightly_run.sh           # process every enabled vault
-```
-
-Topics due = `daily` every night + `weekly` on Mondays. Configure in
-`config/vaults/<name>/topics.yaml`.
+> Unattended nightly orchestration is not part of this release (it shipped with the
+> web-harvest layer, which is under review). The automations below are run on demand.
 
 ### PDF to Markdown -- `scripts/pdf_extract.py`
 
@@ -144,7 +133,7 @@ python agents/vault_health.py                  # structural audit -> meta/health
 ### Unattended Claude -- `scripts/claude_agent.sh`
 
 Wrapper for `claude -p` automation: loads `CLAUDE_CODE_OAUTH_TOKEN` (Agent SDK credit, $0) and
-unsets `ANTHROPIC_API_KEY` so calls never hit the metered API. Used by the nightly run.
+unsets `ANTHROPIC_API_KEY` so calls never hit the metered API.
 
 ### Obsidian REST API -- `scripts/obsidian_api.sh`
 
@@ -154,22 +143,6 @@ plugin):
 ```bash
 source scripts/obsidian_api.sh && obsidian_ping
 # also: obsidian_list, obsidian_get_file, obsidian_put_file, obsidian_search
-```
-
-### NotebookLM sync -- `scripts/research/notebooklm_sync.py`
-
-Bidirectional sync with a real Google NotebookLM notebook via the `nlm` CLI ($0, uses Google
-cookies). Set the notebook in `config/vaults/<name>/vault.yaml` (`notebooklm_notebook:`).
-
-```bash
-# Authenticate once:
-nlm login
-# Then sync:
-uv run -m scripts.research.notebooklm_sync \
-    --notebook "$(python -m agents.vault_config notebook)"
-#   --dry-run      preview actions, no writes
-#   --pull-only    only pull notebook notes down
-#   --push-only    only push vault files up as sources
 ```
 
 ---
@@ -204,7 +177,7 @@ scripts/setup.sh --vault-path /path/to/new-vault --name new-vault \
 # Then restart Claude Code and: VAULT=new-vault claude
 ```
 
-**Daily upkeep (or let the nightly do it):**
+**Daily upkeep:**
 ```
 wiki-lint
 cost-report

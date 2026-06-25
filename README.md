@@ -38,10 +38,6 @@ zero.
   (`ollama pull nomic-embed-text`) -- enables cosine rerank in `wiki-retrieve` and
   `wiki-query`. Without it the retrieval falls back to BM25 only.
 
-**Optional (local retrieval rerank):**
-- Install [`ollama`](https://ollama.com) and run `ollama pull nomic-embed-text` to enable
-  semantic cosine rerank in `wiki-retrieve`. Without it, retrieval falls back to BM25 (still $0).
-
 ---
 
 ## Install
@@ -175,14 +171,13 @@ agents/
   vault_config.py                   # active-vault resolver
   cost_tracker.py                   # spend ledger + budget gate
   vault_health.py                   # structural health audit
-  nightly_run.sh                    # nightly automation orchestrator
 config/
   secondbrain.yaml                  # global config + vault registry
   vaults/<name>/                    # per-vault config (vault/topics/budget.yaml)
 .claude/
   skills/<name>/SKILL.md            # skill dispatch + procedure for each command
   agents/                           # agent definitions
-tests/                              # pytest suite (1000+ tests)
+tests/                              # pytest suite (475 tests)
 ```
 
 ---

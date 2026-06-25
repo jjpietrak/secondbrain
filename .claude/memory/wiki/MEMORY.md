@@ -1,8 +1,8 @@
 # Wiki agent memory
 
 Wiki agent: librarian for the vault. Owns ingest (`wiki-ingest`, `wiki-cite`), query
-(`wiki-retrieve`, `wiki-search`), synthesis (`wiki-gaps`, `wiki-stats`), and maintenance
-(`wiki-health`, `wiki-approve`) over `wiki/` and `raw/`. Does not browse the web.
+(`wiki-retrieve`, `wiki-query`), synthesis (`wiki-gaps`, `wiki-synth`), and maintenance
+(`wiki-health`, `wiki-lint`) over `wiki/` and `raw/`. Does not browse the web.
 
 Add one fact per file and link it here with a one-line pointer. Never duplicate facts
 that are derivable from vault contents or the code.

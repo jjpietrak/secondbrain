@@ -18,8 +18,5 @@ vault_path: "~/secondbrain-vaults/example"
 # Used as the high-priority relevance filter when ingesting and synthesizing.
 purpose: "TODO: one sentence stating this vault's single research purpose (the high-priority relevance filter)."
 
-# Research engine for /obsidian-research[-deep]: claude | perplexity | free
+# Research engine for local deep-synthesis. This release runs local-only.
 research_engine: claude
-
-# NotebookLM notebook id or alias for nlm sync (leave blank if not using NotebookLM).
-notebooklm_notebook: ""
