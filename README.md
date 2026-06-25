@@ -126,7 +126,6 @@ Active vault resolution precedence:
 ```
 config/
   secondbrain.yaml              # global: default_vault, vault registry
-  litellm.yaml                  # shared LiteLLM proxy config (optional)
   vaults/
     <name>/
       vault.yaml                # vault path, PURPOSE, research engine
@@ -152,10 +151,11 @@ Three billing pools, cheapest first:
 |-------|------|------|
 | Interactive `claude` sessions | subscription login | $0 |
 | `claude -p` automation via `scripts/claude_agent.sh` | `CLAUDE_CODE_OAUTH_TOKEN` | $0 (Agent SDK credit) |
-| LiteLLM proxy -> Ollama / Gemini / Anthropic Haiku | `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` | pay-as-you-go |
+| Local `ollama` (bulk summarisation, retrieval embeddings) | none | $0 (local) |
+| Optional metered providers (only if a key is set in `.env`) | provider key in `.env` | pay-as-you-go |
 
-The core wiki and research flow runs entirely on the first two pools ($0 marginal).
-`ANTHROPIC_API_KEY` is used ONLY by the LiteLLM proxy; never export it into a `claude -p`
+The core wiki and research flow runs entirely on the $0 pools. Provider keys in `.env` are
+optional and used only by metered routes; never export `ANTHROPIC_API_KEY` into a `claude -p`
 shell (`scripts/claude_agent.sh` enforces this automatically).
 
 ---

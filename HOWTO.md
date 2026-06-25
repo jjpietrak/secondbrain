@@ -39,7 +39,7 @@ VAULT=other-vault claude                   # run against a different vault
 ```
 
 Per-vault config: `config/vaults/<name>/{vault,topics,budget}.yaml`.
-Shared across vaults: the LiteLLM proxy config and API keys in `.env`.
+Shared across vaults: API keys / tokens in `.env`.
 
 ---
 
@@ -217,8 +217,9 @@ vault-push
 
 - **Interactive subscription ($0):** normal `claude` sessions.
 - **Agent SDK credit ($0):** `claude -p` automation via `scripts/claude_agent.sh`.
-- **Pay-as-you-go:** LiteLLM -> Ollama (free) / Gemini (free tier) / Anthropic Haiku
-  (metered). Guarded by `daily_usd_cap` in `config/vaults/<name>/budget.yaml`.
+- **Local ($0):** `ollama` for bulk summarisation + retrieval embeddings.
+- **Pay-as-you-go (optional):** metered providers, used only if a key is set in `.env`.
+  Guarded by `daily_usd_cap` in `config/vaults/<name>/budget.yaml`.
 
 Never export `ANTHROPIC_API_KEY` into a `claude -p` shell.
 `scripts/claude_agent.sh` enforces this automatically.
