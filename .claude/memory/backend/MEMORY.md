@@ -58,6 +58,10 @@ current; never store fact bodies here.
   caught live pulling `disaggregation`). Live $0 demo (real /wiki-approve): calibration accepted 0.70 vs
   rejected 0.33 (ranker predictive), reject keywords none, reputation empty (old rows pre-date plumbing).
   learned.json = runtime state, gitignored. 1023 tests. DEFERRED: step-2 query reformulation; 4B nightly.
+- [phase4a-query-reform.md](phase4a-query-reform.md) -- **Phase 4A step-2 (query reformulation) FULLY WIRED 2026-06-25.**
+  web_query.py (reformulate API); web_crawl.py integration (after build_plan+agent_learn, _harvest_target
+  per-engine routing, --no-reformulate, trace "reformulate/target"); render_trace_markdown ## Reformulate;
+  SKILL.md step 1b. 12 new tests (TestQueryReformulation). 1054 total tests green, 0 real LLM calls.
 - [phase3-conclusion.md](phase3-conclusion.md) — **PHASE 3 CLOSED 2026-06-23 (user sign-off): functionally
   works OK w/ minor bugs, but relevance/accuracy NOT good enough + DECISION is obscure.** Perplexity returned
   only slightly-relevant results; arXiv path better but not great. NOT production-trusted — do NOT auto-wire web
