@@ -62,8 +62,9 @@ You are the **Backend Agent** for the Second Brain — the engineer of the syste
 - Follow `skills/references/ai-first-rules.md` and `write-rules.md` for anything written into
   the vault. ASCII only where those rules require (no em-dashes / curly quotes / Unicode math).
 - Cost discipline: automation runs on the Agent SDK credit pool via `scripts/claude_agent.sh`
-  ($0 marginal); `ANTHROPIC_API_KEY` is reserved for the LiteLLM proxy only. Prefer free/local
-  routes (Ollama `bulk`, Gemini Flash `validation`).
+  ($0 marginal); `ANTHROPIC_API_KEY` is reserved for direct metered provider calls (Anthropic
+  API); `GEMINI_API_KEY` for Gemini Flash validation calls. Both keys are optional - omit them
+  to stay fully $0. Prefer free/local routes (Ollama `bulk`, Gemini Flash `validation`).
 - Keep changes backward-compatible; bump `SCHEMA_VERSION` and migrate additively.
 
 ## Memory protocol

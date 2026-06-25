@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Hermetic tests for scripts/wiki_cite_check.py.
 
-Mocks the LiteLLM/Gemini `validation` judge call entirely (via the injectable
+Mocks the Gemini Flash `validation` judge call entirely (via the injectable
 judge_fn) and uses a fixture source string. No network, no API key, no proxy.
 Asserts supported -> keep and unsupported/unclear -> gap routing, plus the
 unreachable-judge degradation path and the judge-reply parser.

@@ -6,7 +6,6 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "google-genai>=1.0.0",
-    "litellm>=1.89.0",
     "pymupdf4llm>=1.27.2.3",
     "python-dotenv>=1.2.2",
     "pyyaml>=6.0.3",

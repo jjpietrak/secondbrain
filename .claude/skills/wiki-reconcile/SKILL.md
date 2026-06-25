@@ -6,8 +6,8 @@ description: >
   time) APPEND to the page's bi-temporal `timeline:` - never overwrite the current value.
   For a genuine contradiction, mark a `> [!warning]` callout on the conflicting pages,
   write a conflict note under wiki/synthesis/, and log it. Adjudication (which source
-  wins, evolution vs contradiction) runs via the Gemini Flash `validation` route.
-  Wikilinks only. Triggers on: "reconcile", "reconcile the vault", "wiki reconcile",
+  wins, evolution vs contradiction) runs via the Gemini Flash `validation` route (direct
+  API via GEMINI_API_KEY; degrades gracefully when key absent). Wikilinks only. Triggers on: "reconcile", "reconcile the vault", "wiki reconcile",
   "/wiki-reconcile", "find contradictions", "fix conflicts", "resolve contradictions",
   "does the vault disagree with itself", "is this stale".
 allowed-tools: Read Edit Write Glob Grep Bash
@@ -62,9 +62,9 @@ When two pages assert mutually exclusive facts and it is NOT a simple time evolu
 ## Adjudication route (which source wins / evolution vs contradiction)
 
 The judgement call - is this an evolution or a real contradiction, and which source is
-more authoritative - is delegated to the **Gemini Flash `validation` route** via the
-local LiteLLM proxy (the same metered, small, paid route `wiki-cite` uses). Give the
-judge: the two claims, their dates, and their source types (peer-reviewed > article >
+more authoritative - is delegated to the **Gemini Flash `validation` route** (direct
+API via `GEMINI_API_KEY`; the same metered, small, paid route `wiki-cite` uses). Give
+the judge: the two claims, their dates, and their source types (peer-reviewed > article >
 transcript > opinion). Heuristics it applies:
 
 - **Which is newer?** (date comparison; newer usually wins for evolving facts)
@@ -73,9 +73,10 @@ transcript > opinion). Heuristics it applies:
   (-> timeline append). Two equally-recent sources disagreeing on a fact = contradiction
   (-> warning callout + conflict note).
 
-If the proxy is unreachable, DO NOT silently resolve: fall back to flagging the pair as a
-contradiction (outcome 2) and note `adjudication: unreachable` in the conflict note, so a
-human/later run decides. Never overwrite a fact on an unreachable judge.
+If the judge is unreachable (missing key, network error, non-200), DO NOT silently
+resolve: fall back to flagging the pair as a contradiction (outcome 2) and note
+`adjudication: unreachable` in the conflict note, so a human/later run decides.
+Never overwrite a fact on an unreachable judge.
 
 ## Steps
 

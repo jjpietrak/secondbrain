@@ -5,7 +5,7 @@ Multi-vault model: each vault is fully encapsulated under config/vaults/<name>/
 ({vault,topics,budget}.yaml).  Agent rules and the vault PURPOSE live in the CODE repo:
 CLAUDE.md, docs/, .claude/, and config/vaults/<name>/vault.yaml (purpose field).
 The vault on-disk _CLAUDE.md is a v0.1 artefact; wiki_init reconcile removes it.
-Shared infrastructure (the single LiteLLM proxy + API keys in .env) lives in
+Shared infrastructure (API keys in .env, global defaults) lives in
 config/secondbrain.yaml and is NOT per-vault.
 
 Active-vault resolution precedence:

@@ -23,8 +23,9 @@ Writers:
   `--agent <id>` tags per-agent spend (strips the flag before forwarding to claude).
   Passthrough mode: if the caller already set `--output-format`, exec claude raw (no
   double-wrap, no cost capture).
-- **LiteLLM proxy** (`services/litellm/cost_callback.py`): records metered (paid) calls
-  with actual `cost_usd` from the provider response and `source=pay-as-you-go`.
+- **Direct provider scripts** (e.g. `scripts/wiki_cite_check.py` calling Gemini Flash,
+  `scripts/contextual-prefix.py` calling the Anthropic API): record metered (paid) calls
+  with actual `cost_usd` and `source=pay-as-you-go` via `agents.cost_tracker.record()`.
 
 The Python API is `agents.cost_tracker.record(action, role, provider, input_tokens,
 output_tokens, cost_usd, source, model)`. The ledger file is in the code repo (`logs/`),
@@ -43,10 +44,10 @@ enforcement always uses `cost_usd` (real paid dollars).
   Source tag: `agent-sdk-credit` or `local`.
 - **$0 / credit pool**: all `claude_agent.sh` headless calls go through the Agent SDK
   credit pool; `cost_usd=0` in the ledger.
-- **Metered / paid**: LiteLLM proxy calls to Anthropic/Gemini models with actual billing.
-  Source tag: `pay-as-you-go`. Budget cap: `config/vaults/<vault>/budget.yaml:daily_usd_cap`
-  (default 2.0 USD/day). Check with `python agents/cost_tracker.py check` (exits 1 if over
-  cap).
+- **Metered / paid**: direct provider API calls (Anthropic API via `ANTHROPIC_API_KEY`,
+  Gemini Flash via `GEMINI_API_KEY`) with actual billing. Source tag: `pay-as-you-go`.
+  Budget cap: `config/vaults/<vault>/budget.yaml:daily_usd_cap` (default 2.0 USD/day).
+  Check with `python agents/cost_tracker.py check` (exits 1 if over cap).
 
 ## Per-agent attribution
 

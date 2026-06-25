@@ -10,9 +10,11 @@ Two stages:
   1. EXCERPT match (local, $0): pull the most relevant excerpt(s) from the source
      text by lexical overlap with the claim. Keeps the judge prompt small and gives
      a deterministic fallback if the judge route is unreachable.
-  2. JUDGE (Gemini Flash via the LiteLLM `validation` role): ask "does this excerpt
-     support this claim?" and parse a structured supported/unsupported/unclear
-     verdict. The proxy auto-logs cost via config/cost_callback.py.
+  2. JUDGE (Gemini Flash direct API): ask "does this excerpt support this claim?"
+     and parse a structured supported/unsupported/unclear verdict. Requires
+     GEMINI_API_KEY in the environment. If the key is absent or the call fails,
+     the script degrades to the excerpt-overlap heuristic and marks
+     `route=unreachable` so the caller can decide (it never silently passes).
 
 Routing decision (consumed by the wiki-cite SKILL):
   - supported   -> keep the `[[sources/X]]` link as-is.
@@ -20,10 +22,9 @@ Routing decision (consumed by the wiki-cite SKILL):
   - unclear     -> treat like unsupported for routing (flag), but mark the lower
                    confidence so a human/wiki-reconcile can adjudicate.
 
-Egress note: the ONLY network call is to the LOCAL LiteLLM proxy (localhost:4000),
-which in turn calls Gemini Flash. No direct provider egress from this script. If the
-proxy is unreachable, the script degrades to the excerpt-overlap heuristic and marks
-the verdict `route=unreachable` so the caller can decide (it never silently passes).
+Egress note: the ONLY external network call is to the Gemini Flash API
+(generativelanguage.googleapis.com). Requires GEMINI_API_KEY; degrades gracefully
+to local heuristic when absent. No proxy required.
 
 Usage:
   wiki_cite_check.py --claim "<text>" --source-file <path> [--page <wiki page>]
@@ -58,8 +59,8 @@ from pathlib import Path
 EXIT_OK = 0
 EXIT_USAGE = 2
 
-VALIDATION_ROLE = "validation"  # LiteLLM role -> Gemini Flash (config/litellm.yaml)
-DEFAULT_PORT = "4000"
+VALIDATION_ROLE = "validation"  # logical role name; judge runs via Gemini Flash direct API
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
 EXCERPT_WINDOW = 6      # sentences of context around the best-matching sentence
 MAX_EXCERPT_CHARS = 2000
 
@@ -126,21 +127,16 @@ def best_excerpt(claim, source_text, window=EXCERPT_WINDOW, max_chars=MAX_EXCERP
     return excerpt[:max_chars]
 
 
-def _proxy_base():
-    return f"http://localhost:{os.environ.get('LITELLM_PORT', DEFAULT_PORT)}"
-
-
-def _master_key():
-    # Prefer the env var; fall back to reading the project .env (parity with
-    # tests/test_routing.sh). Never hard-code the key.
-    key = os.environ.get("LITELLM_MASTER_KEY", "").strip()
+def _gemini_api_key():
+    # Prefer the env var; fall back to reading the project .env. Never hard-code.
+    key = os.environ.get("GEMINI_API_KEY", "").strip()
     if key:
         return key
     code = Path(os.environ.get("CODE_PATH") or Path(__file__).resolve().parent.parent)
     env = code / ".env"
     if env.is_file():
         for line in env.read_text(encoding="utf-8", errors="ignore").splitlines():
-            if line.startswith("LITELLM_MASTER_KEY="):
+            if line.startswith("GEMINI_API_KEY="):
                 return line.split("=", 1)[1].strip()
     return ""
 
@@ -157,36 +153,32 @@ JUDGE_SYSTEM = (
 
 
 def call_validation_judge(claim, excerpt, timeout=60):
-    """Call the LiteLLM `validation` role (Gemini Flash). Returns a dict
+    """Call the Gemini Flash API directly (validation route). Returns a dict
     {verdict, reason} or raises on transport/parse failure so the caller can fall
-    back to the heuristic. Overridable in tests via WIKI_CITE_JUDGE_CMD (see main)."""
-    base = _proxy_base()
-    mk = _master_key()
+    back to the heuristic. Requires GEMINI_API_KEY; raises ValueError when absent
+    so check_claim() degrades gracefully to the local heuristic."""
+    api_key = _gemini_api_key()
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY not set; cannot call validation judge")
+    prompt = (
+        f"{JUDGE_SYSTEM}\n\n"
+        f"CLAIM:\n{claim}\n\nEXCERPT:\n{excerpt}\n\nRespond with the JSON object only."
+    )
     payload = {
-        "model": VALIDATION_ROLE,
-        "messages": [
-            {"role": "system", "content": JUDGE_SYSTEM},
-            {
-                "role": "user",
-                "content": f"CLAIM:\n{claim}\n\nEXCERPT:\n{excerpt}\n\nRespond with the JSON object only.",
-            },
-        ],
-        "max_tokens": 200,
-        "temperature": 0,
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"maxOutputTokens": 200, "temperature": 0},
     }
     data = json.dumps(payload).encode("utf-8")
+    url = f"{GEMINI_API_URL}?key={api_key}"
     req = urllib.request.Request(
-        f"{base}/v1/chat/completions",
+        url,
         data=data,
-        headers={
-            "Authorization": f"Bearer {mk}",
-            "Content-Type": "application/json",
-        },
+        headers={"Content-Type": "application/json"},
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         body = json.loads(resp.read().decode("utf-8"))
-    content = body["choices"][0]["message"]["content"]
+    content = body["candidates"][0]["content"]["parts"][0]["text"]
     return _parse_judge_content(content)
 
 
@@ -248,8 +240,9 @@ def check_claim(claim, source_text, judge_fn=None, timeout=60):
     """Pure function: run excerpt-match + judge, return the result dict.
 
     `judge_fn(claim, excerpt)` is injectable for hermetic tests. When None, the real
-    LiteLLM `validation` route is used; on any transport error it degrades to the
-    local heuristic and marks `route=unreachable`.
+    Gemini Flash `validation` route is used (direct API via GEMINI_API_KEY); on any
+    transport error or missing key it degrades to the local heuristic and marks
+    `route=unreachable`.
     """
     excerpt = best_excerpt(claim, source_text)
     judge_reachable = True

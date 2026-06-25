@@ -3,8 +3,9 @@ name: wiki-cite
 description: >
   Make every wiki claim cite its source and light-check that the cited source
   actually supports it. Ensures each external claim links its [[sources/X]] summary
-  page (wikilinks only), then runs a LIGHT fact-check (Gemini Flash via the
-  validation route) asking whether the cited raw source supports the claim.
+  page (wikilinks only), then runs a LIGHT fact-check (Gemini Flash direct API via
+  GEMINI_API_KEY; degrades to local heuristic when key absent) asking whether the
+  cited raw source supports the claim.
   Supported claims keep their link; unsupported or unclear claims get a > [!gap]
   callout and are routed to wiki-reconcile. NOT the heavy grounding benchmark
   (that is Phase 6). Triggers on: "cite this", "add citations", "/wiki-cite",
@@ -23,8 +24,9 @@ Owner: **wiki**. Two jobs on a wiki page:
    `[[sources/X]]` wikilink (per `references/ai-first-rules.md` Rules 5-6). Wikilinks
    ONLY; never markdown `[text](path)` links.
 2. **Light fact-check** - for each cited claim, confirm the cited raw source actually
-   supports it, using the `validation` role (Gemini Flash, via the LOCAL LiteLLM proxy).
-   This is a cheap sanity gate, NOT the heavy grounding benchmark (Phase 6).
+   supports it, using the `validation` role (Gemini Flash direct API via GEMINI_API_KEY;
+   degrades to local heuristic when key absent). This is a cheap sanity gate, NOT the
+   heavy grounding benchmark (Phase 6).
 
 This skill follows `references/ai-first-rules.md` and `references/write-rules.md`. ASCII
 only (no em-dashes, curly quotes, or Unicode math - see write-rules anti-patterns).
@@ -101,14 +103,12 @@ anti-fabrication / search-completeness).
 
 ## LLM routing (validation = Gemini Flash, the only paid route here)
 - The excerpt match and routing logic are LOCAL and free (`scripts/wiki_cite_check.py`).
-- The judge call goes to the LOCAL LiteLLM proxy at `http://localhost:${LITELLM_PORT:-4000}`
-  with `{"model": "validation", ...}`; the proxy routes to Gemini Flash
-  (`config/litellm.yaml` `validation` role) and auto-logs cost via
-  `config/cost_callback.py`. The script reads `LITELLM_MASTER_KEY` from the env or `.env`;
-  it never hard-codes the key.
-- The ONLY network egress is to the local proxy. If the proxy is unreachable the helper
-  degrades to a conservative local heuristic and marks `route=unreachable` (it never
-  silently passes a claim). Keep the batch small - this is the metered route.
+- The judge call goes directly to the Gemini Flash API
+  (`generativelanguage.googleapis.com`). The script reads `GEMINI_API_KEY` from the
+  env or `.env`; it never hard-codes the key.
+- If `GEMINI_API_KEY` is absent or the call fails, the helper degrades to a
+  conservative local heuristic and marks `route=unreachable` (it never silently passes
+  a claim). Keep the batch small - this is the metered route.
 
 ## Locking (shared-target writes)
 wiki-cite edits a single page in place (the page is the contended target, not a global

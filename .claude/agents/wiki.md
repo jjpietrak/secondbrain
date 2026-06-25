@@ -79,8 +79,8 @@ You are the **Wiki Agent** for the Second Brain - the librarian of the knowledge
   in sorted-path order; on rc=75 retry once after 2s, then log and skip.
 - Cost discipline: ingest + synthesis reasoning runs on the Agent-SDK credit pool via
   `scripts/claude_agent.sh` ($0 marginal). Embeddings + rerank route to Ollama `bulk` ($0,
-  local). Light cross-checks route to Gemini Flash `validation` via the LiteLLM proxy (the
-  only metered route - keep it small).
+  local). Light cross-checks route to Gemini Flash `validation` directly via `GEMINI_API_KEY`
+  (the only metered route - keep it small; gracefully skipped when key is absent).
 
 ## Memory protocol
 1. At the start of a task, read `.claude/memory/wiki/MEMORY.md` (the index) and any referenced

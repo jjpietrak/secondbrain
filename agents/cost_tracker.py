@@ -8,8 +8,10 @@ logs/cost_ledger.jsonl:
   {ts, date, action, role, provider, input_tokens, output_tokens, cost_usd, source}
 
 Writers:
-  - LiteLLM proxy  -> services/litellm/cost_callback.py calls record(...)
   - claude -p runs -> orchestrator parses `--output-format json` and calls record(...)
+  - direct provider scripts -> scripts call record() after metered API calls
+    (e.g. scripts/wiki_cite_check.py for Gemini Flash,
+     scripts/contextual-prefix.py for Anthropic API tier-1)
 
 The dollar budget (per-vault config/vaults/<vault>/budget.yaml: daily_usd_cap) guards the pay-as-you-go pool.
 Agent-SDK-credit calls are recorded with cost_usd=0 and source="agent-sdk-credit".

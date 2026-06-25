@@ -323,12 +323,14 @@ def anthropic_api_prefix(api_key, page_title, page_body, chunk_text):
             out_tok = usage.get("output_tokens", 0) or 0
             log(f"  cache: wrote={usage.get('cache_creation_input_tokens', 0)} "
                 f"read={usage.get('cache_read_input_tokens', 0)} tok")
-            # Record to the cost ledger (tier-1 uses the paid API key).
+            # Record to the cost ledger (tier-1 uses the paid Anthropic API key).
+            # cost_usd=0.0 here because the Anthropic API response does not return
+            # a dollar figure; estimated_cost_usd is computed from the rate table.
             _record_prefix_cost(
                 model=ANTHROPIC_MODEL,
                 input_tokens=in_tok,
                 output_tokens=out_tok,
-                cost_usd=0.0,  # actual cost tracked by LiteLLM proxy / billing; estimated below
+                cost_usd=0.0,
                 source="pay-as-you-go",
             )
             for block in data.get("content", []):

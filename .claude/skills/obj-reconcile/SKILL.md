@@ -11,7 +11,8 @@ description: >
   directly (status: superseded / rejected); user-only nodes (research_question, topic,
   purpose, decision) are NEVER edited - inconsistencies touching them are written to
   objective/agent_todo/ as user-facing flags. Adjudication of ambiguous duplicates uses
-  the validation Gemini-Flash route (metered, cheap). Updates objective/hot.md and appends
+  the Gemini Flash validation route (direct API via GEMINI_API_KEY; metered, cheap;
+  degrades gracefully when key absent). Updates objective/hot.md and appends
   to objective/index.md after each run. LOCAL-ONLY (no web).
   Triggers on: "obj-reconcile", "/obj-reconcile", "reconcile objectives",
   "reconcile the objective graph", "clean up directions", "stale directions",
@@ -298,11 +299,13 @@ The `validation` Gemini-Flash route is used for two decisions:
 1. Pass B: are two directions for the same question substantially duplicate?
 2. Pass C: are two pending proposals asking essentially the same thing?
 
-Call via the LiteLLM proxy at `http://localhost:4000/v1/chat/completions`, model
-`validation`. Temperature 0. System prompt: "You are a concise duplicate-classification
-judge. Reply with YES-DUPLICATE or NOT-DUPLICATE followed by a one-sentence reason."
+Call `scripts/wiki_cite_check.py` with the Gemini Flash `validation` route
+(direct Gemini API via `GEMINI_API_KEY`). Temperature 0. System prompt: "You are a
+concise duplicate-classification judge. Reply with YES-DUPLICATE or NOT-DUPLICATE
+followed by a one-sentence reason." The call degrades gracefully when `GEMINI_API_KEY`
+is absent - no proxy or special setup required.
 
-If the proxy is unreachable (connection error or non-200), do NOT fail the run. Instead:
+If the judge is unreachable (missing key, network error, or non-200), do NOT fail the run. Instead:
 - Set adjudication result to AMBIGUOUS.
 - Write a `TODO` node for the pair (Step 4 template above).
 - Continue with the rest of the reconcile run.
