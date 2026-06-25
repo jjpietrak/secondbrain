@@ -38,9 +38,9 @@ zero.
   (`ollama pull nomic-embed-text`) -- enables cosine rerank in `wiki-retrieve` and
   `wiki-query`. Without it the retrieval falls back to BM25 only.
 
-**Optional (LiteLLM proxy for paid model routing):**
-- Run `services/litellm/` to route calls through Ollama (local/free), Gemini (free tier),
-  and Anthropic Haiku (metered). Not required for the basic wiki/research flow.
+**Optional (local retrieval rerank):**
+- Install [`ollama`](https://ollama.com) and run `ollama pull nomic-embed-text` to enable
+  semantic cosine rerank in `wiki-retrieve`. Without it, retrieval falls back to BM25 (still $0).
 
 ---
 
@@ -65,6 +65,9 @@ scripts/setup.sh --vault-path /path/to/your/vault --name my-vault \
 # Prompts for any missing args.  Idempotent: safe to re-run.
 
 # 5. Restart Claude Code to register skills and agents
+
+# 6. (optional) run the test suite to verify the install
+uv run pytest tests/
 ```
 
 ---
