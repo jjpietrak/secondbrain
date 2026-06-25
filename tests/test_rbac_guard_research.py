@@ -38,7 +38,7 @@ import rbac_guard  # noqa: E402  (import after sys.path patch)
 # Helpers
 # ---------------------------------------------------------------------------
 
-FAKE_VAULT = "/mnt/c/Obsidian/Inference-Disagg"
+FAKE_VAULT = "/tmp/fake-vault-example"
 
 
 def _make_event(

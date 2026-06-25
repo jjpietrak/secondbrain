@@ -3,8 +3,12 @@
 # wiki pages. Uses the OAuth wrapper (Agent SDK credit) — no pay-as-you-go spend.
 # Run interactively (NOT in a restricted sandbox): bash tests/test_ingest.sh
 set -uo pipefail
-CODE_PATH="${CODE_PATH:-/home/jpietrak/second_brain}"
-VAULT_PATH="${VAULT_PATH:-/mnt/c/Obsidian/Inference-Disagg}"
+CODE_PATH="${CODE_PATH:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+VAULT_PATH="${VAULT_PATH:-$( cd "$CODE_PATH" && python3 -m agents.vault_config path 2>/dev/null || echo "" )}"
+if [ -z "$VAULT_PATH" ]; then
+  echo "ERROR: VAULT_PATH could not be resolved. Set VAULT_PATH or configure a vault." >&2
+  exit 1
+fi
 
 ART="$VAULT_PATH/raw/articles/test-ingest-$(date +%s).md"
 cat > "$ART" <<'EOF'

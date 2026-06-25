@@ -136,7 +136,7 @@ def _master_key():
     key = os.environ.get("LITELLM_MASTER_KEY", "").strip()
     if key:
         return key
-    code = Path(os.environ.get("CODE_PATH", "/home/jpietrak/second_brain"))
+    code = Path(os.environ.get("CODE_PATH") or Path(__file__).resolve().parent.parent)
     env = code / ".env"
     if env.is_file():
         for line in env.read_text(encoding="utf-8", errors="ignore").splitlines():

@@ -1,0 +1,17 @@
+# topics.yaml -- research topics for this vault.
+#
+# Each topic drives periodic research sweeps. The nightly run checks which topics
+# are "due" based on their frequency (daily | weekly). Leave the list empty until
+# you have defined your vault's scope.
+#
+# Example shape (uncomment and fill in):
+#
+# topics:
+#   - name: "my-topic-name"
+#     description: "One-sentence description of what to research."
+#     frequency: weekly      # daily | weekly
+#     queries:
+#       - "search query one"
+#       - "search query two"
+
+topics: []

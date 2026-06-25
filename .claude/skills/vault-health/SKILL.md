@@ -50,7 +50,7 @@ backend-owned `meta/health_report/` folder.
 
 1. Resolve the active vault (never hard-code a path):
    ```bash
-   eval "$(wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.vault_config env')"
+   eval "$(wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -m agents.vault_config env')"
    ```
 2. Run the auditor. It writes `meta/health_report/health-<date>.md` (a folder, so
    dated reports accumulate):

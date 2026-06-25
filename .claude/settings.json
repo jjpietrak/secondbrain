@@ -1,8 +1,8 @@
 {
-  "$comment": "Pins the interactive Second Brain agent model (config/litellm.yaml only controls routed sub-tasks; override per-session with `claude --model`). additionalDirectories grants the agent access to the Obsidian vault, which lives outside this repo. The PreToolUse hook enforces per-agent RBAC on vault writes (backstop for the .claude/agents/<id>.md allowlists + docs/vault-schema.md); it defers for unknown/unenforced roles and for non-vault paths.",
+  "$comment": "Pins the interactive Second Brain agent model. additionalDirectories grants the agent access to Obsidian vaults outside this repo (set the path for your machine). The PreToolUse hook enforces per-agent RBAC on vault writes (backstop for the .claude/agents/<id>.md allowlists + docs/vault-schema.md); it defers for unknown/unenforced roles and for non-vault paths.",
   "model": "claude-opus-4-8",
   "permissions": {
-    "additionalDirectories": ["/mnt/c/Obsidian"]
+    "additionalDirectories": []
   },
   "hooks": {
     "Stop": [
@@ -10,7 +10,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd /home/jpietrak/second_brain && .venv/bin/python scripts/track_interactive_tokens.py"
+            "command": "python scripts/track_interactive_tokens.py"
           }
         ]
       }
@@ -21,7 +21,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd /home/jpietrak/second_brain && .venv/bin/python scripts/rbac_guard.py"
+            "command": "python scripts/rbac_guard.py"
           }
         ]
       }

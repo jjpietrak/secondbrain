@@ -25,7 +25,7 @@ import os, sys, json, argparse
 from pathlib import Path
 from datetime import datetime, date, timedelta
 
-CODE_PATH = Path(os.environ.get("CODE_PATH", "/home/jpietrak/second_brain"))
+CODE_PATH = Path(os.environ.get("CODE_PATH") or Path(__file__).resolve().parent.parent)
 try:
     from agents import vault_config as vc
 except ImportError:  # run as a script: agents/ is already on sys.path

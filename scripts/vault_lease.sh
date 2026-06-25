@@ -59,7 +59,7 @@ resolve_vault() {
     echo "$VAULT_ROOT"; return 0
   fi
   local code_path py
-  code_path="${CODE_PATH:-/home/jpietrak/second_brain}"
+  code_path="${CODE_PATH:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
   py="${PY:-$code_path/.venv/bin/python}"
   [ -x "$py" ] || py="python3"
   (cd "$code_path" 2>/dev/null && "$py" -m agents.vault_config path 2>/dev/null) || true
@@ -81,7 +81,7 @@ git_v() { git -C "$VAULT" "$@"; }
 lease_field() {
   local field="$1"
   [ -f "$LEASE_FILE" ] || return 0
-  local py="${PY:-${CODE_PATH:-/home/jpietrak/second_brain}/.venv/bin/python}"
+  local py="${PY:-${CODE_PATH:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/.venv/bin/python}"
   [ -x "$py" ] || py="python3"
   LEASE_FILE="$LEASE_FILE" FIELD="$field" "$py" - <<'PY' 2>/dev/null || true
 import os, json
@@ -100,7 +100,7 @@ write_lease() {
   local holder="$1" ttl="$2" now exp
   now="$(now_epoch)"; exp=$((now + ttl))
   mkdir -p "$META_DIR"
-  local py="${PY:-${CODE_PATH:-/home/jpietrak/second_brain}/.venv/bin/python}"
+  local py="${PY:-${CODE_PATH:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/.venv/bin/python}"
   [ -x "$py" ] || py="python3"
   HOLDER="$holder" HOST="$(hostname)" PID="$$" \
     ACQ="$(iso_utc "$now")" EXP="$(iso_utc "$exp")" \

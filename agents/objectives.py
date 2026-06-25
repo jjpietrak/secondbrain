@@ -69,7 +69,7 @@ def _resolve_vault_root(override: str | None = None) -> Path:
         val = os.environ.get(ev)
         if val:
             return Path(val)
-    code_root = Path(os.environ.get("CODE_PATH", "/home/jpietrak/second_brain"))
+    code_root = Path(os.environ.get("CODE_PATH") or Path(__file__).resolve().parent.parent)
     py = code_root / ".venv" / "bin" / "python"
     if not py.exists():
         py = Path(sys.executable)
@@ -193,7 +193,7 @@ def _format_id(node_type: str, n: int) -> str:
 # ---------------------------------------------------------------------------
 
 def _acquire_lock(vault_root: Path, rel: str) -> bool:
-    code_root = Path(os.environ.get("CODE_PATH", "/home/jpietrak/second_brain"))
+    code_root = Path(os.environ.get("CODE_PATH") or Path(__file__).resolve().parent.parent)
     lock_script = code_root / "scripts" / "wiki-lock.sh"
     if not lock_script.exists():
         return True  # no lock available; proceed anyway
@@ -206,7 +206,7 @@ def _acquire_lock(vault_root: Path, rel: str) -> bool:
 
 
 def _release_lock(vault_root: Path, rel: str) -> None:
-    code_root = Path(os.environ.get("CODE_PATH", "/home/jpietrak/second_brain"))
+    code_root = Path(os.environ.get("CODE_PATH") or Path(__file__).resolve().parent.parent)
     lock_script = code_root / "scripts" / "wiki-lock.sh"
     if not lock_script.exists():
         return
@@ -1234,7 +1234,7 @@ def main(argv: list[str] | None = None) -> int:
     vault_root_str: str | None = args.vault_root
     if not vault_root_str and args.vault:
         # Use vault_config with vault name.
-        code_root = Path(os.environ.get("CODE_PATH", "/home/jpietrak/second_brain"))
+        code_root = Path(os.environ.get("CODE_PATH") or Path(__file__).resolve().parent.parent)
         py = code_root / ".venv" / "bin" / "python"
         if not py.exists():
             py = Path(sys.executable)

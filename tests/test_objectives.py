@@ -18,7 +18,7 @@ from io import StringIO
 from contextlib import redirect_stdout
 from pathlib import Path
 
-REPO = Path(os.environ.get("CODE_PATH", "/home/jpietrak/second_brain"))
+REPO = Path(os.environ.get("CODE_PATH") or Path(__file__).resolve().parent.parent)
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 

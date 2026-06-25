@@ -389,7 +389,7 @@ def test_render_md_sample_table(tmp_path, monkeypatch, capsys):
             "rationale": (
                 "Proposes a novel KV cache format for optical interconnects. "
                 "Directly relevant to the 3-tier disaggregation architecture "
-                "being investigated for Inference-Disagg."
+                "being investigated for the active vault."
             ),
             "discovered_by": "web",
             "objective_ids": ["DIR-0004", "GAP-08"],

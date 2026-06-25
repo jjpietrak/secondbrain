@@ -38,8 +38,8 @@ Before any other action:
 
 1. **Read decisions:**
    ```bash
-   eval "$(wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.vault_config env')"
-   wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.objectives decisions --json'
+   eval "$(wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -m agents.vault_config env')"
+   wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -m agents.objectives decisions --json'
    ```
    Parse the JSON. Apply any decision with `scope: all` or `scope: research` as a hard
    constraint. If the scaffold is not yet applied, skip gracefully.
@@ -50,7 +50,7 @@ Before any other action:
 ## Step 0 - resolve vault and parse arguments
 
 ```bash
-eval "$(wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.vault_config env')"
+eval "$(wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -m agents.vault_config env')"
 # $VAULT_ROOT is now set
 ```
 
@@ -99,7 +99,7 @@ If the user says no (or does not confirm), stop with "Promotion cancelled."
 ## Step 3 - allocate the new Q-NNNN id
 
 ```bash
-NEW_ID=$(wsl.exe -- bash -lc "cd /home/jpietrak/second_brain && .venv/bin/python -m agents.objectives next-id research_question")
+NEW_ID=$(wsl.exe -- bash -lc "cd \"$CODE_PATH\" && .venv/bin/python -m agents.objectives next-id research_question")
 echo "Allocated: $NEW_ID"
 ```
 
@@ -112,7 +112,7 @@ Import and call the helper from `scripts/question_lifecycle.py`:
 ```bash
 python -c "
 import sys
-sys.path.insert(0, '/home/jpietrak/second_brain')
+sys.path.insert(0, os.environ.get('CODE_PATH', '.'))
 from scripts.question_lifecycle import proposal_to_question_frontmatter
 from pathlib import Path
 
@@ -175,7 +175,7 @@ Use the helper to update proposal frontmatter:
 ```bash
 python -c "
 import sys
-sys.path.insert(0, '/home/jpietrak/second_brain')
+sys.path.insert(0, os.environ.get('CODE_PATH', '.'))
 from scripts.question_lifecycle import mark_proposal_approved
 from pathlib import Path
 
@@ -211,7 +211,7 @@ After writing the new research_question node and marking the proposal approved, 
 to generate `## Links` edges and normalize `written_by` on every objective node:
 
 ```bash
-wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.objectives relink --apply'
+wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -m agents.objectives relink --apply'
 ```
 
 This (re)generates each node's `## Links` edges and normalizes `written_by` (full

@@ -39,7 +39,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-CODE_PATH = Path(os.environ.get("CODE_PATH", "/home/jpietrak/second_brain"))
+CODE_PATH = Path(os.environ.get("CODE_PATH") or Path(__file__).resolve().parent.parent)
 
 # Watermark directory: one small text file per session tracking last processed uuid
 WATERMARK_DIR = CODE_PATH / "logs" / ".interactive_watermarks"
@@ -222,8 +222,10 @@ def main() -> int:
         return 0
 
     if not transcript_path:
-        # Fallback: construct path from session_id using the known project dir
-        project_dir = Path.home() / ".claude" / "projects" / "-home-jpietrak-second-brain"
+        # Fallback: construct path from session_id using the project dir slug.
+        # The slug is derived from the repo's absolute path (slashes become dashes).
+        repo_slug = str(CODE_PATH.resolve()).replace("/", "-").replace("\\", "-")
+        project_dir = Path.home() / ".claude" / "projects" / repo_slug
         transcript_path = str(project_dir / f"{session_id}.jsonl")
 
     try:

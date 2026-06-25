@@ -88,6 +88,7 @@ else
   _code_path="${CODE_PATH:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
   _py="${PY:-$_code_path/.venv/bin/python}"
   [ -x "$_py" ] || _py="python3"
+  [ -x "$_py" ] || _py="python3"
   VAULT_ROOT="$(cd "$_code_path" 2>/dev/null && "$_py" -m agents.vault_config path 2>/dev/null || true)"
   [ -n "$VAULT_ROOT" ] || VAULT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fi

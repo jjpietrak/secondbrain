@@ -43,7 +43,7 @@ is not yet applied.
 
 ### 0a - read active decisions
 ```bash
-eval "$(wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.vault_config env')"
+eval "$(wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -m agents.vault_config env')"
 # Or inside WSL:
 python -m agents.vault_config env   # exports VAULT, VAULT_ROOT
 python -m agents.objectives decisions --json

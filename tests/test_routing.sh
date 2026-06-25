@@ -1,7 +1,7 @@
 #!/bin/bash
 # Smoke-test LiteLLM routing to all three backends.
 # Usage: bash tests/test_routing.sh
-CODE_PATH="${CODE_PATH:-/home/jpietrak/second_brain}"
+CODE_PATH="${CODE_PATH:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 BASE="http://localhost:${LITELLM_PORT:-4000}"
 MK="$(grep -E '^LITELLM_MASTER_KEY=' "$CODE_PATH/.env" | head -1 | cut -d= -f2-)"
 

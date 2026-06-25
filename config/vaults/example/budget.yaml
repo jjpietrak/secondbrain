@@ -1,0 +1,14 @@
+# budget.yaml -- cost/budget controls for this vault.
+#
+# daily_usd_cap: maximum paid USD spend per day (pay-as-you-go pool only;
+#   Agent SDK credit-pool calls are always $0 and are not counted against this cap).
+#   Exit code 1 from `python -m agents.cost_tracker check` when exceeded.
+#
+# metered_providers: providers counted against the daily cap.
+#   Default: anthropic, gemini. Ollama and other local routes are always free.
+
+daily_usd_cap: 2.00
+
+metered_providers:
+  - anthropic
+  - gemini

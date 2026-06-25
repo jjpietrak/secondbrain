@@ -122,7 +122,7 @@ def temp_vault(tmp_path: Path) -> Path:
             created: 2026-06-21
             updated: 2026-06-21
             status: active
-            vault: Inference-Disagg
+            vault: example
             ---
             Understand the design space of inference disaggregation systems with a focus
             on latency, memory bandwidth, and scheduling trade-offs.

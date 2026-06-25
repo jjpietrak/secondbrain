@@ -538,11 +538,11 @@ def test_validate_gaps_output_empty():
 # ---------------------------------------------------------------------------
 
 def test_build_gaps_frontmatter_fields():
-    fm = build_gaps_frontmatter("Inference-Disagg", "2026-06-21")
+    fm = build_gaps_frontmatter("example", "2026-06-21")
     assert "type: gaps_report" in fm
     assert "written_by: wiki" in fm
     assert "updated: 2026-06-21" in fm
-    assert "vault: Inference-Disagg" in fm
+    assert "vault: example" in fm
     assert "ai-first: true" in fm
 
 

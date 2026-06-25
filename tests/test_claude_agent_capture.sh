@@ -66,7 +66,7 @@ LEDGER="$SANDBOX/logs/cost_ledger.jsonl"
 
 # Run the wrapper with the mock claude first on PATH and the sandbox CODE_PATH.
 OUT=$(PATH="$SANDBOX/bin:$PATH" CODE_PATH="$SANDBOX" PY="$REPO/.venv/bin/python" \
-      VAULT="${VAULT:-Inference-Disagg}" \
+      VAULT="${VAULT:-example}" \
       bash "$WRAPPER" --agent backend "say hi" 2>/dev/null)
 RC=$?
 

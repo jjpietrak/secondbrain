@@ -86,7 +86,7 @@ def load_cost_tracker(sandbox: Path):
     old_code = os.environ.get("CODE_PATH")
     old_vault = os.environ.get("VAULT")
     os.environ["CODE_PATH"] = str(sandbox)
-    os.environ["VAULT"] = os.environ.get("VAULT", "Inference-Disagg")
+    os.environ["VAULT"] = os.environ.get("VAULT", "example")
     # Force reimport so CODE_PATH is picked up fresh.
     import importlib
     if "agents.cost_tracker" in sys.modules:
@@ -115,7 +115,7 @@ def load_contextual_prefix(sandbox: Path):
     """Import contextual-prefix.py from the repo with CODE_PATH pointing at sandbox."""
     helper = ROOT / "scripts" / "contextual-prefix.py"
     os.environ["CODE_PATH"] = str(sandbox)
-    os.environ["VAULT"] = os.environ.get("VAULT", "Inference-Disagg")
+    os.environ["VAULT"] = os.environ.get("VAULT", "example")
     # Clean cached modules so the script picks up the fresh CODE_PATH.
     for key in list(sys.modules):
         if "cost_tracker" in key or "vault_config" in key:
@@ -250,7 +250,7 @@ def test_contextual_prefix_tier1_records_ledger():
     """
     sandbox = make_sandbox()
     os.environ["CODE_PATH"] = str(sandbox)
-    os.environ["VAULT"] = os.environ.get("VAULT", "Inference-Disagg")
+    os.environ["VAULT"] = os.environ.get("VAULT", "example")
 
     # Patch cost_tracker.LEDGER before loading contextual-prefix so any record()
     # calls inside the loaded module write to the sandbox ledger.
@@ -307,7 +307,7 @@ def test_contextual_prefix_tier2_records_ledger():
     """
     sandbox = make_sandbox()
     os.environ["CODE_PATH"] = str(sandbox)
-    os.environ["VAULT"] = os.environ.get("VAULT", "Inference-Disagg")
+    os.environ["VAULT"] = os.environ.get("VAULT", "example")
 
     for key in list(sys.modules):
         if "cost_tracker" in key or "vault_config" in key:

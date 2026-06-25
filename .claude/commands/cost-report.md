@@ -7,8 +7,8 @@ triggers_en: ["cost report", "how much have I spent", "token usage", "budget sta
 Report cost/usage from the ledger. Run from the code repo:
 
 ```bash
-cd /home/jpietrak/second_brain
-uv run python agents/cost_tracker.py report
+# run from the repo root (where agents/ lives)
+python agents/cost_tracker.py report
 ```
 
 This reads `logs/cost_ledger.jsonl` and writes `$VAULT_ROOT/meta/cost_report.md`

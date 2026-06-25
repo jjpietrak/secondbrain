@@ -1,25 +1,26 @@
-# Second Brain — GLOBAL settings (shared across all vaults).
+# Second Brain -- GLOBAL settings (shared across all vaults).
 #
 # Per-vault settings live in config/vaults/<name>/{vault,topics,budget}.yaml.
 # This file holds only what is shared: the vault registry, the default vault, and
-# pointers to shared infrastructure (the single LiteLLM proxy + API keys in .env).
+# pointers to shared infrastructure (API keys in .env).
 #
-# Selecting the active vault: set the VAULT env var (e.g. VAULT=Inference-Disagg).
+# Selecting the active vault: set the VAULT env var (e.g. VAULT=example).
 # If unset, `default_vault` below is used. Resolve at runtime with:
 #   python -m agents.vault_config path     # active vault's absolute path
 #   python -m agents.vault_config name      # active vault name
 #   python -m agents.vault_config purpose    # active vault PURPOSE
+#
+# CODE_PATH (repo root) is resolved automatically from agents/vault_config.py
+# (__file__-relative). Override with the CODE_PATH env var if needed.
 
-default_vault: Inference-Disagg
+default_vault: example
 
 # Registry of known vaults. `enabled` controls whether the nightly run touches it
 # when iterating all vaults (VAULT=all). Each name maps to config/vaults/<name>/.
 vaults:
-  - name: Inference-Disagg
+  - name: example
     enabled: true
 
 # Shared infrastructure (NOT per-vault).
 shared:
-  litellm_config: config/litellm.yaml      # one proxy on :4000 serves every vault
   env_file: .env                            # API keys / tokens / ports
-  code_path: /home/jpietrak/second_brain

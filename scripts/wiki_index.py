@@ -48,7 +48,7 @@ def _resolve_vault_root(override: str | None) -> Path:
         if os.environ.get(ev):
             return Path(os.environ[ev])
     # Fall back to agents.vault_config
-    code_root = Path(os.environ.get("CODE_PATH", "/home/jpietrak/second_brain"))
+    code_root = Path(os.environ.get("CODE_PATH") or Path(__file__).resolve().parent.parent)
     py = code_root / ".venv" / "bin" / "python"
     if not py.exists():
         py = Path(sys.executable)
@@ -289,7 +289,7 @@ def _locked_write(vault_root: Path, content: str, dry_run: bool) -> None:
         print(content)
         return
 
-    code_root = Path(os.environ.get("CODE_PATH", "/home/jpietrak/second_brain"))
+    code_root = Path(os.environ.get("CODE_PATH") or Path(__file__).resolve().parent.parent)
     lock_script = code_root / "scripts" / "wiki-lock.sh"
 
     def _acquire() -> bool:

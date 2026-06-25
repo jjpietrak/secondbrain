@@ -41,7 +41,7 @@ Before any other step, run the two required research agent startup actions:
 
 ```bash
 # 1. Read active decision nodes (hard constraints for this task)
-wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.objectives decisions --json'
+wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -m agents.objectives decisions --json'
 ```
 
 Parse the JSON. Every decision with `scope: all` or `scope: research` is a hard constraint
@@ -58,7 +58,7 @@ Note open threads, prior synthesis decisions, and the current phase state.
 ## Step 1 - Resolve vault root
 
 ```bash
-eval "$(wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.vault_config env')"
+eval "$(wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -m agents.vault_config env')"
 ```
 
 This exports `VAULT_ROOT`. All subsequent reads/writes use `$VAULT_ROOT`.
@@ -66,7 +66,7 @@ This exports `VAULT_ROOT`. All subsequent reads/writes use `$VAULT_ROOT`.
 ## Step 2 - Load the objective frontier
 
 ```bash
-wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.objectives frontier --json'
+wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -m agents.objectives frontier --json'
 ```
 
 This returns a JSON object with:
@@ -79,7 +79,7 @@ Also read `objective/purpose/PURPOSE.md` for the vault purpose statement. Read
 
 If `objective/` is not yet scaffolded (exit non-zero from the frontier command), run:
 ```bash
-wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python scripts/obj_init.py --apply'
+wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python scripts/obj_init.py --apply'
 ```
 then retry.
 
@@ -89,7 +89,7 @@ Use `scripts/research_synthesis.py` to keyword-score the wiki for pages relevant
 open questions and active topics:
 
 ```bash
-wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python scripts/obj_synth_helper.py \
+wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python scripts/obj_synth_helper.py \
   --gather-context "<question_text_and_topics_combined>" \
   --vault-root "$VAULT_ROOT" \
   --frontier-json /tmp/frontier.json'
@@ -104,7 +104,7 @@ running `retrieve.py` for each open question to get higher-quality candidates:
 
 ```bash
 if [ -f "$VAULT_ROOT/.vault-meta/bm25/index.json" ]; then
-  wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python scripts/retrieve.py \
+  wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python scripts/retrieve.py \
     "<question text>" --top 5 --vault-root "$VAULT_ROOT"'
 fi
 ```
@@ -168,7 +168,7 @@ Call `parse_directions(synthesis_output)` to extract direction dicts. For each d
 
 1. Allocate an id:
    ```bash
-   wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.objectives next-id direction'
+   wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -m agents.objectives next-id direction'
    ```
    This returns `DIR-NNNN` and increments the counter in `objective/index.md`.
 
@@ -224,7 +224,7 @@ open `research_question`:
 
 1. Allocate an id:
    ```bash
-   wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.objectives next-id research_question_proposal'
+   wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -m agents.objectives next-id research_question_proposal'
    ```
    This returns `QP-NNNN`.
 
@@ -280,15 +280,15 @@ Also append this note to `objective/hot.md` (see step 9).
 Acquire the lock, update the file, then release:
 
 ```bash
-LOCK="wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && bash scripts/wiki-lock.sh acquire objective/hot.md'"
-RELEASE="wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && bash scripts/wiki-lock.sh release objective/hot.md'"
+LOCK="wsl.exe -- bash -lc 'cd "$CODE_PATH" && bash scripts/wiki-lock.sh acquire objective/hot.md'"
+RELEASE="wsl.exe -- bash -lc 'cd "$CODE_PATH" && bash scripts/wiki-lock.sh release objective/hot.md'"
 ```
 
 Or from within WSL:
 ```bash
-wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && bash scripts/wiki-lock.sh acquire objective/hot.md'
+wsl.exe -- bash -lc 'cd "$CODE_PATH" && bash scripts/wiki-lock.sh acquire objective/hot.md'
 # ... write $VAULT_ROOT/objective/hot.md ...
-wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && bash scripts/wiki-lock.sh release objective/hot.md'
+wsl.exe -- bash -lc 'cd "$CODE_PATH" && bash scripts/wiki-lock.sh release objective/hot.md'
 ```
 
 On rc=75 (lock held): retry once after 2s; if still held, log a warning to
@@ -341,7 +341,7 @@ done
 for p in "${held[@]}"; do bash "$LOCK" release "$p"; done
 ```
 
-Run these commands within WSL (prepend `wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && ...'`).
+Run these commands within WSL (prepend `wsl.exe -- bash -lc 'cd "$CODE_PATH" && ...'`).
 
 ## RBAC boundaries
 
@@ -372,7 +372,7 @@ After all objective nodes have been written, run relink to generate `## Links` e
 normalize `written_by` on every objective node:
 
 ```bash
-wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.objectives relink --apply'
+wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -m agents.objectives relink --apply'
 ```
 
 This (re)generates each node's `## Links` edges and normalizes `written_by` (full

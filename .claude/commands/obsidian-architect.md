@@ -16,13 +16,13 @@ This is a hybrid command: a deterministic Python scan produces the facts, then Y
 
 2. **Run the scan:**
    ```bash
-   python /home/jpietrak/second_brain/scripts/architect_scan.py --path <codebase>
+   python scripts/architect_scan.py --path <codebase>
    ```
    It returns JSON: `name`, `kind`, `languages` (with file counts), `modules` (proposed top-level parts with a `core`/`support` hint), `dependencies`, `entry_points`, `signals` (dockerfile/makefile/ci), and `git` (commit). It writes nothing and calls no LLM - the synthesis is yours.
 
 3. **Optionally pull decision history** for the "Key decisions" note:
    ```bash
-   python /home/jpietrak/second_brain/scripts/mine_commit_decisions.py --repo <codebase> --json
+   python scripts/mine_commit_decisions.py --repo <codebase> --json
    ```
 
 4. **Pick the destination.** Write under the project's hub: `$VAULT_ROOT/wiki/entities/<name>/Architecture/` (create it if missing; a project is an entity with `entity_type: project`). If the vault has no project note for this codebase yet, offer to create one first so the architecture links into it.
@@ -46,6 +46,6 @@ This is a hybrid command: a deterministic Python scan produces the facts, then Y
 
 ---
 
-**AI-first rule:** Every note created or updated by this command MUST follow `/home/jpietrak/second_brain/skills/references/ai-first-rules.md` - `## For future Claude` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. The vault is for future-Claude retrieval - not human reading.
+**AI-first rule:** Every note created or updated by this command MUST follow `skills/references/ai-first-rules.md` - `## For future Claude` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. The vault is for future-Claude retrieval - not human reading.
 
-**Anti-fabrication:** Describe only what the scan and the code actually show - never invent a module, a dependency, a data flow, or a decision that is not grounded in the manifest or the source. If the scan is thin (small project, no manifest), say so and keep the notes short rather than padding. Mark inferred rationale and personas as `confidence: speculation`. See the anti-fabrication and search-completeness hard rules in `/home/jpietrak/second_brain/skills/references/ai-first-rules.md`.
+**Anti-fabrication:** Describe only what the scan and the code actually show - never invent a module, a dependency, a data flow, or a decision that is not grounded in the manifest or the source. If the scan is thin (small project, no manifest), say so and keep the notes short rather than padding. Mark inferred rationale and personas as `confidence: speculation`. See the anti-fabrication and search-completeness hard rules in `skills/references/ai-first-rules.md`.

@@ -16,10 +16,10 @@ and objective system.
 
 - **id:** `research`
 - **memory:** `.claude/memory/research/` (read `MEMORY.md` first; write role-scoped facts there)
-- **repo:** `/home/jpietrak/second_brain` (WSL). On Windows tools use the UNC path
-  `\\wsl.localhost\ubuntu\home\jpietrak\second_brain\...`; run Python/git via
-  `wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && ...'` (the venv is Linux:
-  `.venv/bin/python`). Active branch: `claude/v2-prototype`.
+- **repo:** the Second Brain code repo (WSL). On Windows tools use the UNC path
+  `\\wsl.localhost\ubuntu\<user>\second_brain\...`; run Python/git via
+  `wsl.exe -- bash -lc 'cd <repo_root> && ...'` (the venv is Linux: `.venv/bin/python`).
+  Resolve the repo root with `git rev-parse --show-toplevel` or check `$CODE_PATH`.
 - **no web:** you have NO WebSearch / WebFetch tools. You reason over what is already in the
   vault (`wiki/`, `objective/`, `research/`). Discovering external sources is the Web Agent's
   job (Phase 3). You only synthesize what is already in the vault.
@@ -41,7 +41,7 @@ event carries it.
 
 Every research agent task MUST begin with these two steps before any other action:
 
-1. **Read decisions:** run `wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.objectives decisions --json'`. Parse the output - it is a list of active `objective/decision/*.md` nodes. Apply all returned decisions as hard constraints for the rest of the task. A decision with `scope: all` or `scope: research` binds you. A decision with `scope: wiki` or `scope: web` does not bind you directly.
+1. **Read decisions:** run `wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -m agents.objectives decisions --json'` (replace `$CODE_PATH` with the actual repo root). Parse the output - it is a list of active `objective/decision/*.md` nodes. Apply all returned decisions as hard constraints for the rest of the task. A decision with `scope: all` or `scope: research` binds you. A decision with `scope: wiki` or `scope: web` does not bind you directly.
 
 2. **Read memory:** read `.claude/memory/research/MEMORY.md` and any referenced fact files. Note the current phase, open research threads, and any prior synthesis decisions recorded there.
 

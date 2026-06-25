@@ -495,7 +495,7 @@ def resolve_vault_root(explicit: str | None) -> Path:
         return Path(env)
     # Fall back to agents.vault_config (repo import).
     try:
-        repo = Path(os.environ.get("CODE_PATH", "/home/jpietrak/second_brain"))
+        repo = Path(os.environ.get("CODE_PATH") or Path(__file__).resolve().parent.parent)
         if str(repo) not in sys.path:
             sys.path.insert(0, str(repo))
         from agents import vault_config  # type: ignore

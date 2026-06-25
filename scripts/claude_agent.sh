@@ -26,7 +26,7 @@
 #     with a parse_error note (a call is never silently dropped from the ledger).
 set -euo pipefail
 
-CODE_PATH="${CODE_PATH:-/home/jpietrak/second_brain}"
+CODE_PATH="${CODE_PATH:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 ENV_FILE="$CODE_PATH/.env"
 PY="${PY:-$CODE_PATH/.venv/bin/python}"
 [ -x "$PY" ] || PY="python3"
@@ -84,7 +84,7 @@ import os, sys, json
 raw = os.environ.get("RAW", "")
 agent = os.environ.get("AGENT", "agent-sdk")
 
-sys.path.insert(0, os.environ.get("CODE_PATH", "/home/jpietrak/second_brain"))
+sys.path.insert(0, os.environ.get("CODE_PATH", "."))
 try:
     from agents import cost_tracker as ct
 except Exception:

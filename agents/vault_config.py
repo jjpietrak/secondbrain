@@ -34,7 +34,7 @@ from pathlib import Path
 
 import yaml
 
-CODE_PATH = Path(os.environ.get("CODE_PATH", "/home/jpietrak/second_brain"))
+CODE_PATH = Path(os.environ.get("CODE_PATH") or Path(__file__).resolve().parent.parent)
 CONFIG_DIR = CODE_PATH / "config"
 VAULTS_DIR = CONFIG_DIR / "vaults"
 GLOBAL_CONFIG = CONFIG_DIR / "secondbrain.yaml"
@@ -48,7 +48,7 @@ def global_config() -> dict:
 
 
 def default_vault() -> str:
-    return global_config().get("default_vault", "Inference-Disagg")
+    return global_config().get("default_vault", "example")
 
 
 def registered_vaults() -> list[str]:

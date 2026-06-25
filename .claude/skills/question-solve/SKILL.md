@@ -37,8 +37,8 @@ Before any other action:
 
 1. **Read decisions:**
    ```bash
-   eval "$(wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.vault_config env')"
-   wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.objectives decisions --json'
+   eval "$(wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -m agents.vault_config env')"
+   wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -m agents.objectives decisions --json'
    ```
    Parse the JSON. Apply any decision with `scope: all` or `scope: research` as a hard
    constraint. If the scaffold is not yet applied, skip gracefully.
@@ -49,7 +49,7 @@ Before any other action:
 ## Step 0 - resolve vault and parse arguments
 
 ```bash
-eval "$(wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.vault_config env')"
+eval "$(wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -m agents.vault_config env')"
 # $VAULT_ROOT is now set
 ```
 
@@ -118,7 +118,7 @@ Use the helper from `scripts/question_lifecycle.py` to build the new frontmatter
 ```bash
 python -c "
 import sys
-sys.path.insert(0, '/home/jpietrak/second_brain')
+sys.path.insert(0, os.environ.get('CODE_PATH', '.'))
 from scripts.question_lifecycle import mark_question_solved
 from pathlib import Path
 import datetime
@@ -144,7 +144,7 @@ In the context of this skill:
    # Call the helper to generate updated content
    UPDATED_CONTENT=$(python -c "
    import sys
-   sys.path.insert(0, '/home/jpietrak/second_brain')
+   sys.path.insert(0, os.environ.get('CODE_PATH', '.'))
    from scripts.question_lifecycle import mark_question_solved
    from pathlib import Path
    import datetime

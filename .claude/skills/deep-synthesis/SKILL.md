@@ -34,8 +34,8 @@ Before any other step, execute the two-step research agent task start:
 
 1. **Read decisions:**
    ```bash
-   eval "$(wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.vault_config env')"
-   wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.objectives decisions --json'
+   eval "$(wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -m agents.vault_config env')"
+   wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -m agents.objectives decisions --json'
    ```
    Parse the JSON list. Apply every returned `active` decision as a hard constraint. A decision
    with `scope: all` or `scope: research` binds you. If `agents.objectives` is not yet available
@@ -62,7 +62,7 @@ T-NNNN, or --deep 'topic text'."
 ## Step 0 - resolve the vault
 
 ```bash
-eval "$(wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.vault_config env')"
+eval "$(wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -m agents.vault_config env')"
 # $VAULT_ROOT is now set
 ```
 
@@ -74,7 +74,7 @@ below.
 ## Step 2 - load the objective frontier
 
 ```bash
-wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.objectives frontier --json'
+wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -m agents.objectives frontier --json'
 ```
 
 Parse the JSON. Extract:
@@ -101,7 +101,7 @@ empty open_questions and note "(objective/ not yet initialized)" as a warning.
 ## Step 3 - gather local context
 
 ```bash
-wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -c "
+wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -c "
 import sys, json
 sys.path.insert(0, \".\")
 from scripts.research_synthesis import gather_local_context, excerpts_to_wiki_baseline
@@ -121,7 +121,7 @@ Also pass the objective frontier nodes as `objective_nodes` argument so research
 direction nodes that match the query also surface as context:
 
 ```bash
-wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -c "
+wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -c "
 import sys, json
 sys.path.insert(0, \".\")
 from agents.objectives import open_frontier, _resolve_vault_root
@@ -148,7 +148,7 @@ pages:
 ```bash
 # feature-detect provisioned pipeline
 if [ -f "$VAULT_ROOT/.vault-meta/bm25/index.json" ] && [ -d "$VAULT_ROOT/.vault-meta/chunks" ]; then
-  wsl.exe -- bash -lc "cd /home/jpietrak/second_brain && .venv/bin/python scripts/retrieve.py \"<SCOPE TEXT>\" --top 8"
+  wsl.exe -- bash -lc "cd \"$CODE_PATH\" && .venv/bin/python scripts/retrieve.py \"<SCOPE TEXT>\" --top 8"
 fi
 ```
 
@@ -159,7 +159,7 @@ If `retrieve.py` exits 10 (not provisioned), fall back to `gather_local_context`
 Prepare the filled prompt:
 
 ```bash
-wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -c "
+wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -c "
 import sys
 sys.path.insert(0, \".\")
 from scripts.research_synthesis import fill_analysis_prompt
@@ -184,7 +184,7 @@ IS the gap analysis. Parse it:
 Surface the "Already Answerable" items using the helper:
 
 ```bash
-wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -c "
+wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -c "
 import sys
 sys.path.insert(0, \".\")
 from scripts.deep_synth_helper import format_already_answerable_surface
@@ -212,7 +212,7 @@ existing_directions = "\n".join(
 Prepare and run:
 
 ```bash
-wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -c "
+wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -c "
 import sys
 sys.path.insert(0, \".\")
 from scripts.research_synthesis import fill_synthesis_prompt
@@ -238,7 +238,7 @@ Send the filled synthesis prompt to yourself. Parse the response:
 Resolve the output path:
 
 ```bash
-wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -c "
+wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -c "
 import sys
 sys.path.insert(0, \".\")
 from scripts.deep_synth_helper import resolve_output_path
@@ -290,12 +290,12 @@ For each direction returned by `parse_directions()`:
 
 1. Get the next DIR id:
    ```bash
-   wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.objectives next-id direction --vault-root "$VAULT_ROOT"'
+   wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -m agents.objectives next-id direction --vault-root "$VAULT_ROOT"'
    ```
 
 2. Format and write the direction node:
    ```bash
-   wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -c "
+   wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -c "
    import sys
    sys.path.insert(0, \".\")
    from scripts.deep_synth_helper import format_direction_frontmatter
@@ -310,7 +310,7 @@ For each direction returned by `parse_directions()`:
 
 3. Build the filename: `<DIR-NNNN>-<slugify(direction_title)>.md`
    ```bash
-   wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -c "
+   wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -c "
    import sys; sys.path.insert(0, \".\")
    from scripts.deep_synth_helper import slugify
    print(slugify(\"<DIRECTION_TITLE>\"))
@@ -340,12 +340,12 @@ For each proposal returned by `parse_proposals()`:
 
 1. Get the next QP id:
    ```bash
-   wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.objectives next-id research_question_proposal --vault-root "$VAULT_ROOT"'
+   wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -m agents.objectives next-id research_question_proposal --vault-root "$VAULT_ROOT"'
    ```
 
 2. Format and write the proposal node:
    ```bash
-   wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -c "
+   wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -c "
    import sys
    sys.path.insert(0, \".\")
    from scripts.deep_synth_helper import format_proposal_frontmatter
@@ -446,7 +446,7 @@ canonical snippet from `skills/references/locking.md`: acquire in sorted-path or
 release; on rc=75 retry once after 2s, then skip and log a warning.
 
 ```bash
-CODE_PATH="${CODE_PATH:-/home/jpietrak/second_brain}"
+CODE_PATH="${CODE_PATH:-$(git rev-parse --show-toplevel 2>/dev/null)}"
 LOCK="$CODE_PATH/scripts/wiki-lock.sh"
 PATHS=$(printf '%s\n' "objective/hot.md" "objective/index.md" | sort)
 held=()
@@ -480,7 +480,7 @@ After all objective nodes have been written (steps 7 and 8), run relink to gener
 `## Links` edges and normalize `written_by` on every objective node:
 
 ```bash
-wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.objectives relink --apply'
+wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -m agents.objectives relink --apply'
 ```
 
 This (re)generates each node's `## Links` edges and normalizes `written_by` (full

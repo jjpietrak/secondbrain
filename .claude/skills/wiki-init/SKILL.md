@@ -32,8 +32,8 @@ step that requires user approval: `--apply`.
 1. Resolve the active vault root via `python -m agents.vault_config path` (never hard-code).
 2. Run the dry-run:
    ```bash
-   cd /home/jpietrak/second_brain
-   .venv/bin/python scripts/wiki_init.py reconcile --vault-root "$(python -m agents.vault_config path)"
+   # run from the repo root (where agents/ lives)
+   python scripts/wiki_init.py reconcile --vault-root "$(python -m agents.vault_config path)"
    ```
 3. Read the printed summary AND the report at
    `<vault>/meta/health_report/wiki-init-dryrun-<ts>.md`.

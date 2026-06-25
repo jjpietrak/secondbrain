@@ -45,8 +45,8 @@ Before any other step, execute the two-step research agent startup:
 
 ### 1 - Read active decision nodes
 ```bash
-eval "$(wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.vault_config env')"
-wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.objectives decisions --json'
+eval "$(wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -m agents.vault_config env')"
+wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -m agents.objectives decisions --json'
 ```
 Parse the returned JSON. Every `active` decision with `scope: all` or `scope: research`
 is a hard constraint for the rest of this task. If `agents.objectives` is not available
@@ -59,14 +59,14 @@ open synthesis threads, and any prior reconcile patterns.
 ## Step 1 - Resolve vault root and load the objective graph
 
 ```bash
-eval "$(wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.vault_config env')"
+eval "$(wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -m agents.vault_config env')"
 ```
 This exports `VAULT_ROOT`. All reads/writes use `$VAULT_ROOT`.
 
 Load the full objective graph:
 ```bash
-wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.objectives scan'
-wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.objectives frontier --json'
+wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -m agents.objectives scan'
+wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -m agents.objectives frontier --json'
 ```
 
 Read all nodes directly from the filesystem for detailed body inspection:
@@ -175,7 +175,7 @@ Pass B or C where the judge was unreachable:
 
 1. Allocate a TODO-NNNN id:
    ```bash
-   wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.objectives next-id agent_todo'
+   wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -m agents.objectives next-id agent_todo'
    ```
 2. Write `$VAULT_ROOT/objective/agent_todo/TODO-NNNN-<slug>.md`:
    ```yaml
@@ -237,9 +237,9 @@ Pass B or C where the judge was unreachable:
 Acquire the lock, update, then release:
 
 ```bash
-wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && bash scripts/wiki-lock.sh acquire objective/hot.md'
+wsl.exe -- bash -lc 'cd "$CODE_PATH" && bash scripts/wiki-lock.sh acquire objective/hot.md'
 # ... write $VAULT_ROOT/objective/hot.md ...
-wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && bash scripts/wiki-lock.sh release objective/hot.md'
+wsl.exe -- bash -lc 'cd "$CODE_PATH" && bash scripts/wiki-lock.sh release objective/hot.md'
 ```
 
 On rc=75 (lock held): retry once after 2s; if still held, log a warning to
@@ -290,7 +290,7 @@ done
 for p in "${held[@]}"; do bash "$LOCK" release "$p"; done
 ```
 
-Run within WSL (prepend `wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && ...'`).
+Run within WSL (prepend `wsl.exe -- bash -lc 'cd "$CODE_PATH" && ...'`).
 
 ## Adjudication route
 
@@ -336,7 +336,7 @@ After applying all resolutions and writing agent_todo flags (steps 3 and 4), run
 to generate `## Links` edges and normalize `written_by` on every objective node:
 
 ```bash
-wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.objectives relink --apply'
+wsl.exe -- bash -lc 'cd "$CODE_PATH" && .venv/bin/python -m agents.objectives relink --apply'
 ```
 
 This (re)generates each node's `## Links` edges and normalizes `written_by` (full
