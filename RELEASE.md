@@ -36,7 +36,7 @@ Development continues on `v2-prototype`. A change that should ALSO ship goes to 
 3. Re-run the `v02-main` guards before committing the cherry-pick:
    - `uv run pytest tests/` (or `pytest tests/`) — green.
    - Path audit over TRACKED files = 0:
-     `git ls-files -z | xargs -0 grep -lE 'jpietrak|/mnt/c/Obsidian|<active-vault-name>'`
+     `git ls-files -z | xargs -0 grep -lE '<maintainer-home-path>|<vault-mount-path>|<active-vault-name>'`
    - No web component, secret, or dev-memory introduced.
 4. Preserve the clean invariants (no machine paths / secrets / dev memory / web).
 
