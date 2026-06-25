@@ -19,8 +19,8 @@
   `report_approve`, `.claude/web`, web skills), the OSB `obsidian-research(-deep)` commands,
   `scripts/research/` (+ `lib/sources`), youtube/x/notebooklm tools. **Under review.**
 - `agent-learn` / `wiki-approve` (the web feedback loop).
-- Dev artifacts: `plans/`, the active (`Inference-Disagg`) vault config, `ursa/`, the LiteLLM
-  service, `nightly_run.sh`, `setup_cron.sh`.
+- Dev artifacts: `plans/`, the maintainer's active vault config, `ursa/`, the LiteLLM service,
+  `nightly_run.sh`, `setup_cron.sh`.
 - Dev-agent memory — backend ships only curated **architecture** facts
   (`retrieval-pipeline`/`locking`/`rbac`/`cost-ledger`); wiki/research ship clean skeletons.
 
