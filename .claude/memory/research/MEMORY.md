@@ -48,6 +48,44 @@ current; never store fact bodies here.
 - Deep zone analysis: H800 dead zone for DeepSeek-V3 at NF<=2; Step-3 essentially immune.
 - Minimum B_ScaleOut to eliminate dead zone at NF=X for DeepSeek-V3: 20*X GB/s.
 
+## Objective graph state (updated 2026-06-26, post-correction)
+
+- Current open research questions: 5 (Q-0001..Q-0003, Q-0005..Q-0006); Q-0004 SOLVED.
+- Current open directions: 9 (DIR-0001..DIR-0009; DIR-0006 in complete/ as provenance record).
+  DIR-0007/0008/0009 bodies corrected for Tetra=FFN-only role 2026-06-26.
+- Current proposals: 4 (QP-0001, QP-0002, QP-0003, QP-0004), all pending user approval.
+- Last skill run: obj-reconcile + arch-correction, 2026-06-26.
+- Report: research/deep/2026-06-26-megascale-infer-pa-afd-disagg-chunked-prefill.md (revised)
+
+## Key synthesis: AFD + chunked prefill (2026-06-26) -- CORRECTED 2026-06-26
+
+CRITICAL ARCHITECTURE CORRECTION: Tetra = FFN compute only (streaming matmul). Cannot do
+SIMT-based attention. GPU/AMD = Attention compute (SIMT). This is WITHIN-PREFILL FFN-Attn
+disaggregation, not just prefill-vs-decode:
+  - Prefill pair: Tetra (FFN layers) + GPU/AMD (Attention + KV cache) per chunk per layer
+  - Decode: GPU/AMD (attn + KV) + Cerebras (FFN-only, stateless)
+  - KV cache is GPU/AMD owned throughout; Tetra does NOT generate or transfer KV cache
+
+- AFD dead zone translates to C space for Tetra FFN utilisation: C_min_afd ~= 4K-8K tokens
+  for DeepSeek-V3-class MoE on Tetra. Below C_min_afd, Tetra FFN disaggregation is harmful.
+- New GAP-B2: activation BW at per-layer Tetra <-> GPU/AMD boundary (58 MB per layer at
+  C=8192, hidden=7168, fp8). At 256 GB/s this takes 0.23 ms per layer -- may dominate.
+- 3BO asymmetric: Tetra FFN path = stochastic (Lstab jitter); GPU/AMD Attn = deterministic.
+  3BO feasibility must be assessed separately per path.
+- 128K KV streaming at 256 GB/s = 7.8 ms applies to GPU/AMD -> GPU/AMD decode handoff.
+- Algorithm 1 extension needs: separate na_attn + na_ffn search variables, activation BW
+  model at Tetra <-> GPU/AMD boundary, Lstab distribution for Tetra FFN path.
+
+## obj-reconcile (2026-06-26)
+
+- 5 passes clean after correction.
+- Pass A: 0 stale (9 directions all have associated Qs)
+- Pass B: 0 dup proposals (4 proposals distinct)
+- Pass C: 0 uncovered questions (all 6 open Qs have directions)
+- Pass D: 3 direction nodes corrected (DIR-0007/0008/0009) for wrong Tetra role
+- Pass E: QP-0003/0004 remain valid under corrected architecture
+- Report revised: research/deep/2026-06-26-megascale-infer-pa-afd-disagg-chunked-prefill.md
+
 ## Question -> answer linkage
 
 - Q-0001 -> research/Q-0001.md (partial, 2026-06-22): criteria A+B answered analytically;
