@@ -2,8 +2,10 @@
 """Resolve the ACTIVE vault and load its encapsulated config.
 
 Multi-vault model: each vault is fully encapsulated under config/vaults/<name>/
-({vault,topics,budget}.yaml) plus its own on-disk rules in <vault_path>/_CLAUDE.md.
-Shared infrastructure (the single LiteLLM proxy + API keys in .env) lives in
+({vault,topics,budget}.yaml).  Agent rules and the vault PURPOSE live in the CODE repo:
+CLAUDE.md, docs/, .claude/, and config/vaults/<name>/vault.yaml (purpose field).
+The vault on-disk _CLAUDE.md is a v0.1 artefact; wiki_init reconcile removes it.
+Shared infrastructure (API keys in .env, global defaults) lives in
 config/secondbrain.yaml and is NOT per-vault.
 
 Active-vault resolution precedence:
@@ -32,7 +34,7 @@ from pathlib import Path
 
 import yaml
 
-CODE_PATH = Path(os.environ.get("CODE_PATH", "/home/jpietrak/second_brain"))
+CODE_PATH = Path(os.environ.get("CODE_PATH") or Path(__file__).resolve().parent.parent)
 CONFIG_DIR = CODE_PATH / "config"
 VAULTS_DIR = CONFIG_DIR / "vaults"
 GLOBAL_CONFIG = CONFIG_DIR / "secondbrain.yaml"
@@ -46,7 +48,7 @@ def global_config() -> dict:
 
 
 def default_vault() -> str:
-    return global_config().get("default_vault", "Inference-Disagg")
+    return global_config().get("default_vault", "example")
 
 
 def registered_vaults() -> list[str]:

@@ -15,7 +15,7 @@
 # NOTE: loads ONLY the OBSIDIAN_* vars (not the whole .env) so ANTHROPIC_API_KEY never
 # leaks into a shell that may later run `claude -p` (see CLAUDE.md auth-isolation rule).
 
-CODE_PATH="${CODE_PATH:-/home/jpietrak/second_brain}"
+CODE_PATH="${CODE_PATH:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 OBSIDIAN_API_KEY="$(grep -E '^OBSIDIAN_API_KEY=' "$CODE_PATH/.env" | head -1 | cut -d= -f2-)"
 OBSIDIAN_API_URL="$(grep -E '^OBSIDIAN_API_URL=' "$CODE_PATH/.env" | head -1 | cut -d= -f2-)"
 : "${OBSIDIAN_API_URL:=https://127.0.0.1:27124}"

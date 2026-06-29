@@ -1,0 +1,22 @@
+# vault.yaml -- per-vault configuration for the "example" vault.
+#
+# Copy this directory to config/vaults/<your-vault-name>/ and fill in the
+# fields below. Set VAULT=<your-vault-name> (or default_vault in secondbrain.yaml)
+# to activate it.
+#
+# vault_path: The absolute path to the Obsidian vault on disk.
+#   Override at runtime with the VAULT_PATH env var (back-compat convenience).
+#   Tests pass --vault-root or set VAULT_ROOT directly; they do NOT use this path.
+
+name: example
+
+# CHANGE THIS: path to the vault directory on disk.
+# Use ~ for your home directory; it is expanded at runtime.
+vault_path: "~/secondbrain-vaults/example"
+
+# CHANGE THIS: one sentence stating what this vault is for.
+# Used as the high-priority relevance filter when ingesting and synthesizing.
+purpose: "TODO: one sentence stating this vault's single research purpose (the high-priority relevance filter)."
+
+# Research engine for local deep-synthesis. This release runs local-only.
+research_engine: claude

@@ -28,6 +28,19 @@ CLI (resolves the active vault via VAULT / default_vault):
   python -m agents.ingest_index report                 # (re)write meta/ingest_index.md table
   python -m agents.ingest_index list                   # full JSON store
   ... add --vault <name> to target a specific vault.
+
+v3 approval queue (web/research-discovered candidates; NO file on disk yet):
+  python -m agents.ingest_index enqueue <id|url> [--title T] [--rationale R] \
+        [--score F] [--discovered-by AGENT] [--objective-ids OID ...]
+                                                       # add a waiting_approval candidate;
+                                                       # NO-OP if already rejected (sticky);
+                                                       # metadata-only if already present.
+  python -m agents.ingest_index queue   (alias: waiting) # list waiting_approval rows
+  python -m agents.ingest_index approve <id>             # waiting_approval -> pending
+  python -m agents.ingest_index reject  <id> --reason T  # -> rejected (sticky)
+
+Statuses: pending | ingested | deleted | waiting_approval | rejected. The scan() deletion
+sweep SKIPS waiting_approval/rejected rows (they have no on-disk file by design).
 """
 
 from __future__ import annotations
@@ -46,7 +59,7 @@ try:
 except ImportError:  # run as a script: agents/ is on sys.path
     import vault_config as vc
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 # Source-like extensions ingested into the vault (mirrors /obsidian-ingest's handlers).
 SCAN_EXTS = {".md", ".markdown", ".txt", ".pdf", ".docx", ".csv", ".epub",
              ".mp3", ".m4a", ".wav", ".ogg", ".webm", ".mp4",
@@ -54,6 +67,25 @@ SCAN_EXTS = {".md", ".markdown", ".txt", ".pdf", ".docx", ".csv", ".epub",
 SKIP_DIRS = {"assets"}                       # attachments, not standalone sources
 LEDGER_REL = Path("meta") / "ingest_index.json"
 MIRROR_REL = Path("meta") / "ingest_index.md"
+
+# Status set (v3). waiting_approval + rejected rows have NO file on disk.
+STATUSES = {"pending", "ingested", "deleted", "waiting_approval", "rejected"}
+# Statuses the deletion-sweep MUST skip (they legitimately have no file in raw/).
+NO_FILE_STATUSES = {"deleted", "waiting_approval", "rejected"}
+# v3 fields added additively to every row (.get()-safe, never overwrite existing values).
+_V3_DEFAULTS = {
+    "url": "",
+    "relevance_score": None,
+    "rationale": "",
+    "discovered_by": "",
+    "objective_ids": [],
+    "proposed_at": None,
+    "rejected_at": None,
+    "rejection_reason": "",
+    "published": None,
+    "source_id": "",
+    "engine": "",
+}
 
 _ARXIV = re.compile(r"(?:arxiv[:/ ]?)?\b(\d{4}\.\d{4,5})(v\d+)?\b", re.IGNORECASE)
 _DOI = re.compile(r"\b(10\.\d{4,9}/[-._;()/:A-Za-z0-9]+)\b")
@@ -71,22 +103,48 @@ def _vault(name: str | None) -> Path:
     return vc.vault_path(name)
 
 
-def _load(name: str | None) -> dict:
-    p = _vault(name) / LEDGER_REL
+def _migrate(data: dict) -> dict:
+    """Additive v2 -> v3 migration. Adds the new per-row fields with `setdefault` so
+    existing values are never rewritten and no row is lost. Status is left untouched
+    (existing pending|ingested|deleted rows stay valid; the new statuses are only ever
+    set by the v3 verbs). Idempotent: re-running on a v3 store is a no-op."""
+    for row in data.get("sources", {}).values():
+        if not isinstance(row, dict):
+            continue
+        for k, v in _V3_DEFAULTS.items():
+            # copy mutable defaults so rows never share a list instance
+            row.setdefault(k, list(v) if isinstance(v, list) else v)
+    return data
+
+
+def _load(name: str | None, *, root: Path | None = None) -> dict:
+    """Load the ingest_index for *name* (or the active vault).
+
+    When *root* is provided it is used as the vault root directly, bypassing all
+    vault_config env-variable resolution.  This is the preferred path when the caller
+    already knows the absolute vault directory (e.g. report_approve.apply).
+    """
+    p = (root / LEDGER_REL) if root is not None else (_vault(name) / LEDGER_REL)
     if p.exists():
         try:
             data = json.loads(p.read_text())
             data.setdefault("sources", {})
-            return data
+            return _migrate(data)
         except (OSError, json.JSONDecodeError):
             pass
     return {"version": SCHEMA_VERSION, "vault": vc.active_vault(name), "sources": {}}
 
 
-def _save(name: str | None, data: dict) -> None:
+def _save(name: str | None, data: dict, *, root: Path | None = None) -> None:
+    """Persist the ingest_index for *name* (or the active vault).
+
+    When *root* is provided it is used as the vault root directly, bypassing all
+    vault_config env-variable resolution.  Callers that supply *root* must pass the
+    same *root* to both _load and _save so load == save is guaranteed.
+    """
     data["version"] = SCHEMA_VERSION
     data["vault"] = vc.active_vault(name)
-    p = _vault(name) / LEDGER_REL
+    p = (root / LEDGER_REL) if root is not None else (_vault(name) / LEDGER_REL)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
 
@@ -211,6 +269,8 @@ def _upsert(data: dict, vault: Path, p: Path, *, ingested: bool,
                "title": info["title"], "filename": _rel(vault, p), "url": info["url"],
                "source_type": info["source_type"], "content_hash": info["content_hash"],
                "first_seen": _now(), "ingested_at": None, "source_page": ""}
+        for k, v in _V3_DEFAULTS.items():
+            row[k] = list(v) if isinstance(v, list) else v
         data["sources"][sid] = row
     else:
         row["filename"] = _rel(vault, p)          # rename-proof: same id, new path
@@ -263,7 +323,10 @@ def scan(name: str | None = None) -> dict:
         added += len(data["sources"]) - before
     deleted = 0
     for sid, row in data["sources"].items():
-        if sid not in present_ids and row.get("status") != "deleted":
+        # v3 guard: waiting_approval/rejected rows intentionally have NO file on disk
+        # (web/research candidates not yet fetched, or user-rejected). Sweeping them to
+        # `deleted` would corrupt the approval queue, so skip them alongside `deleted`.
+        if sid not in present_ids and row.get("status") not in NO_FILE_STATUSES:
             row["status"] = "deleted"
             row["deleted_at"] = _now()
             deleted += 1
@@ -285,31 +348,355 @@ def mark(raw_path: str, source_page: str | None = None, name: str | None = None)
     return row["id"]
 
 
-_STATUS_RANK = {"pending": 0, "ingested": 1, "deleted": 2}
-_STATUS_MARK = {"pending": "⏳ pending", "ingested": "✅ ingested", "deleted": "🗑️ deleted"}
+# --------------------------------------------------------------------------- #
+# v3 approval-queue verbs (web/research-discovered candidates, no file on disk)
+# --------------------------------------------------------------------------- #
+def _normalize_enqueue_id(raw: str) -> tuple[str, str, str]:
+    """Map a user-supplied id-or-url to a stable (id, id_type, url), mirroring derive_id.
+    A bare arxiv/doi/youtube id or canonical-url is accepted directly; otherwise treated
+    as a URL when it parses as one, else used verbatim as an explicit id."""
+    raw = (raw or "").strip()
+    if ":" in raw and raw.split(":", 1)[0].lower() in {
+            "arxiv", "doi", "youtube", "url", "id", "sha256", "unknown"}:
+        return raw, raw.split(":", 1)[0].lower(), ("" if not raw.startswith("url:") else raw[4:])
+    if "://" in raw:
+        return derive_id(url=raw)
+    return f"id:{raw}", "explicit", ""
 
 
-def render_md(name: str | None = None) -> Path:
+def enqueue(ident: str, *, url: str | None = None, title: str = "",
+            rationale: str = "", score: float | None = None,
+            discovered_by: str = "", objective_ids: list[str] | None = None,
+            published: str | None = None, name: str | None = None,
+            source_id: str = "", engine: str = "") -> dict:
+    """Add a `waiting_approval` candidate (no file on disk). Idempotent / status-safe:
+    - if the id is already `rejected` -> NO-OP (sticky; never re-proposed);
+    - if the id already exists in any other status -> update metadata only, NEVER regress
+      the status (so an already-pending/ingested source is not knocked back to waiting);
+    - otherwise create a fresh `waiting_approval` row.
+
+    The *url* keyword stores a http/https URL for the source.  A non-empty *url* is
+    stored unconditionally on new rows and as an update on existing rows when the row
+    currently has no URL.  None or empty string never clobbers an existing URL.
+
+    Returns the resulting row."""
+    sid, id_type, derived_url = _normalize_enqueue_id(ident)
+    # Explicit url= wins over the url derived from the ident when both are present.
+    effective_url = (url.strip() if url and url.strip() else derived_url)
     data = _load(name)
+    row = data["sources"].get(sid)
+    if row is not None and row.get("status") == "rejected":
+        return row  # sticky no-op
+    if row is None:
+        row = {"id": sid, "id_type": id_type, "status": "waiting_approval",
+               "title": title, "filename": "", "url": effective_url,
+               "source_type": id_type, "content_hash": "",
+               "first_seen": _now(), "ingested_at": None, "source_page": ""}
+        for k, v in _V3_DEFAULTS.items():
+            row[k] = list(v) if isinstance(v, list) else v
+        row["url"] = effective_url  # row["url"] is now set to effective_url
+        row["proposed_at"] = _now()
+        data["sources"][sid] = row
+    # metadata-only update (never touches status for an existing non-rejected row)
+    if title:
+        row["title"] = title
+    if rationale:
+        row["rationale"] = rationale
+    if score is not None:
+        row["relevance_score"] = score
+    if discovered_by:
+        row["discovered_by"] = discovered_by
+    if objective_ids:
+        merged = list(row.get("objective_ids") or [])
+        for oid in objective_ids:
+            if oid not in merged:
+                merged.append(oid)
+        row["objective_ids"] = merged
+    # url update: non-empty effective_url wins; do NOT clobber an existing url with None/empty
+    if effective_url and not row.get("url"):
+        row["url"] = effective_url
+    # published: only store when provided (do NOT clobber an existing value with None)
+    if published is not None:
+        row["published"] = published
+    # source_id / engine: only store non-empty values; never clobber with ""
+    if source_id:
+        row["source_id"] = source_id
+    if engine:
+        row["engine"] = engine
+    _save(name, data)
+    render_md(name)
+    return row
+
+
+def queue(name: str | None = None) -> list[dict]:
+    """Rows awaiting approval (the newsletter / approval surface)."""
+    data = _load(name)
+    return sorted((r for r in data["sources"].values()
+                   if r.get("status") == "waiting_approval"),
+                  key=lambda r: (r.get("proposed_at") or "", r.get("id", "")))
+
+
+def approve(ident: str, name: str | None = None, *, root: Path | None = None) -> dict | None:
+    """Flip a `waiting_approval` row -> `pending` (the wiki agent then fetches the source
+    into raw/ and wiki-ingest consumes it). Returns the row, or None if id unknown.
+
+    *root* (keyword-only) pins the vault root directory for all load/save/render calls,
+    bypassing vault_config env-variable resolution entirely.  Use this whenever the caller
+    already holds the absolute vault path (e.g. report_approve.apply).
+    """
+    sid, _, _ = _normalize_enqueue_id(ident)
+    data = _load(name, root=root)
+    row = data["sources"].get(sid) or data["sources"].get(ident)
+    if row is None:
+        return None
+    if row.get("status") == "waiting_approval":
+        row["status"] = "pending"
+    _save(name, data, root=root)
+    render_md(name, root=root)
+    return row
+
+
+def reject(ident: str, reason: str = "", name: str | None = None,
+           *, root: Path | None = None) -> dict | None:
+    """Flip a row -> `rejected` (sticky) and record rejected_at + rejection_reason.
+    A subsequent `enqueue` of the same id is a no-op. Returns the row, or None if unknown.
+
+    *root* (keyword-only) pins the vault root directory for all load/save/render calls,
+    bypassing vault_config env-variable resolution entirely.  Use this whenever the caller
+    already holds the absolute vault path (e.g. report_approve.apply).
+    """
+    sid, _, _ = _normalize_enqueue_id(ident)
+    data = _load(name, root=root)
+    row = data["sources"].get(sid) or data["sources"].get(ident)
+    if row is None:
+        return None
+    row["status"] = "rejected"
+    row["rejected_at"] = _now()
+    row["rejection_reason"] = reason or ""
+    _save(name, data, root=root)
+    render_md(name, root=root)
+    return row
+
+
+# --------------------------------------------------------------------------- #
+# Title resolution
+# --------------------------------------------------------------------------- #
+# Matches an arXiv-id-shaped stem like "2504.02263v4", "2602.09721v1", or a
+# bare arXiv id like "2504.02263" (with optional vN suffix and optional dashes).
+_STEM_ARXIV = re.compile(r"^\d{4}\.\d{4,5}(v\d+)?$")
+# Matches a filename stem that is just underscores/alphanumerics with no spaces
+# (i.e. a raw filename, not a human title). Examples: "Photons_to_Tokens".
+_STEM_FILENAME = re.compile(r"^[A-Za-z0-9_-]{3,80}$")
+
+
+def _is_stem_title(title: str) -> bool:
+    """Return True when *title* looks like an arXiv id or a raw filename stem.
+    These are the "bad" titles introduced by the filename-stem fallback in inspect()
+    for PDF files that have no embedded text/frontmatter title."""
+    if not title:
+        return True
+    t = title.strip()
+    if _STEM_ARXIV.match(t):
+        return True
+    # A filename stem has no spaces and matches the pattern above.
+    # A real human title almost always contains at least one space.
+    if " " not in t and _STEM_FILENAME.match(t):
+        return True
+    return False
+
+
+def _resolve_title(row: dict, vault_root: Path) -> str:
+    """Return the best available title for *row*, reading source_page frontmatter
+    when the stored title looks like a filename stem / arXiv id.
+
+    Fallback chain (first non-empty non-stem value wins):
+      1. source_page frontmatter ``title:``  (preferred -- set by the wiki agent)
+      2. existing row["title"]  if it is NOT stem-shaped
+      3. raw file frontmatter ``title:`` (for text-like raw files)
+      4. existing row["title"] as-is (the filename stem -- last resort)
+    """
+    stored = (row.get("title") or "").strip()
+
+    # Fast path: stored title is already a real human title.
+    if stored and not _is_stem_title(stored):
+        return stored
+
+    # Step 1: read source_page frontmatter.
+    sp = (row.get("source_page") or "").strip()
+    if sp:
+        # Some rows omit the .md suffix (e.g. "wiki/sources/astra-sim-3").
+        sp_path = vault_root / sp
+        if not sp_path.suffix:
+            sp_path = sp_path.with_suffix(".md")
+        try:
+            fm = _parse_frontmatter(sp_path.read_text(errors="ignore"))
+            t = fm.get("title", "").strip().strip("\"'")
+            if t and not _is_stem_title(t):
+                return t
+        except OSError:
+            pass
+
+    # Step 2: raw file frontmatter (text-like only; skip PDFs - too expensive).
+    fn = (row.get("filename") or "").strip()
+    if fn:
+        raw_path = vault_root / fn
+        if raw_path.suffix.lower() in _TEXTLIKE:
+            try:
+                fm = _parse_frontmatter(raw_path.read_text(errors="ignore"))
+                t = fm.get("title", "").strip()
+                if t and not _is_stem_title(t):
+                    return t
+            except OSError:
+                pass
+
+    # Last resort: return whatever is stored (may still be the filename stem).
+    return stored
+
+
+# ---------------------------------------------------------------------------
+# URL validation helpers
+# ---------------------------------------------------------------------------
+
+def _valid_url(u: str) -> bool:
+    """Return True iff *u* is a non-empty http/https URL with a network location.
+
+    Uses urllib.parse.urlparse: scheme must be 'http' or 'https' and netloc must
+    be non-empty (i.e. a real host is present).  All other values -- empty string,
+    bare arXiv ids, 'ftp://', relative paths -- return False.
+    """
+    if not u:
+        return False
+    try:
+        p = urlparse(u)
+        return p.scheme in {"http", "https"} and bool(p.netloc)
+    except Exception:
+        return False
+
+
+def has_working_url(row: dict) -> bool:
+    """Return True iff the ingest row contains a valid http/https URL."""
+    return _valid_url(row.get("url") or "")
+
+
+_STATUS_RANK = {"pending": 0, "waiting_approval": 1, "ingested": 2,
+                "rejected": 3, "deleted": 4}
+_STATUS_MARK = {"pending": "⏳ pending", "ingested": "✅ ingested", "deleted": "🗑️ deleted",
+                "waiting_approval": "❓ waiting_approval", "rejected": "🚫 rejected"}
+
+# Objective id prefixes that map to a subdirectory name under objective/
+_OBJ_SUBDIR = {
+    "DIR": "direction",
+    "Q": "research_question",
+    "QP": "research_question_proposal",
+    "T": "topic",
+    "D": "decision",
+}
+# Regex matching a supported objective id: DIR-0001, Q-0007, QP-0001, T-0003, D-0001
+_OBJ_ID_RE = re.compile(r"^(DIR|QP|Q|T|D)-(\d+)$", re.IGNORECASE)
+# Regex matching a GAP id: GAP-01, GAP-08 etc.
+_GAP_ID_RE = re.compile(r"^GAP-\d+$", re.IGNORECASE)
+
+
+def _relevance_links(objective_ids: list[str], vault_root: Path) -> str:
+    """Render a list of objective/GAP ids as Obsidian wikilinks.
+
+    Resolution rules:
+    - GAP-## -> GLOB <vault>/wiki/gap/GAP-##-*.md; if found emit [[wiki/gap/<stem>]];
+      else fall back to [[wiki/gap/index]] (GAP-##).
+    - DIR-####, Q-####, QP-####, T-####, D-#### -> GLOB objective/<subdir>/<id>-*.md and
+      emit [[objective/<subdir>/<stem>]]; if no file found fall back to [[<id>]].
+    - Any other id -> [[<id>]] verbatim.
+
+    Never raises; returns "" when objective_ids is empty/None.
+    """
+    if not objective_ids:
+        return ""
+    parts: list[str] = []
+    obj_root = vault_root / "objective"
+    gap_dir = vault_root / "wiki" / "gap"
+    for oid in objective_ids:
+        oid = oid.strip()
+        if not oid:
+            continue
+        if _GAP_ID_RE.match(oid):
+            # Normalize to uppercase for glob (GAP-08 not gap-08)
+            oid_upper = oid.upper()
+            try:
+                matches = list(gap_dir.glob(f"{oid_upper}-*.md"))
+            except OSError:
+                matches = []
+            if matches:
+                stem = matches[0].stem
+                parts.append(f"[[wiki/gap/{stem}]]")
+            else:
+                parts.append(f"[[wiki/gap/index]] ({oid_upper})")
+            continue
+        m = _OBJ_ID_RE.match(oid)
+        if m:
+            prefix = m.group(1).upper()
+            subdir = _OBJ_SUBDIR.get(prefix)
+            if subdir:
+                subdir_path = obj_root / subdir
+                try:
+                    # GLOB for files whose stem starts with the id (e.g. DIR-0004-*.md)
+                    matches = list(subdir_path.glob(f"{oid}-*.md"))
+                    if matches:
+                        stem = matches[0].stem
+                        parts.append(f"[[objective/{subdir}/{stem}]]")
+                        continue
+                except OSError:
+                    pass
+            # fallback: no file found or unknown prefix
+            parts.append(f"[[{oid}]]")
+            continue
+        # Unknown id format: emit verbatim wikilink
+        parts.append(f"[[{oid}]]")
+    return ", ".join(parts)
+
+
+def render_md(name: str | None = None, *, root: Path | None = None) -> Path:
+    data = _load(name, root=root)
+    vault = root if root is not None else _vault(name)
     rows = sorted(data["sources"].values(),
                   key=lambda r: (_STATUS_RANK.get(r.get("status"), 0), r.get("id", "")))
+    # Resolve + backfill titles before rendering.  This corrects existing rows whose
+    # title is an arXiv id or filename stem, using the source_page frontmatter written
+    # by the wiki agent (the authoritative title source).
+    dirty = False
+    for r in rows:
+        resolved = _resolve_title(r, vault)
+        if resolved and resolved != r.get("title"):
+            r["title"] = resolved
+            dirty = True
+    if dirty:
+        _save(name, data, root=root)
     ing = sum(1 for r in rows if r.get("status") == "ingested")
     pend = sum(1 for r in rows if r.get("status") == "pending")
     dele = sum(1 for r in rows if r.get("status") == "deleted")
+    wait = sum(1 for r in rows if r.get("status") == "waiting_approval")
+    rej = sum(1 for r in rows if r.get("status") == "rejected")
     L = [f"# Ingested sources — {data.get('vault', vc.active_vault(name))}\n",
          f"_Generated: {_now()}. Canonical store: `meta/ingest_index.json` (keyed by stable "
-         f"source id, not filename). **{ing} ingested, {pend} pending, {dele} deleted**, "
-         f"{len(rows)} total._\n",
-         "| Source ID | Status | Type | Title | File | URL | Wiki page |",
-         "|-----------|--------|------|-------|------|-----|-----------|"]
+         f"source id, not filename). **{ing} ingested, {pend} pending, {wait} waiting_approval, "
+         f"{rej} rejected, {dele} deleted**, {len(rows)} total._\n",
+         "| Source ID | Status | Type | Title | Date Published | Date Ingested | Rationale | Relevance | File | URL | Wiki page |",
+         "|-----------|--------|------|-------|----------------|---------------|-----------|-----------|------|-----|-----------|"]
     for r in rows:
         mk = _STATUS_MARK.get(r.get("status"), r.get("status", ""))
         url = f"[link]({r['url']})" if r.get("url") else ""
-        title = (r.get("title") or "")[:50].replace("|", "\\|")
+        title = (r.get("title") or "")[:80].replace("|", "\\|")
         fn = (r.get("filename") or "").replace("|", "\\|")
         sp = (r.get("source_page") or "").replace("|", "\\|")
-        L.append(f"| `{r.get('id','')}` | {mk} | {r.get('source_type','')} | {title} | {fn} | {url} | {sp} |")
-    out = _vault(name) / MIRROR_REL
+        published = (r.get("published") or "") or "—"
+        ingested_at = (r.get("ingested_at") or "") or "—"
+        rationale_raw = (r.get("rationale") or "")
+        rationale = (rationale_raw[:120] + "…" if len(rationale_raw) > 120 else rationale_raw).replace("|", "\\|") or "—"
+        relevance = _relevance_links(r.get("objective_ids") or [], vault).replace("|", "\\|") or "—"
+        L.append(
+            f"| `{r.get('id','')}` | {mk} | {r.get('source_type','')} | {title}"
+            f" | {published} | {ingested_at} | {rationale} | {relevance} | {fn} | {url} | {sp} |"
+        )
+    out = vault / MIRROR_REL
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("\n".join(L) + "\n")
     return out
@@ -330,6 +717,25 @@ def _main(argv: list[str]) -> int:
     sid_opt = None
     if "--id" in args:
         i = args.index("--id"); sid_opt = args[i + 1]; del args[i:i + 2]
+    # v3 enqueue/reject options
+    opt_title = opt_rationale = opt_discovered = opt_reason = opt_published = opt_url = None
+    opt_score = None
+    opt_objectives: list[str] = []
+    for flag in ("--title", "--rationale", "--discovered-by", "--score", "--reason",
+                 "--published", "--url"):
+        if flag in args:
+            i = args.index(flag); val = args[i + 1]; del args[i:i + 2]
+            if flag == "--title": opt_title = val
+            elif flag == "--rationale": opt_rationale = val
+            elif flag == "--discovered-by": opt_discovered = val
+            elif flag == "--reason": opt_reason = val
+            elif flag == "--published": opt_published = val
+            elif flag == "--url": opt_url = val
+            elif flag == "--score":
+                try: opt_score = float(val)
+                except ValueError: opt_score = None
+    while "--objective-ids" in args:
+        i = args.index("--objective-ids"); opt_objectives.append(args[i + 1]); del args[i:i + 2]
     cmd = args[0] if args else "status"
     vault = _vault(name)
 
@@ -340,8 +746,11 @@ def _main(argv: list[str]) -> int:
         data = _load(name); rows = list(data["sources"].values())
         ing = sum(1 for r in rows if r.get("status") == "ingested")
         dele = sum(1 for r in rows if r.get("status") == "deleted")
+        wait = sum(1 for r in rows if r.get("status") == "waiting_approval")
+        rej = sum(1 for r in rows if r.get("status") == "rejected")
         print(f"vault={vc.active_vault(name)} total={len(rows)} ingested={ing} "
-              f"deleted={dele} | pending(needs ingest)={len(pending(name))}")
+              f"waiting_approval={wait} rejected={rej} deleted={dele} "
+              f"| pending(needs ingest)={len(pending(name))}")
     elif cmd == "scan":
         r = scan(name)
         print(f"scanned: +{r['added']} new, {r['deleted']} newly-deleted, "
@@ -365,6 +774,48 @@ def _main(argv: list[str]) -> int:
         if not sid_opt and len(args) >= 2:
             p = Path(args[1]); sid_opt = inspect(p if p.is_absolute() else vault / args[1])["id"]
         print(json.dumps(data["sources"].get(sid_opt or "", {}), indent=2))
+    elif cmd == "enqueue":
+        if len(args) < 2:
+            print("usage: enqueue <id|url> [--title --rationale --score "
+                  "--discovered-by --published --url --objective-ids ...]", file=sys.stderr); return 2
+        row = enqueue(args[1], url=opt_url, title=opt_title or "", rationale=opt_rationale or "",
+                      score=opt_score, discovered_by=opt_discovered or "",
+                      objective_ids=opt_objectives, published=opt_published, name=name)
+        if as_json:
+            print(json.dumps(row, indent=2, sort_keys=True))
+        else:
+            print(f"{row.get('status')}: {row.get('id')}")
+    elif cmd in ("queue", "waiting"):
+        rows = queue(name)
+        if as_json:
+            print(json.dumps(rows, indent=2, sort_keys=True))
+        else:
+            # Header
+            print(f"{'ID':<40}  {'Title':<50}  {'Published':<12}  {'Rationale':<50}  {'Relevance':<30}  {'Score':>5}  Status")
+            print("-" * 200)
+            for r in rows:
+                sc = r.get("relevance_score")
+                pub = (r.get("published") or "-")[:12]
+                rat = (r.get("rationale") or "-")[:50]
+                oids = ", ".join(r.get("objective_ids") or []) or "-"
+                title_s = (r.get("title") or "")[:50]
+                sc_s = f"{sc:.2f}" if sc is not None else "-"
+                status_s = r.get("status", "")
+                print(f"{r['id']:<40}  {title_s:<50}  {pub:<12}  {rat:<50}  {oids:<30}  {sc_s:>5}  {status_s}")
+    elif cmd == "approve":
+        if len(args) < 2:
+            print("usage: approve <id>", file=sys.stderr); return 2
+        row = approve(args[1], name)
+        if row is None:
+            print(f"unknown id: {args[1]}", file=sys.stderr); return 1
+        print(f"{row.get('status')}: {row.get('id')}")
+    elif cmd == "reject":
+        if len(args) < 2:
+            print("usage: reject <id> --reason <text>", file=sys.stderr); return 2
+        row = reject(args[1], opt_reason or "", name)
+        if row is None:
+            print(f"unknown id: {args[1]}", file=sys.stderr); return 1
+        print(f"{row.get('status')}: {row.get('id')} ({row.get('rejection_reason','')})")
     elif cmd == "report":
         print(f"wrote {render_md(name)}")
     elif cmd == "list":

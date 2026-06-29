@@ -20,5 +20,4 @@ wheels/
 *.log
 logs/
 
-# LiteLLM local cache
-services/litellm/.litellm_cache/
+logs/.interactive_watermarks/

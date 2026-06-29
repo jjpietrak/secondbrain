@@ -7,8 +7,8 @@ triggers_en: ["cost report", "how much have I spent", "token usage", "budget sta
 Report cost/usage from the ledger. Run from the code repo:
 
 ```bash
-cd /home/jpietrak/second_brain
-uv run python agents/cost_tracker.py report
+# run from the repo root (where agents/ lives)
+python agents/cost_tracker.py report
 ```
 
 This reads `logs/cost_ledger.jsonl` and writes `$VAULT_ROOT/meta/cost_report.md`
@@ -16,8 +16,8 @@ This reads `logs/cost_ledger.jsonl` and writes `$VAULT_ROOT/meta/cost_report.md`
 token/cost breakdown).
 
 Then summarise for the user: today's paid spend, remaining budget, and the biggest
-cost drivers. Note that Tier-1 Routines and Tier-2 `claude -p` work draws Agent SDK
-credit (recorded with cost $0) — the dollar figures reflect the pay-as-you-go pool
-(LiteLLM → Anthropic/Gemini) only.
+cost drivers. Note that `claude -p` automation draws Agent SDK credit (recorded with
+cost $0) -- the dollar figures reflect the pay-as-you-go pool (direct Anthropic API /
+Gemini API calls, e.g. contextual-prefix tier-1 or Gemini Flash validation) only.
 
 To check the budget gate (exit 1 if over cap): `uv run python agents/cost_tracker.py check`.
