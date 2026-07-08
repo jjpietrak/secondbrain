@@ -326,6 +326,10 @@ def _parse_seed_queries(body: str) -> list[dict]:
       - plain query text
       - engine-tagged: arxiv: some query
     Returns list of {engine: str|None, query: str}.
+
+    Query text is passed through ``_clean_query_text`` so DIR seed_queries carrying
+    ``[[wikilinks]]`` / markdown / citation-bracket noise do not produce query salad
+    (engine-tag parsing is preserved).  Items that clean to empty are dropped.
     """
     # Find ## seed_queries section
     m = re.search(r"^##\s+seed_queries\s*$", body, re.MULTILINE)
@@ -347,11 +351,14 @@ def _parse_seed_queries(body: str) -> list[dict]:
             continue
         tag_match = _ENGINE_TAG_RE.match(item)
         if tag_match:
-            queries.append(
-                {"engine": tag_match.group(1).lower(), "query": tag_match.group(2).strip()}
-            )
+            engine = tag_match.group(1).lower()
+            query = _clean_query_text(tag_match.group(2).strip())
         else:
-            queries.append({"engine": None, "query": item})
+            engine = None
+            query = _clean_query_text(item)
+        if not query:
+            continue
+        queries.append({"engine": engine, "query": query})
     return queries
 
 

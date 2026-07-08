@@ -20,6 +20,7 @@ from web_decision import (
     _clean_query_text,
     _derive_gap_queries,
     _parse_frontmatter,
+    _parse_seed_queries,
     assign_lanes,
     build_plan,
     merge_targets,
@@ -613,6 +614,38 @@ priority: medium
     def test_nonexistent_dir_returns_empty(self):
         dirs = parse_directions("/nonexistent/path/direction")
         assert dirs == []
+
+
+class TestSeedQueryCleaning:
+    """Follow-up B: DIR seed_queries are passed through _clean_query_text."""
+
+    def test_wikilinks_stripped_from_plain_query(self):
+        body = (
+            "## seed_queries\n"
+            "- prefill decode split in [[wiki/concepts/kv-cache|KV cache]] serving\n"
+        )
+        queries = _parse_seed_queries(body)
+        assert len(queries) == 1
+        assert queries[0]["engine"] is None
+        assert queries[0]["query"] == "prefill decode split in KV cache serving"
+        assert "[[" not in queries[0]["query"]
+
+    def test_engine_tag_preserved_and_query_cleaned(self):
+        body = (
+            "## seed_queries\n"
+            "- arxiv: disaggregated serving [[wiki/concepts/prefill|prefill]] latency\n"
+        )
+        queries = _parse_seed_queries(body)
+        assert len(queries) == 1
+        assert queries[0]["engine"] == "arxiv"
+        assert queries[0]["query"] == "disaggregated serving prefill latency"
+
+    def test_query_that_cleans_to_empty_is_dropped(self):
+        # A line that is pure markdown emphasis cleans to "" and must be dropped.
+        body = "## seed_queries\n- ***\n- real disaggregation query\n"
+        queries = _parse_seed_queries(body)
+        assert len(queries) == 1
+        assert queries[0]["query"] == "real disaggregation query"
 
 
 # ---------------------------------------------------------------------------

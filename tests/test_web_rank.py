@@ -643,6 +643,49 @@ class TestCategoryWeights:
                    - by_id["arxiv:2401.09670"]["base_score"]) < 1e-9
 
 
+class TestApplyToEmbedding:
+    """Follow-up C: category_weights.apply_to_embedding gates the multiplier on the
+    embedding (cosine) path. Default off => pure cosine; the deterministic path is
+    always weighted (covered by TestCategoryWeights)."""
+
+    def test_true_multiplies_embedding_base_score(self, monkeypatch):
+        _ollama_on(monkeypatch)
+        query = "disaggregation inference memory bandwidth"
+        blog = _make_candidate(
+            title="disaggregation inference memory bandwidth",
+            source_id="vendor_blog_a", engine="rss",
+        )
+        pure = web_rank.score_candidates(
+            [dict(blog)], query, registry=_CW_REGISTRY,
+            category_weights={"vendor_blogs": 0.5, "_default": 1.0},
+        )[0]["base_score"]
+        applied = web_rank.score_candidates(
+            [dict(blog)], query, registry=_CW_REGISTRY,
+            category_weights={"apply_to_embedding": True, "vendor_blogs": 0.5, "_default": 1.0},
+        )[0]["base_score"]
+        assert pure > 0.0
+        # vendor_blogs weight 0.5 applied to the cosine base score
+        assert abs(applied - pure * 0.5) < 1e-9
+
+    def test_false_or_absent_leaves_cosine_pure(self, monkeypatch):
+        _ollama_on(monkeypatch)
+        query = "disaggregation inference memory bandwidth"
+        blog = _make_candidate(
+            title="disaggregation inference memory bandwidth",
+            source_id="vendor_blog_a", engine="rss",
+        )
+        absent = web_rank.score_candidates(
+            [dict(blog)], query, registry=_CW_REGISTRY, category_weights=None,
+        )[0]["base_score"]
+        false_flag = web_rank.score_candidates(
+            [dict(blog)], query, registry=_CW_REGISTRY,
+            category_weights={"apply_to_embedding": False, "vendor_blogs": 0.5, "_default": 1.0},
+        )[0]["base_score"]
+        # apply_to_embedding false => the 0.5 weight is NOT applied on the cosine path
+        assert abs(absent - false_flag) < 1e-9
+        assert absent > 0.0
+
+
 # ===========================================================================
 # CLI tests
 # ===========================================================================

@@ -359,7 +359,9 @@ def score_candidates(
         the deterministic-path relevance component.  The reweight-only
         diversification lever (no hard caps): demotes NVIDIA vendor_blogs and
         boosts newsletters/papers.  None (default) -> all multipliers are 1.0
-        (identical to before).  Never applied to the embedding cosine path.
+        (identical to before).  Applied to the embedding (cosine) base score ONLY
+        when the block carries a truthy ``apply_to_embedding`` flag (default off =
+        pure cosine); the deterministic-fallback path always applies it.
 
     Returns
     -------
@@ -375,6 +377,12 @@ def score_candidates(
 
     # Engine -> relevance/category maps for paper candidates (parity with blogs).
     engine_rel_map, engine_cat_map = _engine_paper_maps(registry)
+
+    # Embedding-path category-weight knob (default OFF). The deterministic path always
+    # applies category_weights; the embedding (cosine) path stays pure cosine UNLESS the
+    # config sets category_weights.apply_to_embedding truthy, in which case the same
+    # category multiplier is applied to the cosine base score too.
+    _apply_cat_to_emb = bool((category_weights or {}).get("apply_to_embedding", False))
 
     # Resolve learned-prior weights (only used when learned is provided)
     _w_rep: float = 0.15
@@ -445,6 +453,9 @@ def score_candidates(
                 try:
                     c_emb = embed_one(url, DEFAULT_MODEL, cand_text)
                     base = float(cosine(q_emb, c_emb))
+                    if _apply_cat_to_emb:
+                        cat = _category_for(cand, registry, engine_cat_map)
+                        base *= _category_weight(cat, category_weights)
                 except Exception:
                     # Fallback to deterministic for this candidate
                     base = _det(cand)

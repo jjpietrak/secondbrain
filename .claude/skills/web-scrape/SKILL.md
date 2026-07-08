@@ -93,6 +93,29 @@ forwards to the ranker; `--limit N` bounds per-source harvest.
    empty `routed_sources` default to arXiv-API on their seed queries (you MAY additionally run a
    `WebSearch` and `WebFetch` a promising URL for a richer preview — $0, allowed in 3A).
    Cross-crawl `dedup_seen` drops items seen in earlier runs.
+
+   **WebSearch discovery (widens the funnel).** `scripts/*.py` cannot call `WebSearch`/`WebFetch`
+   (those tools live only on you, the `web` agent). So for the gap + news queries you SHOULD run
+   `WebSearch` on the deterministic gap/news queries (from `web_decision.py plan`), `WebFetch` the
+   top on-topic hits for title + snippet + published date, and write them to an agent-candidates
+   JSON file, then pass it to the crawl:
+   ```bash
+   .venv/bin/python scripts/web_crawl.py --vault "$VAULT_ROOT" --agent-candidates /tmp/agent-cands.json
+   ```
+   The file is a JSON list; each item has the shape (missing keys are defaulted --
+   `engine`->"websearch", `lane`->"news", `origin_ids`->[], `snippet`/`published`->""):
+   ```json
+   [
+     {"title": "...", "url": "https://...", "source_id": "arxiv:2401.00001 or the url",
+      "snippet": "...", "engine": "websearch", "published": "2026-06-01",
+      "lane": "gap", "origin_ids": ["GAP-08", "DIR-0004"]}
+   ]
+   ```
+   Injected candidates are merged into the SAME pool (after Tier-0/Perplexity, before
+   dedup/rank/select), so `WebSearch` only WIDENS the funnel -- ranking + lane quotas + ingest-dedup
+   still decide what survives (nothing bypasses scoring). This is how otherwise-unreachable sources
+   (chiplog.io, the SemiAnalysis newsletters whose RSS returns 0) become discoverable + rankable.
+   A missing/invalid `--agent-candidates` file degrades gracefully (warns, continues with none).
 3. **RANK** (`scripts/web_rank.py` = the `web-rank` skill): score candidates vs PURPOSE +
    `expected_evidence`. ollama cosine when `nomic-embed-text` is pulled; else a deterministic
    keyword+relevance+recency fallback (lower quality — see Cost note). In the deterministic
