@@ -125,6 +125,18 @@ def _min_reject_freq() -> int:
     return int(cfg.get("learn", {}).get("min_reject_freq", 2))
 
 
+def _harvest_reject_keywords() -> bool:
+    """Read learn.harvest_reject_keywords from web-config, default False.
+
+    When False (default), free-text rejection reasons are NOT tokenised into
+    reject keywords. This prevents a reason like "put more focus on semianalysis"
+    from creating a reject keyword that penalises the very source the user asked
+    for MORE of. Source/engine reputation still updates from accept/reject counts.
+    """
+    cfg = _load_web_config()
+    return bool(cfg.get("learn", {}).get("harvest_reject_keywords", False))
+
+
 # ---------------------------------------------------------------------------
 # Reputation helper
 # ---------------------------------------------------------------------------
@@ -344,7 +356,12 @@ def rep_for(learned: dict, source_id: str, engine: str) -> float:
         return float(sources[source_id].get("rep", 0.0))
     engines = learned.get("engines", {})
     if engine and engine in engines:
-        return float(engines[engine].get("rep", 0.0))
+        # Floor engine-level rep at 0.0: papers carry per-item ids (e.g.
+        # "arxiv:2401...") and never a registry source_id, so they fall through
+        # to engine rep. A NEGATIVE engine rep would then blanket-penalise every
+        # paper from that engine off a single reject. Positive engine reputation
+        # may still help; source-level rep (positive or negative) is unaffected.
+        return max(0.0, float(engines[engine].get("rep", 0.0)))
     return 0.0
 
 
@@ -541,6 +558,7 @@ def learn(
     today_s = today or datetime.now(timezone.utc).date().isoformat()
     prior = _prior_strength()
     min_freq = _min_reject_freq()
+    harvest_reject_kw = _harvest_reject_keywords()
 
     # Load ingest rows using root= kwarg (bypasses vault_config env resolution)
     vault_path = Path(vault_root)
@@ -635,8 +653,9 @@ def learn(
             new_eng_rep = _rep(engines[eng]["accept"], engines[eng]["reject"], prior)
             engines[eng]["rep"] = new_eng_rep
 
-        # -- Extract reject keywords (Guard 1: count per distinct reason; Guard 2: skip protected) --
-        if is_reject and reason:
+        # -- Extract reject keywords (opt-in; default OFF via _harvest_reject_keywords).
+        #    Guard 1: count per distinct reason; Guard 2: skip protected terms. --
+        if harvest_reject_kw and is_reject and reason:
             kws = _extract_keywords(reason)
             for kw in kws:
                 # Guard 2: never count terms that appear in the vault PURPOSE/topics

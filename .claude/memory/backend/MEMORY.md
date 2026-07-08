@@ -62,6 +62,12 @@ current; never store fact bodies here.
   web_query.py (reformulate API); web_crawl.py integration (after build_plan+agent_learn, _harvest_target
   per-engine routing, --no-reformulate, trace "reformulate/target"); render_trace_markdown ## Reformulate;
   SKILL.md step 1b. 12 new tests (TestQueryReformulation). 1054 total tests green, 0 real LLM calls.
+- [web-scrape-fix-p0-p1.md](web-scrape-fix-p0-p1.md) — **Web-scrape fix P0 (landed) + P1 (this task,
+  not committed) 2026-07-08.** Diversify away from NVIDIA vendor-blog by REWEIGHT ONLY (no caps): (1)
+  paper/blog relevance parity via engine fallback in web_rank; (2) `category_weights` knob consumed in
+  web_rank._deterministic_score + web_decision.news_target (embedding path kept pure); (3) deterministic
+  queries (`query.reformulate:false`) + cleaned `_derive_gap_queries`; (4) web.md/SKILL.md reconciled.
+  505 web tests green; live demo: news lane now SemiAnalysis-led, gap queries clean.
 - [phase3-conclusion.md](phase3-conclusion.md) — **PHASE 3 CLOSED 2026-06-23 (user sign-off): functionally
   works OK w/ minor bugs, but relevance/accuracy NOT good enough + DECISION is obscure.** Perplexity returned
   only slightly-relevant results; arXiv path better but not great. NOT production-trusted — do NOT auto-wire web

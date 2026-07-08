@@ -460,7 +460,7 @@ def _patch_rank(monkeypatch):
     import web_rank as wr
 
     def _fake_score(candidates, query, *, registry=None, allow_remote_ollama=False,
-                    today=None, learned=None, weights=None):
+                    today=None, learned=None, weights=None, category_weights=None):
         # Assign scores from the candidate's existing score field or use index-based
         result = []
         for i, c in enumerate(candidates):
@@ -3398,12 +3398,12 @@ class TestAgentLearnWiring:
         original_score = wr.score_candidates
 
         def _spy_score(candidates, query, *, registry=None, allow_remote_ollama=False,
-                       today=None, learned=None, weights=None):
+                       today=None, learned=None, weights=None, category_weights=None):
             received_learned.append(learned)
             return original_score(
                 candidates, query, registry=registry,
                 allow_remote_ollama=allow_remote_ollama, today=today,
-                learned=learned, weights=weights,
+                learned=learned, weights=weights, category_weights=category_weights,
             )
 
         monkeypatch.setattr(wr, "score_candidates", _spy_score)

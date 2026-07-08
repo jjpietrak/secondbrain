@@ -168,10 +168,12 @@ class TestFallbackPath:
             snippet="DDDD EEEE FFFF",
             source_id="arxiv_cs_dc",
         )
+        # engine="" so the Change-1 engine-fallback does NOT apply -> genuine 0 bonus.
         no_rel = _make_candidate(
             title="AAAA BBBB CCCC",
             snippet="DDDD EEEE FFFF",
             source_id="unknown_src_xyz",
+            engine="",
         )
         ranked = web_rank.score_candidates(
             [no_rel, high_rel], query, registry=_SAMPLE_REGISTRY
@@ -538,6 +540,107 @@ class TestRegistryRelevance:
     def test_github_repos_section(self):
         score = web_rank._registry_relevance("vllm-project/vllm", _SAMPLE_REGISTRY)
         assert abs(score - 1.0) < 1e-6  # relevance=5
+
+
+# ===========================================================================
+# Phase 1: engine relevance parity + category-weight reweighting
+# ===========================================================================
+
+# Registry with equal top relevance for a paper engine and a vendor blog, so
+# category_weights (not base relevance) is what differentiates them.
+_CW_REGISTRY = {
+    "paper-publisher": {
+        "sources": [
+            {"id": "arxiv_cs_dc", "relevance": 5, "category": "preprint_repository"},
+        ]
+    },
+    "blog-newsfeed": {
+        "sources": [
+            {"id": "vendor_blog_a", "relevance": 5, "category": "vendor_blogs"},
+        ]
+    },
+}
+
+
+class TestEnginePaperMaps:
+    def test_arxiv_engine_gets_max_relevance_and_category(self):
+        rel_map, cat_map = web_rank._engine_paper_maps(_SAMPLE_REGISTRY)
+        # arxiv_cs_dc=5, arxiv_cs_ar=3 -> max relevance 1.0
+        assert abs(rel_map["arxiv"] - 1.0) < 1e-6
+        assert cat_map["arxiv"] == "preprint_repository"
+
+    def test_crossref_gets_a_default(self):
+        rel_map, cat_map = web_rank._engine_paper_maps(_SAMPLE_REGISTRY)
+        assert "crossref" in rel_map
+        assert cat_map["crossref"] == "paper_api"
+
+    def test_none_registry_returns_empty(self):
+        rel_map, cat_map = web_rank._engine_paper_maps(None)
+        assert rel_map == {} and cat_map == {}
+
+
+class TestEngineRelevanceParity:
+    def test_paper_source_id_gets_engine_fallback_relevance(self):
+        """A per-item paper source_id (not a registry id) inherits its engine's relevance."""
+        rel_map, _ = web_rank._engine_paper_maps(_SAMPLE_REGISTRY)
+        score = web_rank._registry_relevance(
+            "arxiv:2401.09670", _SAMPLE_REGISTRY,
+            engine="arxiv", engine_rel_map=rel_map,
+        )
+        assert abs(score - 1.0) < 1e-6  # parity with a relevance-5 registry blog
+
+    def test_paper_candidate_non_zero_relevance_end_to_end(self, monkeypatch):
+        """Before the fix a paper candidate scored 0 registry bonus; now it does not."""
+        _ollama_off(monkeypatch)
+        query = "zzzzzzzzzzzzzzzz"  # no keyword overlap -> score is pure relevance bonus
+        paper = _make_candidate(
+            title="AAAA BBBB", snippet="CCCC DDDD",
+            source_id="arxiv:2401.09670", engine="arxiv",
+        )
+        ranked = web_rank.score_candidates([paper], query, registry=_SAMPLE_REGISTRY)
+        assert ranked[0]["score"] > 0.0
+
+
+class TestCategoryWeights:
+    def test_weight_demotes_vendor_blog_below_equal_keyword_paper(self, monkeypatch):
+        """With category_weights, a vendor_blogs candidate ranks below an equal paper."""
+        _ollama_off(monkeypatch)
+        query = "disaggregation inference memory bandwidth"
+        blog = _make_candidate(
+            title="disaggregation inference memory bandwidth",
+            source_id="vendor_blog_a", engine="rss",
+        )
+        paper = _make_candidate(
+            title="disaggregation inference memory bandwidth",
+            source_id="arxiv:2401.09670", engine="arxiv",
+        )
+        cw = {"vendor_blogs": 0.5, "preprint_repository": 1.2, "_default": 1.0}
+        ranked = web_rank.score_candidates(
+            [blog, paper], query, registry=_CW_REGISTRY, category_weights=cw,
+        )
+        assert ranked[0]["source_id"] == "arxiv:2401.09670"
+        assert ranked[0]["score"] > ranked[1]["score"]
+
+    def test_weights_none_identical_to_before(self, monkeypatch):
+        """category_weights=None -> base scores unchanged (back-compat)."""
+        _ollama_off(monkeypatch)
+        query = "disaggregation inference memory bandwidth"
+        blog = _make_candidate(
+            title="disaggregation inference memory bandwidth",
+            source_id="vendor_blog_a", engine="rss",
+        )
+        paper = _make_candidate(
+            title="disaggregation inference memory bandwidth",
+            source_id="arxiv:2401.09670", engine="arxiv",
+        )
+        # Equal keyword overlap AND equal base relevance (both engine/registry -> 1.0),
+        # so with weights=None the two base_scores must be equal.
+        ranked = web_rank.score_candidates(
+            [blog, paper], query, registry=_CW_REGISTRY, category_weights=None,
+        )
+        by_id = {c["source_id"]: c for c in ranked}
+        assert abs(by_id["vendor_blog_a"]["base_score"]
+                   - by_id["arxiv:2401.09670"]["base_score"]) < 1e-9
 
 
 # ===========================================================================

@@ -1136,13 +1136,18 @@ def crawl(
                     seen_dropped=0,
                 )
 
-    # 4. Dedup seen (persist cache only when not dry_run)
+    # 4. Dedup seen. In-run dedup (collapsing duplicates harvested within THIS run)
+    #    always applies; cross-run PERSISTENCE is narrowed to actually-staged items
+    #    (see step 6b) so un-staged candidates can resurface on later runs.
     seen_p = _seen_path()
     new_ids_set: set[str] = set()
     new_candidates, updated_seen = wh.dedup_seen(all_candidates, seen_path=seen_p)
     # Compute the set of stable ids that survived dedup
     from web_harvest import _stable_id as _wh_stable_id, candidate_ident as _candidate_ident
     new_ids_set = {_wh_stable_id(c) for c in new_candidates}
+    # Reconstruct the pre-run cross-run seen set (updated_seen minus this run's
+    # newly-harvested ids) so we persist old seen + newly-staged only.
+    prior_seen_keys = set(updated_seen.keys()) - new_ids_set
 
     # Back-fill seen_dropped into each harvest/target trace record
     harvest_recs = trace.find("harvest", "target")
@@ -1153,18 +1158,6 @@ def crawl(
             if _wh_stable_id(c) not in new_ids_set
         )
         hrec["data"]["seen_dropped"] = seen_dropped
-
-    if not dry_run and new_candidates:
-        # Persist the updated seen cache
-        try:
-            sp = Path(seen_p)
-            sp.parent.mkdir(parents=True, exist_ok=True)
-            sp.write_text(
-                json.dumps(updated_seen, indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
-        except OSError as exc:
-            print(f"[web_crawl] could not write seen cache: {exc}", file=sys.stderr)
 
     # 5. Rank: score all candidates against PURPOSE + per-candidate evidence
     wr = _import_web_rank()
@@ -1177,6 +1170,7 @@ def crawl(
         today=today_s,
         learned=learned or None,
         weights=config.get("learn") if learned else None,
+        category_weights=config.get("category_weights"),
     )
 
     # Record the rank/scores trace step
@@ -1202,6 +1196,24 @@ def crawl(
 
     # 6. Select (threads trace into selection steps)
     selected = wd.select_candidates(scored_pool, config, ingest_rows=ingest_rows, trace=trace)
+
+    # 6b. Persist the seen cache with ONLY the items actually staged this run
+    #     (prior cross-run seen + newly-staged). Un-staged candidates are left out
+    #     so they can resurface on later runs. Dry runs never write.
+    staged_ids = {_wh_stable_id(c) for c in selected if _wh_stable_id(c)}
+    if not dry_run and staged_ids:
+        persisted_seen = {k: True for k in prior_seen_keys}
+        for sid in staged_ids:
+            persisted_seen[sid] = True
+        try:
+            sp = Path(seen_p)
+            sp.parent.mkdir(parents=True, exist_ok=True)
+            sp.write_text(
+                json.dumps(persisted_seen, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            print(f"[web_crawl] could not write seen cache: {exc}", file=sys.stderr)
 
     # 7. dry_run early return
     if dry_run:

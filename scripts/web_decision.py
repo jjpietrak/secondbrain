@@ -274,15 +274,48 @@ _ENGINE_TAG_RE = re.compile(
 
 
 def _parse_frontmatter(text: str) -> dict:
-    """Extract YAML-style frontmatter between --- delimiters."""
+    """Extract YAML-style frontmatter between --- delimiters.
+
+    Supports three value shapes:
+      - inline scalar:      key: value
+      - inline list:        key: [a, b]
+      - YAML block list:    key:
+                            - a
+                            - b
+    Block-list items (indented "- item" lines following a key with an empty
+    inline value) are collected into a bracketed inline-list string
+    (e.g. "[T-0001, T-0002]") so downstream list parsers
+    (_parse_gap_frontmatter_list / _TOPIC_RE.findall / _FILLABLE_TAG_RE.findall)
+    see a consistent shape. Return contract stays dict[str, str].
+    """
     m = re.match(r"^---\r?\n(.*?)\r?\n---\r?\n", text, re.DOTALL)
     if not m:
         return {}
     fm: dict[str, str] = {}
-    for line in m.group(1).splitlines():
-        if ":" in line and not line.lstrip().startswith("#"):
+    lines = m.group(1).splitlines()
+    n = len(lines)
+    i = 0
+    while i < n:
+        line = lines[i]
+        stripped = line.lstrip()
+        if ":" in line and not stripped.startswith("#") and not stripped.startswith("-"):
             k, _, v = line.partition(":")
-            fm[k.strip().lower()] = v.strip().strip("\"'")
+            key = k.strip().lower()
+            val = v.strip().strip("\"'")
+            if val == "":
+                # Empty inline value: look ahead for a YAML block list ("- item").
+                items: list[str] = []
+                j = i + 1
+                while j < n and lines[j].lstrip().startswith("- "):
+                    item = lines[j].lstrip()[2:].strip().strip("\"'")
+                    items.append(item)
+                    j += 1
+                if items:
+                    fm[key] = "[" + ", ".join(items) + "]"
+                    i = j
+                    continue
+            fm[key] = val
+        i += 1
     return fm
 
 
@@ -681,17 +714,50 @@ def merge_targets(
     return merged_targets
 
 
+def _clean_query_text(text: str) -> str:
+    """Strip markdown / [[wikilinks]] / citation-bracket noise from a query phrase.
+
+    Deterministic ($0, no LLM).  Produces clean phrases for the arXiv/S2 queries
+    instead of markup fragments:
+      - ``[[wiki/concepts/kv-cache|KV cache]]`` -> ``KV cache``
+      - ``[text](url)``                          -> ``text``
+      - citation brackets ``[3]``, ``[3]-[6]``, ``[12, 13]`` -> removed
+      - markdown emphasis / code / heading marks -> removed
+    """
+    if not text:
+        return ""
+    s = text
+
+    def _wikilink(m: "re.Match") -> str:
+        inner = m.group(1)
+        if "|" in inner:            # [[target|Alias]] -> Alias
+            inner = inner.split("|")[-1]
+        return inner.split("/")[-1]  # [[wiki/x/page]] -> page
+
+    s = re.sub(r"\[\[([^\]]+)\]\]", _wikilink, s)      # wikilinks
+    s = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", s)      # [text](url) -> text
+    s = re.sub(r"\[[\d\s,\-]+\]", " ", s)               # citation brackets [3], [3]-[6]
+    s = re.sub(r"[*_`#>]+", " ", s)                     # emphasis / code / heading marks
+    s = re.sub(r"\s+", " ", s).strip()                  # collapse whitespace
+    return s
+
+
 def _derive_gap_queries(gap: dict) -> list[str]:
-    """Derive search queries from a gap's missing + title fields."""
+    """Derive precise, deterministic search queries from a gap's title + missing.
+
+    Uses the gap title and the cleaned first sentence of ``## Missing`` (markdown,
+    wikilinks and citation-bracket noise stripped) so the arXiv/S2 queries are
+    clean phrases rather than markup salad.  No LLM ($0).
+    """
     queries = []
-    title = gap.get("title", "").strip()
+    title = _clean_query_text(gap.get("title", "").strip())
     missing = gap.get("missing", "").strip()
 
     if title:
         queries.append(title)
     if missing:
-        # Take the first sentence of missing as a query
-        first_sentence = re.split(r"[;.]", missing)[0].strip()
+        # Take the first sentence of missing, then clean it into a plain phrase.
+        first_sentence = _clean_query_text(re.split(r"[;.]", missing)[0].strip())
         if first_sentence and first_sentence != title:
             queries.append(first_sentence)
 
@@ -761,17 +827,43 @@ _NEWS_CATEGORIES = {
 }
 
 
-def news_target(registry: dict, purpose_text: str = "") -> dict:
-    """Build a single lane=news target from the highest-relevance blog/news feeds."""
+def news_target(
+    registry: dict,
+    purpose_text: str = "",
+    *,
+    category_weights: dict | None = None,
+) -> dict:
+    """Build a single lane=news target from the highest-relevance blog/news feeds.
+
+    ``category_weights`` (reweight-only diversification lever) multiplies each
+    source's relevance in the top-5 sort key, so demoted categories (e.g.
+    ``vendor_blogs`` at 0.5) fall below boosted ones (SemiAnalysis in
+    ``hardware_analysis``/``benchmarking``).  None -> plain relevance ordering
+    (identical to before).  No hard per-domain cap.
+    """
     # Collect all sources from blog-newsfeed registry
     sources = registry.get("blog-newsfeed", {}).get("sources", [])
 
-    # Filter to news-relevant categories, sorted by relevance desc
+    def _weighted_rel(s: dict) -> float:
+        rel = float(s.get("relevance", 0) or 0)
+        if not category_weights:
+            return rel
+        cat = s.get("category", "")
+        if cat and cat in category_weights:
+            w = category_weights[cat]
+        else:
+            w = category_weights.get("_default", 1.0)
+        try:
+            return rel * float(w)
+        except (TypeError, ValueError):
+            return rel
+
+    # Filter to news-relevant categories, sorted by (category-weighted) relevance desc
     news_sources = [
         s for s in sources
         if s.get("category", "") in _NEWS_CATEGORIES
     ]
-    news_sources.sort(key=lambda s: -int(s.get("relevance", 0)))
+    news_sources.sort(key=lambda s: -_weighted_rel(s))
 
     # Top 5 by relevance
     top_sources = news_sources[:5]
@@ -1043,7 +1135,9 @@ def build_plan(
             purpose_text = (vault_yaml or {}).get("purpose", "")
     except Exception:
         pass
-    news = news_target(registry, purpose_text)
+    news = news_target(
+        registry, purpose_text, category_weights=config.get("category_weights")
+    )
 
     # Build ordered target list: gap, research, news
     all_targets = []

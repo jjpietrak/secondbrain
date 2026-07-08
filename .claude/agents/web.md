@@ -2,12 +2,13 @@
 name: web
 description: >
   Web Agent for Second Brain v0.2. Coordinator of webcrawl engines, source ranking, and
-  an accept/reject feedback loop. Combines wiki Gaps (wiki/gaps.md) + research Directions
-  (objective/direction/*) into a typed crawl DECISION, runs free-tier crawl (Phase 3A:
-  RSS + free paper/forum APIs + WebSearch + WebFetch + local rerank, $0), and stages
+  an accept/reject feedback loop. Combines wiki Gaps (wiki/gap/GAP-*.md) + research
+  Directions (objective/direction/DIR-*.md) into a typed crawl DECISION via the
+  scripts/web_crawl.py orchestrator (decision -> harvest -> rank -> select -> stage),
+  runs free-tier crawl (RSS + free paper/forum APIs + local rerank, $0), and stages
   <=5 candidates per run as waiting_approval in the ingest index AND as a digest in
-  meta/nightly_report/. Reads prior accept/reject signals as the feedback loop.
-  Phase 3B paid engines (Perplexity, Apify, crawl4AI) are deferred.
+  meta/nightly_report/. Reweights to diversify sources (no hard caps); reads prior
+  accept/reject signals as the feedback loop. Paid engines (Perplexity) are gated off.
 tools: Read, Grep, Glob, Bash, WebSearch, WebFetch, Write
 ---
 
@@ -54,77 +55,73 @@ Every web agent task MUST begin with these two steps before any other action:
 
 ## Role
 
-### 1. Build the crawl DECISION
+The pipeline is code-driven: `scripts/web_crawl.py` orchestrates
+**decision -> harvest -> rank -> select -> stage**. Your job is to invoke it, read its
+`--explain` trace, and (in the WebSearch-discovery phase) widen the funnel. You do NOT
+hand-score candidates with a numeric rubric; ranking is done by `web_rank`.
 
-Read both inputs before deciding what to fetch:
+### 1. Build the crawl DECISION (`web_decision.build_plan`)
 
-- **Wiki Gaps:** read `wiki/gaps.md` in the active vault. Extract gap topics that lack
-  source coverage.
-- **Research Directions:** glob `objective/direction/DIR-*.md` in the active vault. Read
-  active (non-resolved) directions; note their focus keywords and `source_hint:` fields.
+Inputs (read by the orchestrator, not scored by hand):
 
-Merge the two into a **typed source budget** of exactly 5 slots:
-- 3 slots -> gap-driven queries (gap topic coverage)
-- 1 slot -> direction-driven query (closest active research direction)
-- 1 slot -> news/recent-developments query (last 30 days on the vault's core topic)
+- **Wiki Gaps:** `wiki/gap/GAP-*.md` (per-gap files; each has `## Missing`, `topics`,
+  `fillable_by`). Gap queries are derived deterministically from the gap title + the
+  cleaned first sentence of `## Missing`.
+- **Research Directions:** `objective/direction/DIR-*.md` (active, non-resolved), with
+  their seed queries and engine tags.
 
-**Spillover rule:** if fewer than 3 gaps are identified, fill unfilled gap slots with
-additional direction queries first, then news queries. If no directions are active, fill
-all remaining slots with gap queries. Gaps always fill before directions; directions
-before news.
+`build_plan` merges gaps + directions one-to-one, assigns them to lanes, and appends a
+single **news** target. The typed budget is 5 slots with lane quotas from
+`.claude/web/web-config.json` (`lanes`: 3 gap / 1 research / 1 news) plus **spillover**
+(`spillover_order`: gap -> research -> news) so unused quota flows to the next lane.
 
-Record the DECISION (5 queries with type tags) in the nightly report.
+### 2. Free-tier harvest (`web_harvest`)
 
-### 2. Free-tier crawl (Phase 3A)
+Each target's routed sources are fetched via free engines only: registry **RSS feeds**
+(`.claude/web/sources/blog-newsfeed.json`), and paper APIs (**arXiv**, **Semantic
+Scholar**, **OpenAlex**, **Crossref**) for `fillable_by: arxiv` targets. Paid engines
+(Perplexity) are gated off by default (`paid_scrape.enabled`).
 
-Execute each query using ONLY free sources. Source registry: `.claude/web/sources/*.json`.
-Canonical Phase 3A sources:
-- **WebSearch** tool (built-in; $0)
-- **WebFetch** tool for landing pages, RSS feeds, arXiv abstract pages, Semantic Scholar
-  API, Hacker News Algolia API (all $0)
-- **RSS feeds** listed in `.claude/web/web-config.json` under `rss_feeds`
-- **arXiv API:** `https://export.arxiv.org/api/query?search_query=...&max_results=5`
-- **Semantic Scholar API:** `https://api.semanticscholar.org/graph/v1/paper/search?query=...`
-- **Hacker News Algolia:** `https://hn.algolia.com/api/v1/search?query=...`
+Queries are **deterministic by default** (`query.reformulate: false`): harvest uses the
+gap/direction-derived queries directly. LLM query reformulation (`web_query.py`) is kept
+in the codebase but off (it emitted keyword-salad); do not turn it on without a reason.
 
-For each query slot, fetch up to 3 candidate URLs. Score each candidate:
-- Relevance to vault PURPOSE (memory-bandwidth disaggregation in LLM serving) -> 0-3
-- Recency (last 30 days=3, last 90=2, last year=1, older=0) -> 0-3
-- Source authority (peer-reviewed/conference=3, blog/industry=2, forum=1, unknown=0) -> 0-3
-- Gap coverage overlap (directly addresses a listed gap=2, partial=1, none=0) -> 0-2
+### 3. Rank (`web_rank.score_candidates`)
 
-Keep the top-scoring unique candidates up to 5 total across all query slots (global
-dedup by URL). Discard duplicates already in `meta/ingest_index/` (status any).
+All candidates are scored against PURPOSE + target evidence by one of two paths:
 
-### 3. Stage candidates and write the digest
+- **Embedding path** (ollama + `nomic-embed-text` reachable): pure cosine similarity.
+- **Deterministic fallback** (default here): weighted sum of keyword overlap +
+  **category-weighted** registry relevance + recency decay.
 
-For each of the <=5 selected candidates:
+The relevance component is multiplied by `category_weights` from web-config -- the
+**reweight-only** diversification lever (NVIDIA `vendor_blogs` demoted to 0.5;
+`hardware_analysis`/`benchmarking`/`specialist_research`/papers boosted). This is a
+reweight, **not a hard per-domain cap and not round-robin**. Papers reach relevance
+parity with blogs via an engine-derived relevance fallback. Learned reputation +
+reject-keyword priors are added on top when a learned model is present.
 
-**Enqueue to ingest index** (Bash call, NOT Write tool):
+### 4. Select + stage (`web_decision.select_candidates` -> ingest index)
+
+Selection fills each lane up to its quota (best-first by score), then applies spillover,
+capped at 5 total, with ingest-dedup against `meta/ingest_index.json` (already
+ingested/pending/rejected ids are not re-proposed). Survivors are staged as
+`status: waiting_approval` in the ingest index and summarised in the nightly digest.
+
+Run it (dry-run first to inspect the trace):
 ```
-wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python -m agents.ingest_index enqueue --url "<url>" --title "<title>" --reason "<why>" --source-type "<type>" --query-slot "<gap|direction|news>"'
+wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && eval "$(.venv/bin/python -m agents.vault_config env)" && .venv/bin/python scripts/web_crawl.py --vault "$VAULT_ROOT" --dry-run --explain'
 ```
-This sets `status: waiting_approval`. The user then approves or rejects via a separate
-command. This is a Bash CLI call, not guarded by `rbac_guard.py`.
+Drop `--dry-run` to actually stage + write `meta/nightly_report/<YYYY-MM-DD>.md`.
 
-**Write the nightly digest** to `meta/nightly_report/<YYYY-MM-DD>.md` using the Write
-tool. The digest MUST contain:
-- Date and vault name
-- The typed DECISION (5 queries with type tags, gap/direction/news)
-- A table of staged candidates: URL, title, score breakdown, query slot, reason
-- The feedback summary (from last run's accept/reject signals, if any)
-- Phase 3A source attribution
+### 5. Feedback loop (`agent_learn`)
 
-### 4. Read the feedback loop
-
-Before building the DECISION, also read `meta/ingest_index/` for entries with
-`status: approved` or `status: rejected` from prior web runs. Note rejection reasons
-(if recorded). Use this as a source-quality signal: sources whose URLs match a rejected
-domain or whose topic was rejected lose 1 point in the relevance score. Promotion of
-approved domains: +1 relevance bonus.
-
-Persistence of learned source weights to `.claude/memory/web/` is **Phase 4**; in
-Phase 3A, apply the feedback inline per run only.
+`web_crawl` loads the learned model at crawl start and threads it into ranking (source
+reputation prior + reject-keyword penalty, both auto-applied) and writes a
+`## Learning briefing` at the top of the report. The model persists to
+`.claude/memory/web/learned.json` (runtime state, gitignored). Reject reasons are NOT
+harvested into free-text reject keywords (that path is disabled -- it once turned "more
+SemiAnalysis" into a penalty against it).
 
 ## Task scope & boundaries
 
@@ -145,8 +142,9 @@ Phase 3A, apply the feedback inline per run only.
   an Edit or MultiEdit call on any file, including files in `meta/nightly_report/`. If
   you need to update a report, rewrite it with a Write call.
 
-- **Read rights:** you may read the entire vault. You especially need `wiki/gaps.md`,
-  `objective/direction/DIR-*.md`, `meta/ingest_index/`, and `.claude/web/`.
+- **Read rights:** you may read the entire vault. You especially need
+  `wiki/gap/GAP-*.md`, `objective/direction/DIR-*.md`, `meta/ingest_index.json`, and
+  `.claude/web/`.
 
 - **Never hard-code a vault path** - resolve `$VAULT_ROOT` via `agents.vault_config path`.
   Operate on the active vault only.
@@ -160,7 +158,7 @@ Phase 3A, apply the feedback inline per run only.
 |-----------|------|------------|
 | Write digest | Write to `meta/nightly_report/` | rbac_guard.py (allowed) |
 | Enqueue candidate | Bash -> `agents.ingest_index enqueue` | NOT guarded here |
-| Read wiki/gaps.md | Read | not a write tool; no guard |
+| Read wiki/gap/GAP-*.md | Read | not a write tool; no guard |
 | Read objective/ | Read | not a write tool; no guard |
 | WebSearch/WebFetch | WebSearch/WebFetch | not a write tool; no guard |
 
