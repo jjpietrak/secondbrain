@@ -68,6 +68,15 @@ current; never store fact bodies here.
   web_rank._deterministic_score + web_decision.news_target (embedding path kept pure); (3) deterministic
   queries (`query.reformulate:false`) + cleaned `_derive_gap_queries`; (4) web.md/SKILL.md reconciled.
   505 web tests green; live demo: news lane now SemiAnalysis-led, gap queries clean.
+- [web-scrape-fix-p4-experiment.md](web-scrape-fix-p4-experiment.md) — **Web-scrape fix P4
+  (in-loop tuning experiment INFRASTRUCTURE, this task, not committed) 2026-07-08.** Seeded
+  throwaway vault `Disagg-Exp` (isolated clone; 4 control targets referenced-not-ingested;
+  open GAP-11 for splitwise); registered config/vaults/Disagg-Exp/*; targets.json +
+  exp-config.json (config copy so tuning never mutates shared) + chiplog fixture; eval harness
+  `scripts/experiments/eval_retrieval.py` (monkeypatch _load_config -> crawl dry_run ->
+  recall@5 + per-target rank/selected); 4 offline tests. BASELINE recall@5=0.25 (chiplog rank1
+  selected; splitwise found rank21 unselected; megascale+gimlet not retrieved). CODE_PATH pin
+  gotcha noted.
 - [phase3-conclusion.md](phase3-conclusion.md) — **PHASE 3 CLOSED 2026-06-23 (user sign-off): functionally
   works OK w/ minor bugs, but relevance/accuracy NOT good enough + DECISION is obscure.** Perplexity returned
   only slightly-relevant results; arXiv path better but not great. NOT production-trusted — do NOT auto-wire web

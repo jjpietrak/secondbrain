@@ -17,6 +17,10 @@ default_vault: Inference-Disagg
 vaults:
   - name: Inference-Disagg
     enabled: true
+  # Throwaway web-scrape tuning-experiment vault (Phase 4). Isolated clone of
+  # Inference-Disagg; disabled so VAULT=all nightly runs never touch it.
+  - name: Disagg-Exp
+    enabled: false
 
 # Shared infrastructure (NOT per-vault).
 shared:
