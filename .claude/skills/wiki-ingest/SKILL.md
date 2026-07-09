@@ -107,15 +107,21 @@ Trigger: a file in `raw/` is `pending`, or the user points at one source.
 3. **Orient cheaply** (context-window discipline, below): read `wiki/hot.md`, then
    `wiki/index.md`, then 3-5 existing pages that are plausibly affected. Do not read the whole
    wiki.
-4. **Create the source summary** in `wiki/sources/<Title>.md` using the sources `_template.md`
-   in that folder (see Frontmatter below). Its `sources:` frontmatter lists the `[[raw/...]]`
-   file(s) it summarizes. This page is the `[[sources/X]]` citation target every claim links to.
+4. **Create the source summary** in `wiki/sources/<raw-stem>.md` using the sources `_template.md`
+   in that folder (see Frontmatter below). **Name the page after the exact stem of the `raw/`
+   file it summarizes** — the raw filename without its extension, version suffix kept — e.g.
+   `raw/papers/2311.18677v2.pdf` -> `wiki/sources/2311.18677v2.md`;
+   `raw/articles/some-post.md` -> `wiki/sources/some-post.md`. The human-readable name lives in
+   the `title:` frontmatter (surfaced in graph/explorer via the Front Matter Title plugin), so the
+   filename stays a stable id that mirrors its raw source. Its `sources:` frontmatter lists the
+   `[[raw/...]]` file(s) it summarizes. This page is the `[[sources/X]]` citation target every
+   claim links to.
 5. **Create or UPDATE entity pages** (`wiki/entities/`) for every person, organization, tool,
    company, project, or place mentioned that is wiki-worthy. One page per entity. UPDATE, do not
    duplicate - search the index first.
 6. **Create or UPDATE concept pages** (`wiki/concepts/`) for significant ideas, frameworks,
    theories, and methods.
-7. **Cite every external claim** with a wikilink to its source page: `[[sources/<Title>]]`.
+7. **Cite every external claim** with a wikilink to its source page: `[[sources/<raw-stem>]]`.
    Citations are **wikilinks only** - never bare markdown `[text](url)` for an internal source.
    Attach a recency marker per external fact (`(as of 2026-06, ...)`) per ai-first rule 4.
 8. **Bi-temporal updates (never overwrite).** When new info changes a fact about an entity or
