@@ -68,6 +68,15 @@ current; never store fact bodies here.
   web_rank._deterministic_score + web_decision.news_target (embedding path kept pure); (3) deterministic
   queries (`query.reformulate:false`) + cleaned `_derive_gap_queries`; (4) web.md/SKILL.md reconciled.
   505 web tests green; live demo: news lane now SemiAnalysis-led, gap queries clean.
+- [web-scrape-fix-p3-backfill.md](web-scrape-fix-p3-backfill.md) — **Web-scrape fix P3
+  (/web-backfill command, this task, not committed) 2026-07-09.** New standalone
+  `scripts/web_backfill.py` + `.claude/skills/web-backfill/SKILL.md` + `tests/test_web_backfill.py`
+  (5 offline, green). Fills cited-but-missing papers first: harvest arxiv/DOI ids from wiki +
+  open-gap `## Shows up in`, truth-check (status=ingested AND raw file on disk; status alone
+  lies), stage backfill set as waiting_approval + backfill-<date>.md report. Live dry-run:
+  Splitwise 2311.18677 EXCLUDED (truly ingested); backfill set = 5 `deleted`-status ids
+  (sarathi/mist/cronus/zte/spad). Gap-named-but-unlinked papers (optical prior-art, vLLM etc.)
+  are NOT reachable by backfill (no arxiv/DOI link) -- need web-scrape discovery.
 - [web-scrape-fix-p4-experiment.md](web-scrape-fix-p4-experiment.md) — **Web-scrape fix P4
   (in-loop tuning experiment INFRASTRUCTURE, this task, not committed) 2026-07-08.** Seeded
   throwaway vault `Disagg-Exp` (isolated clone; 4 control targets referenced-not-ingested;
