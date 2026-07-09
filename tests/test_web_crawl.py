@@ -460,7 +460,7 @@ def _patch_rank(monkeypatch):
     import web_rank as wr
 
     def _fake_score(candidates, query, *, registry=None, allow_remote_ollama=False,
-                    today=None, learned=None, weights=None):
+                    today=None, learned=None, weights=None, category_weights=None):
         # Assign scores from the candidate's existing score field or use index-based
         result = []
         for i, c in enumerate(candidates):
@@ -3398,12 +3398,12 @@ class TestAgentLearnWiring:
         original_score = wr.score_candidates
 
         def _spy_score(candidates, query, *, registry=None, allow_remote_ollama=False,
-                       today=None, learned=None, weights=None):
+                       today=None, learned=None, weights=None, category_weights=None):
             received_learned.append(learned)
             return original_score(
                 candidates, query, registry=registry,
                 allow_remote_ollama=allow_remote_ollama, today=today,
-                learned=learned, weights=weights,
+                learned=learned, weights=weights, category_weights=category_weights,
             )
 
         monkeypatch.setattr(wr, "score_candidates", _spy_score)
@@ -3861,3 +3861,186 @@ class TestQueryReformulation:
         assert llm_calls == [], (
             "No real LLM calls (_invoke_llm) must occur in monkeypatched tests"
         )
+
+
+# ===========================================================================
+# Change 1: agent-injected WebSearch candidates
+# ===========================================================================
+
+def _patch_harvest_empty(monkeypatch):
+    """Monkeypatch all four harvest functions to return NOTHING (offline).
+
+    Lets a test isolate the agent-injected candidates as the ONLY pool entries.
+    """
+    import web_harvest as wh
+    monkeypatch.setattr(wh, "poll_rss", lambda *a, **kw: [])
+    monkeypatch.setattr(wh, "query_papers", lambda *a, **kw: [])
+    monkeypatch.setattr(wh, "query_forum", lambda *a, **kw: [])
+    monkeypatch.setattr(wh, "poll_github_releases", lambda *a, **kw: [])
+
+
+def _write_agent_cands(tmp_path, items):
+    p = tmp_path / "agent-cands.json"
+    p.write_text(json.dumps(items), encoding="utf-8")
+    return str(p)
+
+
+def _rank_pool_idents(result):
+    """Return the list of candidate idents recorded in the rank/scores trace."""
+    trace = result["trace"]
+    recs = trace.find("rank", "scores")
+    if not recs:
+        return []
+    return [c["ident"] for c in recs[0]["data"]["candidates"]]
+
+
+class TestAgentCandidates:
+    """--agent-candidates injection path (Change 1)."""
+
+    _CHIPLOG = {
+        "title": "Inside Attention/FFN Disaggregation",
+        "url": "https://www.chiplog.io/p/inside-attention-ffn-disaggregation",
+        "engine": "websearch",
+        "lane": "gap",
+        "snippet": "attention/FFN disaggregation, prefill/decode, KV cache",
+        "origin_ids": ["GAP-01"],
+    }
+
+    def test_injected_candidate_enters_ranked_pool_and_selected(self, tmp_path, monkeypatch):
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest_empty(monkeypatch)  # injected candidate is the ONLY pool entry
+        _patch_rank(monkeypatch)
+        cands_path = _write_agent_cands(tmp_path, [dict(self._CHIPLOG)])
+
+        result = web_crawl.crawl(
+            str(vault), dry_run=True, today="2026-06-22",
+            agent_candidates_path=cands_path,
+        )
+
+        url = self._CHIPLOG["url"].rstrip("/")
+        # Flows through dedup -> rank: appears in the ranked pool.
+        assert url in _rank_pool_idents(result)
+        # Flows through select: gap lane has quota, so it is selected.
+        selected_urls = [c.get("url", "").rstrip("/") for c in result["selected"]]
+        assert url in selected_urls
+
+    def test_injected_defaults_applied(self, tmp_path, monkeypatch):
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest_empty(monkeypatch)
+        _patch_rank(monkeypatch)
+        # Minimal item: only title + url. engine/lane/origin_ids default.
+        cands_path = _write_agent_cands(
+            tmp_path, [{"title": "Bare candidate", "url": "https://example.com/post"}]
+        )
+        result = web_crawl.crawl(
+            str(vault), dry_run=True, today="2026-06-22",
+            agent_candidates_path=cands_path,
+        )
+        sel = [c for c in result["selected"] if c.get("url") == "https://example.com/post"]
+        assert len(sel) == 1
+        assert sel[0]["engine"] == "websearch"
+        assert sel[0]["lane"] == "news"          # default lane
+        assert sel[0]["origin_ids"] == []         # default origin_ids
+
+    def test_injected_subject_to_lane_quota_and_total_cap(self, tmp_path, monkeypatch):
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest_empty(monkeypatch)
+        _patch_rank(monkeypatch)
+        # 6 gap-lane injected candidates; gap quota=3 + spillover from research(1)+news(1)
+        # tops out at new_sources_total=5, so exactly 5 survive select.
+        items = [
+            {"title": f"Gap cand {i}", "url": f"https://ex.com/g{i}",
+             "engine": "websearch", "lane": "gap", "origin_ids": ["GAP-01"]}
+            for i in range(6)
+        ]
+        cands_path = _write_agent_cands(tmp_path, items)
+        result = web_crawl.crawl(
+            str(vault), dry_run=True, today="2026-06-22",
+            agent_candidates_path=cands_path,
+        )
+        # All 6 entered the ranked pool...
+        assert len([i for i in _rank_pool_idents(result)
+                    if i.startswith("https://ex.com/g")]) == 6
+        # ...but lane quota + spillover + total cap keep only new_sources_total.
+        assert len(result["selected"]) == _WEB_CONFIG["new_sources_total"]
+
+    def test_injected_subject_to_ingest_dedup(self, tmp_path, monkeypatch):
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest_empty(monkeypatch)
+        _patch_rank(monkeypatch)
+        # Pre-populate the ingest index: the chiplog url is already ingested.
+        url = self._CHIPLOG["url"]
+        index_path = vault / "meta" / "ingest_index.json"
+        index_path.write_text(json.dumps({
+            "version": 3, "vault": vault.name,
+            "sources": {url: {"id": url, "status": "ingested", "url": url}},
+        }), encoding="utf-8")
+        cands_path = _write_agent_cands(tmp_path, [dict(self._CHIPLOG)])
+
+        result = web_crawl.crawl(
+            str(vault), dry_run=True, today="2026-06-22",
+            agent_candidates_path=cands_path,
+        )
+        clean = url.rstrip("/")
+        # Entered the ranked pool...
+        assert clean in _rank_pool_idents(result)
+        # ...but ingest-dedup dropped it at select.
+        selected_urls = [c.get("url", "").rstrip("/") for c in result["selected"]]
+        assert clean not in selected_urls
+
+    def test_missing_file_degrades_gracefully(self, tmp_path, monkeypatch):
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest(monkeypatch)  # normal canned harvest still works
+        _patch_rank(monkeypatch)
+        missing = str(tmp_path / "does-not-exist.json")
+
+        result = web_crawl.crawl(
+            str(vault), dry_run=True, today="2026-06-22",
+            agent_candidates_path=missing,
+        )
+        # Crawl completes; injected count 0; normal harvest still produced selections.
+        assert isinstance(result, dict)
+        assert len(result["selected"]) > 0
+
+    def test_garbage_file_degrades_gracefully(self, tmp_path, monkeypatch):
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest(monkeypatch)
+        _patch_rank(monkeypatch)
+        garbage = tmp_path / "garbage.json"
+        garbage.write_text("{ this is : not valid json ]", encoding="utf-8")
+
+        result = web_crawl.crawl(
+            str(vault), dry_run=True, today="2026-06-22",
+            agent_candidates_path=str(garbage),
+        )
+        assert isinstance(result, dict)
+        assert len(result["selected"]) > 0
+
+    def test_item_missing_url_or_title_skipped(self, tmp_path, monkeypatch):
+        vault = _make_tmp_vault(tmp_path)
+        _patch_loaders(monkeypatch, tmp_path, vault)
+        _patch_harvest_empty(monkeypatch)
+        _patch_rank(monkeypatch)
+        items = [
+            {"title": "No url here"},                       # skipped (no url)
+            {"url": "https://ex.com/no-title"},             # skipped (no title)
+            {"title": "Good", "url": "https://ex.com/ok"},  # kept
+        ]
+        cands_path = _write_agent_cands(tmp_path, items)
+        result = web_crawl.crawl(
+            str(vault), dry_run=True, today="2026-06-22",
+            agent_candidates_path=cands_path,
+        )
+        idents = _rank_pool_idents(result)
+        # Only the valid item reaches the pool; the two malformed items are skipped.
+        assert "https://ex.com/ok" in idents
+        assert "https://ex.com/no-title" not in [i.rstrip("/") for i in idents]
+        selected_urls = [c.get("url", "") for c in result["selected"]]
+        assert "https://ex.com/ok" in selected_urls
+        assert "https://ex.com/no-title" not in selected_urls

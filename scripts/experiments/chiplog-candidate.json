@@ -1,0 +1,12 @@
+[
+  {
+    "title": "Inside Attention/FFN Disaggregation",
+    "url": "https://www.chiplog.io/p/inside-attention-ffn-disaggregation",
+    "source_id": "chiplog_blog",
+    "snippet": "A deep dive into attention/FFN disaggregation for LLM inference: why splitting the attention and feed-forward stages across distinct GPU pools improves throughput and hardware utilization, how KV-cache transfer and all-to-all dispatch/combine bandwidth constrain the design, and how MegaScale-Infer and Step-3 style deployments realize prefill/decode plus layer-level disaggregation in production serving systems.",
+    "engine": "websearch",
+    "published": "2026-06-15",
+    "lane": "news",
+    "origin_ids": []
+  }
+]

@@ -52,6 +52,7 @@ CLI:
   python scripts/web_crawl.py --vault <root> [--dry-run] [--allow-remote-ollama]
                                [--json] [--limit N] [--explain] [--trace-out PATH]
                                [--perplexity] [--no-reformulate]
+                               [--agent-candidates PATH]
 
   --explain         print the full decision trace to STDERR after the run.
   --trace-out       write the rendered trace markdown to PATH (export on request).
@@ -60,6 +61,9 @@ CLI:
                     Refuses with exit 2 if either guard is missing.
   --no-reformulate  force-skip query reformulation (overrides config query.reformulate).
                     Use for testing / back-compat / debugging the seed-query path.
+  --agent-candidates  path to a JSON file of agent-injected WebSearch candidates;
+                    merged into the same pool before dedup/rank/select. Degrades
+                    gracefully on a missing/invalid file.
 
 Exit codes:
   0  -- success
@@ -533,6 +537,95 @@ def _harvest_target(
 
 
 # ---------------------------------------------------------------------------
+# Agent-injected WebSearch candidates
+# ---------------------------------------------------------------------------
+
+def _load_agent_candidates(path: str | None) -> list[dict]:
+    """Load agent-injected WebSearch candidates from a JSON file.
+
+    scripts/*.py cannot call the Claude WebSearch/WebFetch tools -- those live only
+    on the `web` subagent. So WebSearch discovery is an agent-driven injection: the
+    web agent runs WebSearch/WebFetch, writes the on-topic hits to this JSON file, and
+    passes its path here. The candidates are merged into the SAME candidate pool as the
+    Tier-0 harvest so they flow through the identical dedup -> rank -> lane-quota ->
+    ingest-dedup machinery (no parallel scoring path).
+
+    Expected shape per item (tolerant -- missing keys are defaulted):
+      {title, url, source_id, snippet, engine:"websearch", published, lane, origin_ids}
+    Defaults: engine="websearch", lane="news", origin_ids=[], snippet="", published="".
+
+    Degrades gracefully: a missing file / invalid JSON / non-list payload warns to
+    stderr and returns [] (never crashes the crawl). Items lacking a usable url or
+    title are skipped with a stderr warning.
+
+    Each returned candidate carries lane / origin_ids / expected_evidence the same way
+    _harvest_target._tag does, so it is indistinguishable downstream.
+    """
+    if not path:
+        return []
+    p = Path(path)
+    if not p.exists():
+        print(
+            f"[web_crawl] agent-candidates file not found: {path} "
+            "(continuing with zero injected candidates)",
+            file=sys.stderr,
+        )
+        return []
+    try:
+        raw = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        print(
+            f"[web_crawl] agent-candidates load failed ({exc}); "
+            "continuing with zero injected candidates",
+            file=sys.stderr,
+        )
+        return []
+    if not isinstance(raw, list):
+        print(
+            "[web_crawl] agent-candidates file is not a JSON list; "
+            "continuing with zero injected candidates",
+            file=sys.stderr,
+        )
+        return []
+
+    out: list[dict] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            print("[web_crawl] agent-candidate skipped (not an object)", file=sys.stderr)
+            continue
+        url = (item.get("url") or "").strip()
+        title = (item.get("title") or "").strip()
+        if not url or not title:
+            print(
+                "[web_crawl] agent-candidate skipped (missing url or title)",
+                file=sys.stderr,
+            )
+            continue
+        source_id = (item.get("source_id") or "").strip() or url
+        if source_id.startswith("arxiv:"):
+            id_type = "arxiv"
+        elif source_id.startswith("doi:"):
+            id_type = "doi"
+        else:
+            id_type = "url"
+        cand = {
+            "title": title,
+            "url": url,
+            "source_id": source_id,
+            "id_type": id_type,
+            "snippet": item.get("snippet") or "",
+            "engine": (item.get("engine") or "websearch").strip() or "websearch",
+            "published": item.get("published") or "",
+            # tags -- mirror _harvest_target._tag
+            "lane": (item.get("lane") or "news").strip() or "news",
+            "origin_ids": list(item.get("origin_ids") or []),
+            "expected_evidence": item.get("expected_evidence") or "",
+        }
+        out.append(cand)
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Seen-cache path
 # ---------------------------------------------------------------------------
 
@@ -872,6 +965,7 @@ def crawl(
     trace=None,  # DecisionTrace | None -- if None, one is created internally
     use_perplexity: bool = False,
     use_reformulate: bool | None = None,
+    agent_candidates_path: str | None = None,
 ) -> dict:
     """End-to-end Phase-3A/3B crawl pipeline.
 
@@ -904,6 +998,13 @@ def crawl(
     use_reformulate:
         Override the config's query.reformulate flag.  None (default) means read from
         config.  True forces reformulation on; False forces it off (--no-reformulate).
+    agent_candidates_path:
+        Optional path to a JSON file of agent-injected WebSearch candidates (the web
+        subagent runs WebSearch/WebFetch -- which scripts cannot -- and writes the hits
+        here). They are merged into the pool AFTER the Tier-0/Perplexity harvest but
+        BEFORE dedup/rank/select, so they flow through the identical ranking + lane-quota
+        + ingest-dedup machinery (no parallel scoring path). Missing/invalid file degrades
+        gracefully to zero injected candidates.
 
     Returns
     -------
@@ -1136,13 +1237,45 @@ def crawl(
                     seen_dropped=0,
                 )
 
-    # 4. Dedup seen (persist cache only when not dry_run)
+    # 3c. Agent-injected WebSearch candidates.
+    #     scripts/*.py cannot call the WebSearch/WebFetch tools; the web subagent runs
+    #     them and hands us a JSON file. Merge those candidates into the SAME pool here
+    #     (AFTER Tier-0 + Perplexity, BEFORE dedup/rank/select) so they are subject to the
+    #     identical dedup + ranking + lane-quota + ingest-dedup pipeline. No parallel path.
+    injected = _load_agent_candidates(agent_candidates_path)
+    if injected:
+        all_candidates.extend(injected)
+    if agent_candidates_path is not None and trace is not None:
+        # Record a harvest-trace entry so --explain shows the injected count.
+        by_lane: dict[str, int] = {}
+        for c in injected:
+            by_lane[c.get("lane", "news")] = by_lane.get(c.get("lane", "news"), 0) + 1
+        trace.add(
+            "harvest",
+            "target",
+            target_id="agent-websearch",
+            lane=(next(iter(by_lane)) if len(by_lane) == 1 else "mixed"),
+            queries=[{
+                "engine": "websearch",
+                "query": f"agent-candidates:{Path(agent_candidates_path).name}",
+                "n_returned": len(injected),
+            }],
+            n_candidates=len(injected),
+            seen_dropped=0,
+        )
+
+    # 4. Dedup seen. In-run dedup (collapsing duplicates harvested within THIS run)
+    #    always applies; cross-run PERSISTENCE is narrowed to actually-staged items
+    #    (see step 6b) so un-staged candidates can resurface on later runs.
     seen_p = _seen_path()
     new_ids_set: set[str] = set()
     new_candidates, updated_seen = wh.dedup_seen(all_candidates, seen_path=seen_p)
     # Compute the set of stable ids that survived dedup
     from web_harvest import _stable_id as _wh_stable_id, candidate_ident as _candidate_ident
     new_ids_set = {_wh_stable_id(c) for c in new_candidates}
+    # Reconstruct the pre-run cross-run seen set (updated_seen minus this run's
+    # newly-harvested ids) so we persist old seen + newly-staged only.
+    prior_seen_keys = set(updated_seen.keys()) - new_ids_set
 
     # Back-fill seen_dropped into each harvest/target trace record
     harvest_recs = trace.find("harvest", "target")
@@ -1153,18 +1286,6 @@ def crawl(
             if _wh_stable_id(c) not in new_ids_set
         )
         hrec["data"]["seen_dropped"] = seen_dropped
-
-    if not dry_run and new_candidates:
-        # Persist the updated seen cache
-        try:
-            sp = Path(seen_p)
-            sp.parent.mkdir(parents=True, exist_ok=True)
-            sp.write_text(
-                json.dumps(updated_seen, indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
-        except OSError as exc:
-            print(f"[web_crawl] could not write seen cache: {exc}", file=sys.stderr)
 
     # 5. Rank: score all candidates against PURPOSE + per-candidate evidence
     wr = _import_web_rank()
@@ -1177,6 +1298,7 @@ def crawl(
         today=today_s,
         learned=learned or None,
         weights=config.get("learn") if learned else None,
+        category_weights=config.get("category_weights"),
     )
 
     # Record the rank/scores trace step
@@ -1202,6 +1324,24 @@ def crawl(
 
     # 6. Select (threads trace into selection steps)
     selected = wd.select_candidates(scored_pool, config, ingest_rows=ingest_rows, trace=trace)
+
+    # 6b. Persist the seen cache with ONLY the items actually staged this run
+    #     (prior cross-run seen + newly-staged). Un-staged candidates are left out
+    #     so they can resurface on later runs. Dry runs never write.
+    staged_ids = {_wh_stable_id(c) for c in selected if _wh_stable_id(c)}
+    if not dry_run and staged_ids:
+        persisted_seen = {k: True for k in prior_seen_keys}
+        for sid in staged_ids:
+            persisted_seen[sid] = True
+        try:
+            sp = Path(seen_p)
+            sp.parent.mkdir(parents=True, exist_ok=True)
+            sp.write_text(
+                json.dumps(persisted_seen, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            print(f"[web_crawl] could not write seen cache: {exc}", file=sys.stderr)
 
     # 7. dry_run early return
     if dry_run:
@@ -1386,6 +1526,17 @@ def main(argv: list[str] | None = None) -> int:
             "Use for testing or to ensure the exact seed-query path."
         ),
     )
+    parser.add_argument(
+        "--agent-candidates",
+        default=None,
+        dest="agent_candidates",
+        metavar="PATH",
+        help=(
+            "Path to a JSON file of agent-injected WebSearch candidates (the web "
+            "subagent writes it via WebSearch/WebFetch). They are merged into the same "
+            "pool before dedup/rank/select. Missing/invalid file degrades gracefully."
+        ),
+    )
 
     try:
         args = parser.parse_args(argv)
@@ -1402,6 +1553,7 @@ def main(argv: list[str] | None = None) -> int:
         per_source_limit=args.per_source_limit,
         use_perplexity=args.use_perplexity,
         use_reformulate=False if args.no_reformulate else None,
+        agent_candidates_path=args.agent_candidates,
     )
 
     trace = result.get("trace")

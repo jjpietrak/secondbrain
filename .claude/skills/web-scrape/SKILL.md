@@ -27,7 +27,7 @@ keyword fallback). Paid engines (Perplexity SP, Apify, crawl4AI) are **Phase 3B*
 ## When to use
 
 - Nightly: the orchestrator triggers web-scrape after `obj-synth` emits new `objective/direction/*`
-  and `wiki-gaps` refreshes `wiki/gaps.md`.
+  and `wiki-gaps` refreshes the per-gap files under `wiki/gap/GAP-*.md`.
 - Manual: "search the web for", "find sources on", "run a web crawl".
 - Approval: the user reviews a prior run's `meta/nightly_report/<date>.md`.
 
@@ -58,9 +58,11 @@ forwards to the ranker; `--limit N` bounds per-source harvest.
 
 ### What `web_crawl.py` does internally (and how to inspect each stage)
 
-1. **DECISION** — `scripts/web_decision.py build_plan` reads `wiki/gaps.md` (the `## Knowledge
-   Gaps` GAP-NN blocks — TOP PRIORITY) + open `objective/direction/*` + the registry + config,
-   and emits a ranked crawl plan. Inspect it standalone:
+1. **DECISION** — `scripts/web_decision.py build_plan` reads the per-gap files
+   `wiki/gap/GAP-*.md` (each with `## Missing` / `topics` / `fillable_by` — TOP PRIORITY) +
+   open `objective/direction/*` + the registry + config, and emits a ranked crawl plan. Gap
+   queries are derived deterministically from the gap title + the cleaned first sentence of
+   `## Missing` (markdown/wikilinks/citation-brackets stripped). Inspect it standalone:
    ```bash
    .venv/bin/python scripts/web_decision.py plan --vault "$VAULT_ROOT" --json
    ```
@@ -68,8 +70,12 @@ forwards to the ranker; `--limit N` bounds per-source harvest.
    `news`), `lane` (`gap`|`research`|`news`), `origin_ids` (`[GAP-..,DIR-..]`), `priority`,
    `queries`, `expected_evidence`, `fillable_by`, `routed_sources` (registry ids). A direction
    that targets the same need as a gap is **merged** into it (origin keeps gap precedence).
-1b. **REFORMULATE** (Phase 4A step-2, `scripts/web_query.py`) -- after planning and after the
-   learning briefing, `web_query.reformulate` rewrites each target's queries per engine from the
+1b. **REFORMULATE** (OFF by default -- `scripts/web_query.py`) -- deterministic queries are the
+   default (`query.reformulate: false`); the seed/gap-derived queries are used directly and this
+   step is skipped (no `## Reformulate` trace section). LLM reformulation emitted keyword-salad
+   ("sigma sigma lstab"), so it is disabled but left in the codebase. When explicitly enabled
+   (`query.reformulate: true` or dropping `--no-reformulate`), `web_query.reformulate` rewrites
+   each target's queries per engine from the
    vault PURPOSE + the wiki-context delta (gap missing/shows_up_in pages) + expected_evidence +
    learned reject keywords, via one cheap batched LLM call (Design B); falls back deterministically
    (Design A: term-extraction) if no LLM is available or the call fails. Each target gets:
@@ -80,7 +86,6 @@ forwards to the ranker; `--limit N` bounds per-source harvest.
    - `reformulation` -- {method: "llm"|"fallback", old_queries: [...], rationale: str}.
    Harvest (step 2) then routes each engine to its tailored query list; the decision trace
    (--explain) shows the old->new queries, method, and rationale in a `## Reformulate` section.
-   Gated by `web-config.json` `query.reformulate: true`; use `--no-reformulate` to skip.
    Runs in both real and dry-run (read-only; the preview value is the same either way).
 2. **HARVEST** (free Tier-0, `scripts/web_harvest.py`): per target, by `routed_sources`/`fillable_by`
    — `poll_rss` (registry feeds), `query_papers` (arxiv/openalex/semantic_scholar/crossref),
@@ -88,9 +93,37 @@ forwards to the ranker; `--limit N` bounds per-source harvest.
    empty `routed_sources` default to arXiv-API on their seed queries (you MAY additionally run a
    `WebSearch` and `WebFetch` a promising URL for a richer preview — $0, allowed in 3A).
    Cross-crawl `dedup_seen` drops items seen in earlier runs.
+
+   **WebSearch discovery (widens the funnel).** `scripts/*.py` cannot call `WebSearch`/`WebFetch`
+   (those tools live only on you, the `web` agent). So for the gap + news queries you SHOULD run
+   `WebSearch` on the deterministic gap/news queries (from `web_decision.py plan`), `WebFetch` the
+   top on-topic hits for title + snippet + published date, and write them to an agent-candidates
+   JSON file, then pass it to the crawl:
+   ```bash
+   .venv/bin/python scripts/web_crawl.py --vault "$VAULT_ROOT" --agent-candidates /tmp/agent-cands.json
+   ```
+   The file is a JSON list; each item has the shape (missing keys are defaulted --
+   `engine`->"websearch", `lane`->"news", `origin_ids`->[], `snippet`/`published`->""):
+   ```json
+   [
+     {"title": "...", "url": "https://...", "source_id": "arxiv:2401.00001 or the url",
+      "snippet": "...", "engine": "websearch", "published": "2026-06-01",
+      "lane": "gap", "origin_ids": ["GAP-08", "DIR-0004"]}
+   ]
+   ```
+   Injected candidates are merged into the SAME pool (after Tier-0/Perplexity, before
+   dedup/rank/select), so `WebSearch` only WIDENS the funnel -- ranking + lane quotas + ingest-dedup
+   still decide what survives (nothing bypasses scoring). This is how otherwise-unreachable sources
+   (chiplog.io, the SemiAnalysis newsletters whose RSS returns 0) become discoverable + rankable.
+   A missing/invalid `--agent-candidates` file degrades gracefully (warns, continues with none).
 3. **RANK** (`scripts/web_rank.py` = the `web-rank` skill): score candidates vs PURPOSE +
    `expected_evidence`. ollama cosine when `nomic-embed-text` is pulled; else a deterministic
-   keyword+relevance+recency fallback (lower quality — see Cost note).
+   keyword+relevance+recency fallback (lower quality — see Cost note). In the deterministic
+   path the registry-relevance component is multiplied by `category_weights` from web-config
+   (the **reweight-only** diversify lever: NVIDIA `vendor_blogs` demoted to 0.5;
+   `hardware_analysis`/`benchmarking`/`specialist_research`/papers boosted). No hard per-domain
+   cap, no round-robin. Papers get relevance parity with blogs via an engine-derived fallback.
+   The same `category_weights` also reweight the top-5 `news` lane sort in `web_decision`.
 4. **SELECT** (`web_decision.select_candidates`): per-item dedup, ingest-dedup (drop
    ingested/pending/sticky-rejected), lane quotas from `web-config.json` (`3 gap / 1 research /
    1 news`) with spillover `gap>research>news`, cap at `new_sources_total` (5).

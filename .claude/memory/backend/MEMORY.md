@@ -62,6 +62,39 @@ current; never store fact bodies here.
   web_query.py (reformulate API); web_crawl.py integration (after build_plan+agent_learn, _harvest_target
   per-engine routing, --no-reformulate, trace "reformulate/target"); render_trace_markdown ## Reformulate;
   SKILL.md step 1b. 12 new tests (TestQueryReformulation). 1054 total tests green, 0 real LLM calls.
+- [web-scrape-fix-p0-p1.md](web-scrape-fix-p0-p1.md) — **Web-scrape fix P0 (landed) + P1 (this task,
+  not committed) 2026-07-08.** Diversify away from NVIDIA vendor-blog by REWEIGHT ONLY (no caps): (1)
+  paper/blog relevance parity via engine fallback in web_rank; (2) `category_weights` knob consumed in
+  web_rank._deterministic_score + web_decision.news_target (embedding path kept pure); (3) deterministic
+  queries (`query.reformulate:false`) + cleaned `_derive_gap_queries`; (4) web.md/SKILL.md reconciled.
+  505 web tests green; live demo: news lane now SemiAnalysis-led, gap queries clean.
+- [web-scrape-fix-p3-backfill.md](web-scrape-fix-p3-backfill.md) — **Web-scrape fix P3
+  (/web-backfill command, this task, not committed) 2026-07-09.** New standalone
+  `scripts/web_backfill.py` + `.claude/skills/web-backfill/SKILL.md` + `tests/test_web_backfill.py`
+  (5 offline, green). Fills cited-but-missing papers first: harvest arxiv/DOI ids from wiki +
+  open-gap `## Shows up in`, truth-check (status=ingested AND raw file on disk; status alone
+  lies), stage backfill set as waiting_approval + backfill-<date>.md report. Live dry-run:
+  Splitwise 2311.18677 EXCLUDED (truly ingested); backfill set = 5 `deleted`-status ids
+  (sarathi/mist/cronus/zte/spad). Gap-named-but-unlinked papers (optical prior-art, vLLM etc.)
+  are NOT reachable by backfill (no arxiv/DOI link) -- need web-scrape discovery.
+- [web-scrape-fix-p4-experiment.md](web-scrape-fix-p4-experiment.md) — **Web-scrape fix P4
+  (in-loop tuning experiment INFRASTRUCTURE, this task, not committed) 2026-07-08.** Seeded
+  throwaway vault `Disagg-Exp` (isolated clone; 4 control targets referenced-not-ingested;
+  open GAP-11 for splitwise); registered config/vaults/Disagg-Exp/*; targets.json +
+  exp-config.json (config copy so tuning never mutates shared) + chiplog fixture; eval harness
+  `scripts/experiments/eval_retrieval.py` (monkeypatch _load_config -> crawl dry_run ->
+  recall@5 + per-target rank/selected); 4 offline tests. BASELINE recall@5=0.25 (chiplog rank1
+  selected; splitwise found rank21 unselected; megascale+gimlet not retrieved). CODE_PATH pin
+  gotcha noted.
+- [web-scrape-fix-p4-results.md](web-scrape-fix-p4-results.md) — **Web-scrape fix P4 FINALIZED
+  2026-07-09 (not committed).** eval_retrieval.py gained `--with-backfill` (offline
+  build_backfill SET membership; present_in_vault retrieved if crawl-selected OR in backfill
+  set). Matrix: baseline crawl-only 0.25 -> +backfill 1.00 -> +backfill+apply_to_embedding 1.00
+  (WINNER). Backfill is the dominant lever (surfaces the 3 cited-but-not-ingested papers,
+  present_in_vault -> 3/3); chiplog via crawl+WebSearch (rank 1-2, selected); apply_to_embedding
+  demotes NVIDIA vendor blogs on the embedding path (top vendor blog rank 20 -> 177) with no
+  recall cost. exp-config set to winner; recommend promoting apply_to_embedding:true to shared
+  web-config + adopting /web-backfill-first workflow (shared config NOT touched). 5 tests green.
 - [phase3-conclusion.md](phase3-conclusion.md) — **PHASE 3 CLOSED 2026-06-23 (user sign-off): functionally
   works OK w/ minor bugs, but relevance/accuracy NOT good enough + DECISION is obscure.** Perplexity returned
   only slightly-relevant results; arXiv path better but not great. NOT production-trusted — do NOT auto-wire web

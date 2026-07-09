@@ -1,0 +1,10 @@
+{
+  "present_in_vault": [
+    {"id": "arxiv:2504.02263", "name": "MegaScale-Infer"},
+    {"id": "arxiv:2507.19635", "name": "Gimlet/Asgar"},
+    {"id": "arxiv:2311.18677", "name": "Splitwise"}
+  ],
+  "reachability": [
+    {"url": "https://www.chiplog.io/p/inside-attention-ffn-disaggregation", "name": "Chiplog Attention/FFN Disaggregation", "via": "websearch"}
+  ]
+}

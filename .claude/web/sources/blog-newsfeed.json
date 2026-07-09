@@ -139,7 +139,8 @@
         "focus": "Open-source, vendor-neutral, reproducible inference benchmarks with GitHub Actions",
         "update_frequency": "weekly",
         "relevance": 5,
-        "priority": "critical"
+        "priority": "critical",
+        "note": "RSS returns 0 items; reach this source via the WebSearch discovery path (agent WebSearch -> WebFetch -> --agent-candidates), not the RSS harvester."
       },
       {
         "id": "nvidia_blackwell_mlperf",
@@ -205,7 +206,8 @@
         "focus": "AI accelerator landscape, NVIDIA vs AMD vs custom silicon, market consolidation, insider analysis",
         "update_frequency": "2-3x/week",
         "relevance": 5,
-        "priority": "critical"
+        "priority": "critical",
+        "note": "RSS returns 0 items (paywalled Substack); reach this source via the WebSearch discovery path (agent WebSearch -> WebFetch -> --agent-candidates), not the RSS harvester."
       },
       {
         "id": "anandtech",
@@ -426,6 +428,18 @@
         "update_frequency": "1-2x/month",
         "relevance": 3,
         "priority": "medium"
+      },
+      {
+        "id": "chiplog",
+        "name": "Chiplog",
+        "url": "https://www.chiplog.io/",
+        "rss_feed": "https://www.chiplog.io/rss/",
+        "category": "specialist_research",
+        "focus": "attention/FFN disaggregation, inference systems analysis",
+        "update_frequency": "ad-hoc",
+        "relevance": 5,
+        "priority": "high",
+        "note": "rss_feed is a best-guess Ghost-pattern URL and is UNVERIFIED; the web agent should WebFetch-verify it, and reach this source via the WebSearch discovery path if the feed does not resolve."
       }
     ],
     "conference_proceedings": {

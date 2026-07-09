@@ -351,6 +351,22 @@ def isolated_learned(tmp_path_factory):
     al._learned_path = original_fn
 
 
+@pytest.fixture()
+def enable_reject_harvest():
+    """Enable the (opt-in, default-off) free-text reject-keyword harvesting.
+
+    Reject-keyword harvesting is gated behind web-config learn.harvest_reject_keywords
+    (default False) so a reason like "put more focus on semianalysis" cannot create a
+    reject keyword. These tests exercise the harvesting mechanism itself, so they turn
+    it on explicitly.
+    """
+    import scripts.agent_learn as al
+    original_fn = al._harvest_reject_keywords
+    al._harvest_reject_keywords = lambda: True  # type: ignore[assignment]
+    yield
+    al._harvest_reject_keywords = original_fn
+
+
 class TestLearnCore:
 
     def test_learn_reputation_math(self, tmp_path, isolated_learned):
@@ -412,7 +428,7 @@ class TestLearnCore:
         assert "other_source" not in learned["sources"]
         assert "perplexity" not in learned["engines"]
 
-    def test_learn_reject_keywords_extracted(self, tmp_path, isolated_learned):
+    def test_learn_reject_keywords_extracted(self, tmp_path, isolated_learned, enable_reject_harvest):
         """keyword_counts are populated; keywords (derived) respects freq threshold.
 
         _TEST_ROWS has two distinct rejection reasons with no overlapping non-stop tokens,
@@ -437,6 +453,43 @@ class TestLearnCore:
         )
         # Counts are non-empty so tokens are not dropped -- they just haven't graduated yet
         assert len(kc) >= 3, f"Expected at least 3 keyword_counts entries, got {len(kc)}"
+
+    def test_reject_reasons_do_not_create_keywords_by_default(self, tmp_path, isolated_learned):
+        """Fix 3: with harvesting OFF (default), reject reasons never create keywords.
+
+        A reason like "put more focus on semianalysis" must NOT tokenise into a
+        reject keyword that penalises the source the user asked for more of.
+        """
+        rows = [
+            {
+                "id": "url:reason-1",
+                "status": "rejected",
+                "title": "R1",
+                "discovered_by": "web",
+                "source_id": "src",
+                "engine": "rss",
+                "relevance_score": 0.2,
+                "rejection_reason": "put more focus on semianalysis",
+            },
+            {
+                "id": "url:reason-2",
+                "status": "rejected",
+                "title": "R2",
+                "discovered_by": "web",
+                "source_id": "src",
+                "engine": "rss",
+                "relevance_score": 0.1,
+                "rejection_reason": "semianalysis semianalysis coverage too thin",
+            },
+        ]
+        _seed_ingest_index(tmp_path, rows)
+        result = learn(str(tmp_path), "web", apply=False)
+        rp = result["learned"]["reject_patterns"]
+        assert rp["keyword_counts"] == {}, (
+            f"harvesting is off by default; expected no keyword_counts, got {rp['keyword_counts']}"
+        )
+        assert rp["keywords"] == []
+        assert "semianalysis" not in rp["keyword_counts"]
 
     def test_learn_calibration_populated(self, tmp_path, isolated_learned):
         """Calibration means are updated with actual scores."""
@@ -579,10 +632,20 @@ class TestRepFor:
         assert r == pytest.approx(0.0, abs=1e-5)
 
     def test_empty_source_falls_to_engine(self):
-        """Empty source_id falls through to engine rep."""
+        """Empty source_id falls through to engine rep, but a NEGATIVE engine rep
+        is floored at 0.0 (papers must not be blanket-penalised off a single reject)."""
         learned = self._make_learned()
+        # rss engine rep = -0.4 -> floored to 0.0
         r = rep_for(learned, "", "rss")
-        assert r == pytest.approx(-0.4, abs=1e-5)
+        assert r == pytest.approx(0.0, abs=1e-5)
+
+    def test_negative_engine_rep_floored(self):
+        """A negative engine rep is floored at 0.0; positive engine rep passes through."""
+        learned = self._make_learned()
+        # rss engine rep = -0.4 -> 0.0
+        assert rep_for(learned, "unknown_src", "rss") == pytest.approx(0.0, abs=1e-5)
+        # arxiv engine rep = +0.2 -> unchanged (positive reputation still helps)
+        assert rep_for(learned, "unknown_src", "arxiv") == pytest.approx(0.2, abs=1e-5)
 
     def test_empty_both_returns_zero(self):
         """Both empty -> 0.0."""
@@ -826,7 +889,7 @@ class TestFrequencyThreshold:
             },
         ]
 
-    def test_single_reason_token_not_in_keywords(self, tmp_path, isolated_learned):
+    def test_single_reason_token_not_in_keywords(self, tmp_path, isolated_learned, enable_reject_harvest):
         """Token in only ONE rejection reason is NOT in keywords (count 1 < 2)."""
         rows = [
             {
@@ -851,7 +914,7 @@ class TestFrequencyThreshold:
         kc = result["learned"]["reject_patterns"]["keyword_counts"]
         assert kc.get("marketing", 0) == 1
 
-    def test_two_reason_token_in_keywords(self, tmp_path, isolated_learned):
+    def test_two_reason_token_in_keywords(self, tmp_path, isolated_learned, enable_reject_harvest):
         """Token in TWO distinct rejection reasons IS in keywords (count 2 >= 2)."""
         rows = self._rows_with_shared_token()
         _seed_ingest_index(tmp_path, rows)
@@ -866,7 +929,7 @@ class TestFrequencyThreshold:
         assert "garbage" not in kws
         assert "tabloid" not in kws
 
-    def test_counts_accumulate_across_runs(self, tmp_path, isolated_learned):
+    def test_counts_accumulate_across_runs(self, tmp_path, isolated_learned, enable_reject_harvest):
         """Token seen once in run-1 and once in run-2 reaches count=2 -> promoted."""
         row_run1 = [
             {
@@ -926,7 +989,7 @@ class TestPurposeGuard:
         purpose_dir.mkdir(parents=True, exist_ok=True)
         (purpose_dir / "PURPOSE.md").write_text(purpose_text, encoding="utf-8")
 
-    def test_purpose_term_never_in_keywords(self, tmp_path, isolated_learned):
+    def test_purpose_term_never_in_keywords(self, tmp_path, isolated_learned, enable_reject_harvest):
         """A term in PURPOSE.md never appears in keywords even with count >= 2."""
         self._make_vault_with_purpose(
             tmp_path,
@@ -968,7 +1031,7 @@ class TestPurposeGuard:
             f"'disaggregation' must not be counted (PURPOSE guard): {kc}"
         )
 
-    def test_purpose_guard_missing_file_no_crash(self, tmp_path, isolated_learned):
+    def test_purpose_guard_missing_file_no_crash(self, tmp_path, isolated_learned, enable_reject_harvest):
         """Missing objective/purpose/PURPOSE.md -> empty protected set, no crash."""
         # No purpose file created -- should not raise
         rows = [
@@ -1078,7 +1141,7 @@ class TestOldSchemaMigration:
         assert loaded["sources"]["old_src"]["rep"] == -0.2
 
     def test_old_schema_learn_continues_without_double_counting(
-        self, tmp_path, isolated_learned
+        self, tmp_path, isolated_learned, enable_reject_harvest
     ):
         """After migration, a new learn() run does not double-count old decisions."""
         old_schema = {

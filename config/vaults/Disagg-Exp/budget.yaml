@@ -1,0 +1,17 @@
+# Second Brain - cost budget for the Disagg-Exp experiment vault. The tuning
+# experiment is designed to stay $0 (free arXiv/S2 APIs + local/offline rank, dry-run
+# crawl). This cap is a hard guard against any accidental metered spend.
+daily_usd_cap: 0.0          # experiment must stay $0
+on_cap: stop
+
+providers:
+  anthropic:
+    metered: true
+  gemini:
+    metered: true
+  ollama:
+    metered: false
+
+per_action_token_soft_limit:
+  obsidian-research-deep: 200000
+  obsidian-ingest: 150000

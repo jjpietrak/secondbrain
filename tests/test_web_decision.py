@@ -17,6 +17,10 @@ sys.path.insert(0, str(_REPO_ROOT / "scripts"))
 
 from web_decision import (
     DecisionTrace,
+    _clean_query_text,
+    _derive_gap_queries,
+    _parse_frontmatter,
+    _parse_seed_queries,
     assign_lanes,
     build_plan,
     merge_targets,
@@ -465,6 +469,72 @@ shows_up_in: []
         assert rec["data"]["count"] == len(gaps)
 
 
+# Real gap files (produced by the wiki agent) use YAML BLOCK lists, not inline
+# lists -- e.g. GAP-11 in the live vault. The old _parse_frontmatter dropped
+# these, so topics/fillable_by came back empty and the gap lane routed nothing.
+GAP_BLOCK_LIST_FILE = """\
+---
+type: gap
+id: GAP-11
+title: Splitwise paper (arXiv 2311.18677) not ingested - KV transfer protocol and
+  MoE coverage unknown
+status: open
+topics:
+- T-0001
+- T-0002
+fillable_by:
+- arxiv
+priority: high
+shows_up_in:
+- thin [[wiki/entities/splitwise]]
+- KV transfer protocol TBD
+created: '2026-07-01'
+updated: '2026-07-08'
+written_by: wiki
+---
+## Missing
+The Splitwise paper's KV transfer protocol and MoE coverage.
+"""
+
+
+class TestParseFrontmatterBlockList:
+    """Fix 1: YAML block-list frontmatter must parse into list-shaped values."""
+
+    def test_block_list_topics_parsed(self):
+        fm = _parse_frontmatter(GAP_BLOCK_LIST_FILE)
+        # Block list is normalised to a bracketed inline-list string
+        assert fm["topics"] == "[T-0001, T-0002]"
+
+    def test_block_list_fillable_by_parsed(self):
+        fm = _parse_frontmatter(GAP_BLOCK_LIST_FILE)
+        assert fm["fillable_by"] == "[arxiv]"
+
+    def test_block_list_scalar_still_parses(self):
+        fm = _parse_frontmatter(GAP_BLOCK_LIST_FILE)
+        assert fm["status"] == "open"
+        assert fm["priority"] == "high"
+
+    def test_inline_list_still_parses(self):
+        """The pre-existing inline-list form must keep working."""
+        fm = _parse_frontmatter(GAP_08_FILE)
+        assert fm["topics"] == "[T-0006]"
+        assert fm["fillable_by"] == "[arxiv]"
+
+    def test_empty_key_without_block_list_is_empty(self):
+        text = "---\ntype: gap\ntopics:\nstatus: open\n---\n"
+        fm = _parse_frontmatter(text)
+        assert fm["topics"] == ""
+        assert fm["status"] == "open"
+
+    def test_parse_gaps_block_list_non_empty_routing_fields(self, tmp_path):
+        """End-to-end: a real block-list gap file yields non-empty topics + fillable_by."""
+        gap_dir = _make_gap_dir(tmp_path, {"GAP-11-splitwise.md": GAP_BLOCK_LIST_FILE})
+        gaps = parse_gaps(str(gap_dir))
+        g11 = next(g for g in gaps if g["id"] == "GAP-11")
+        assert g11["topics"] == ["T-0001", "T-0002"]
+        assert g11["fillable_by"] == ["arxiv"]
+
+
 # ---------------------------------------------------------------------------
 # parse_directions tests
 # ---------------------------------------------------------------------------
@@ -544,6 +614,38 @@ priority: medium
     def test_nonexistent_dir_returns_empty(self):
         dirs = parse_directions("/nonexistent/path/direction")
         assert dirs == []
+
+
+class TestSeedQueryCleaning:
+    """Follow-up B: DIR seed_queries are passed through _clean_query_text."""
+
+    def test_wikilinks_stripped_from_plain_query(self):
+        body = (
+            "## seed_queries\n"
+            "- prefill decode split in [[wiki/concepts/kv-cache|KV cache]] serving\n"
+        )
+        queries = _parse_seed_queries(body)
+        assert len(queries) == 1
+        assert queries[0]["engine"] is None
+        assert queries[0]["query"] == "prefill decode split in KV cache serving"
+        assert "[[" not in queries[0]["query"]
+
+    def test_engine_tag_preserved_and_query_cleaned(self):
+        body = (
+            "## seed_queries\n"
+            "- arxiv: disaggregated serving [[wiki/concepts/prefill|prefill]] latency\n"
+        )
+        queries = _parse_seed_queries(body)
+        assert len(queries) == 1
+        assert queries[0]["engine"] == "arxiv"
+        assert queries[0]["query"] == "disaggregated serving prefill latency"
+
+    def test_query_that_cleans_to_empty_is_dropped(self):
+        # A line that is pure markdown emphasis cleans to "" and must be dropped.
+        body = "## seed_queries\n- ***\n- real disaggregation query\n"
+        queries = _parse_seed_queries(body)
+        assert len(queries) == 1
+        assert queries[0]["query"] == "real disaggregation query"
 
 
 # ---------------------------------------------------------------------------
@@ -1307,6 +1409,62 @@ class TestNewsTarget:
         t = news_target(REGISTRY_FIXTURE)
         assert t["expected_evidence"] != ""
         assert "vendor" in t["expected_evidence"].lower() or "announcement" in t["expected_evidence"].lower()
+
+    def test_category_weights_rank_semianalysis_above_nvidia(self):
+        """Phase 1: category_weights demote NVIDIA vendor_blogs below SemiAnalysis feeds."""
+        cw = {
+            "vendor_blogs": 0.5,
+            "hardware_analysis": 1.2,
+            "benchmarking": 1.15,
+            "specialist_research": 1.2,
+            "_default": 1.0,
+        }
+        routed = news_target(REGISTRY_FIXTURE, category_weights=cw)["routed_sources"]
+        assert "semianalysis_newsletter" in routed and "inferencex_semianalysis" in routed
+        # Both SemiAnalysis feeds must out-sort the NVIDIA vendor_blogs feed.
+        assert routed.index("semianalysis_newsletter") < routed.index("nvidia_developer_blog")
+        assert routed.index("inferencex_semianalysis") < routed.index("nvidia_developer_blog")
+
+    def test_no_weights_preserves_relevance_order(self):
+        """Back-compat: category_weights=None keeps plain relevance ordering."""
+        routed_default = news_target(REGISTRY_FIXTURE)["routed_sources"]
+        routed_none = news_target(REGISTRY_FIXTURE, category_weights=None)["routed_sources"]
+        assert routed_default == routed_none
+
+
+# ---------------------------------------------------------------------------
+# Deterministic gap query derivation (Phase 1)
+# ---------------------------------------------------------------------------
+
+
+class TestDeriveGapQueries:
+    def test_clean_strips_wikilinks_and_citations(self):
+        raw = "Missing [[wiki/concepts/kv-cache|KV cache]] evidence from [3]-[6] and **bold**"
+        cleaned = _clean_query_text(raw)
+        assert "[[" not in cleaned and "]]" not in cleaned
+        assert "[3]" not in cleaned and "[6]" not in cleaned
+        assert "**" not in cleaned
+        assert "KV cache" in cleaned  # alias survives
+
+    def test_markdown_link_reduced_to_text(self):
+        assert _clean_query_text("see [Splitwise](https://arxiv.org/abs/2311.18677)") \
+            == "see Splitwise"
+
+    def test_gap_queries_are_clean_phrases(self):
+        gap = {
+            "title": "Optical interconnect prior art",
+            "missing": "No entity pages for [[wiki/sources/photons-to-tokens]] "
+                       "or the cited papers [3]-[6]; also needs benchmarks.",
+        }
+        qs = _derive_gap_queries(gap)
+        assert qs[0] == "Optical interconnect prior art"
+        # First sentence only, cleaned of wikilink + citation noise.
+        assert "[[" not in qs[1] and "[3]" not in qs[1]
+        assert "photons-to-tokens" in qs[1]
+        assert ";" not in qs[1]  # split on sentence boundary
+
+    def test_empty_gap_yields_no_queries(self):
+        assert _derive_gap_queries({"title": "", "missing": ""}) == []
 
 
 # ---------------------------------------------------------------------------

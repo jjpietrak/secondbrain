@@ -1,0 +1,25 @@
+# Research topics for the Disagg-Exp experiment vault. Mirrors the Inference-Disagg
+# schema; trimmed to the topics that touch the four control targets so the crawl's
+# news/research lanes stay on-subject. The gap lane (wiki/gap/GAP-*.md) is the primary
+# retrieval driver for the experiment; these topics back the news lane.
+topics:
+  - name: Disaggregated inference
+    keywords: [disaggregated inference, prefill decode disaggregation, prefill/decode separation,
+               P/D disaggregation, DistServe, Splitwise, Mooncake, TetriInfer, goodput SLO serving]
+    sources: [arxiv, hackernews, semantic_scholar]
+    frequency: daily
+    output: research/daily/disagg-inference
+
+  - name: Layer and expert disaggregation
+    keywords: [attention FFN disaggregation, attention-FFN separation, layer-wise disaggregation,
+               MoE expert parallelism, expert offloading, disaggregated MoE serving, MegaScale-Infer]
+    sources: [arxiv, semantic_scholar]
+    frequency: daily
+    output: research/daily/layer-disagg
+
+  - name: LLM serving systems and schedulers
+    keywords: [vLLM, SGLang, TensorRT-LLM, NVIDIA Dynamo, llm-d, continuous batching,
+               chunked prefill, inference scheduling, disaggregated serving framework]
+    sources: [arxiv, hackernews]
+    frequency: weekly
+    output: research/daily/serving-systems

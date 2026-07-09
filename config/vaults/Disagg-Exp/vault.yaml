@@ -1,0 +1,33 @@
+# Second Brain - THROWAWAY experiment vault for the web-scrape in-loop tuning
+# experiment (Phase 4 of the cuddly-meandering-pinwheel plan). Isolated clone of
+# Inference-Disagg seeded so the four control targets (MegaScale-Infer 2504.02263,
+# Gimlet/Asgar 2507.19635, Splitwise 2311.18677, and the chiplog.io FFN-disaggregation
+# post) are REFERENCED in-graph but NOT ingested, so the crawl has real targets to
+# retrieve. Never written back to Inference-Disagg. Not part of any nightly run.
+
+vault_name: Disagg-Exp
+vault_path: /mnt/c/Obsidian/Disagg-Exp
+code_path: /home/jpietrak/second_brain
+
+# PURPOSE - identical research subject to Inference-Disagg (inference disaggregation:
+# prefill/decode + attention/FFN disaggregation). The full statement lives in
+# objective/purpose/PURPOSE.md; this one-liner mirrors it for tools that read vault.yaml.
+purpose: >
+  Stay current on disaggregated LLM inference - prefill/decode separation and finer
+  FFN/attention-layer disaggregation across distinct resource pools, KV-cache transfer,
+  and the serving systems, scheduling, and (heterogeneous-cluster) hardware that enable
+  it - in service of designing a disaggregated-inference simulator and architecture for
+  the "Iris Tetra" optical accelerator (power-efficient, high-throughput, strong at
+  long-context prefill, unlike decode-oriented chips such as Groq or Cerebras).
+
+methodology: PARA
+research_engine: free
+
+obsidian_api_url: https://127.0.0.1:27124
+
+agent_max_turns: 30
+hot_cache_words: 500
+nightly_run_hour: 2
+
+# No NotebookLM sync for the throwaway experiment vault.
+notebooklm_notebook:
