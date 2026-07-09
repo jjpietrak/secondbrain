@@ -11,7 +11,7 @@
   "learn": {"enabled": true, "w_rep": 0.15, "w_rej": 0.2, "prior_strength": 1.0, "min_reject_freq": 2},
   "query": {"reformulate": false, "use_llm": true, "max_queries_per_engine": 3},
   "category_weights": {
-    "apply_to_embedding": false,
+    "apply_to_embedding": true,
     "vendor_blogs": 0.5,
     "hardware_analysis": 1.2,
     "benchmarking": 1.15,

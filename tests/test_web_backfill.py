@@ -178,5 +178,61 @@ def test_dry_run_writes_nothing(tmp_path):
     assert "arxiv:2311.18677" not in ids  # excluded (truly ingested)
 
 
+def test_textual_arxiv_citation_harvested(tmp_path):
+    """Papers cited as 'arXiv NNNN.NNNNN' (textual, not a URL) are harvested.
+
+    This is the common wiki citation form -- a not-yet-ingested paper has no
+    sources page with an arxiv.org/abs URL, so it is referenced textually in
+    concept/entity/gap pages. The URL-only pattern would miss exactly these.
+    """
+    vault = tmp_path / "TextVault"
+    (vault / "wiki" / "concepts").mkdir(parents=True)
+    (vault / "meta").mkdir(parents=True)
+    (vault / "wiki" / "concepts" / "afd.md").write_text(
+        "AFD was introduced in MegaScale-Infer (arXiv 2504.02263) and "
+        "Splitwise (arXiv: 2311.18677v4); see also **arXiv**: 2507.19635.\n",
+        encoding="utf-8",
+    )
+    (vault / "meta" / "ingest_index.json").write_text(
+        json.dumps({"version": 3, "vault": "TextVault", "sources": {}}, indent=2),
+        encoding="utf-8",
+    )
+    cited = wb.harvest_cited_ids(str(vault))
+    assert "arxiv:2504.02263" in cited  # "arXiv 2504.02263"      (space)
+    assert "arxiv:2311.18677" in cited  # "arXiv: 2311.18677v4"   (colon + version)
+    assert "arxiv:2507.19635" in cited  # "**arXiv**: 2507.19635" (markdown bold)
+
+
+def test_deleted_status_skipped_as_decided(tmp_path):
+    """A cited id marked status=deleted is a user decision -> excluded, not re-staged."""
+    vault = tmp_path / "DelVault"
+    (vault / "wiki" / "concepts").mkdir(parents=True)
+    (vault / "meta").mkdir(parents=True)
+    (vault / "wiki" / "concepts" / "p.md").write_text(
+        "Cited paper arXiv 2308.16369 here.\n", encoding="utf-8"
+    )
+    (vault / "meta" / "ingest_index.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "vault": "DelVault",
+                "sources": {
+                    "arxiv:2308.16369": {
+                        "id": "arxiv:2308.16369",
+                        "status": "deleted",
+                        "filename": "",
+                    }
+                },
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    res = wb.build_backfill(str(vault))
+    backfill_ids = {b["id"] for b in res["backfill"]}
+    assert "arxiv:2308.16369" not in backfill_ids  # deleted = decided -> skip
+    assert any(cid == "arxiv:2308.16369" for cid, _p, _s in res["skipped_rejected"])
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

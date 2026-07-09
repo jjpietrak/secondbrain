@@ -110,6 +110,32 @@ def test_evaluate_recall_and_per_target():
     assert rows["Gimlet/Asgar"]["selected"] is False
 
 
+def test_evaluate_with_backfill_lifts_present_in_vault():
+    """A present_in_vault target not crawl-selected but in the backfill SET counts as
+    retrieved; reachability targets are never counted via backfill."""
+    backfill_ids = {"arxiv:2507.19635", "arxiv:2311.18677", "arxiv:2504.02263"}
+    report = er.evaluate(_canned_result(), TARGETS, backfill_ids)
+
+    # crawl-select still only sees Splitwise + MegaScale
+    assert report["n_selected_targets"] == 2
+    # backfill lifts Gimlet (absent from the crawl pool) -> 3 of 4 retrieved
+    assert report["n_retrieved_targets"] == 3
+    assert report["recall_at_5"] == pytest.approx(0.75)
+    assert report["with_backfill"] is True
+
+    rows = {r["name"]: r for r in report["rows"]}
+    # Gimlet: not found/selected by crawl, but surfaced by backfill -> retrieved
+    assert rows["Gimlet/Asgar"]["selected"] is False
+    assert rows["Gimlet/Asgar"]["backfill"] is True
+    assert rows["Gimlet/Asgar"]["retrieved"] is True
+    # Splitwise: selected AND in backfill set
+    assert rows["Splitwise"]["backfill"] is True
+    assert rows["Splitwise"]["retrieved"] is True
+    # Chiplog: reachability -> backfill never applies, still not retrieved
+    assert rows["Chiplog"]["backfill"] is False
+    assert rows["Chiplog"]["retrieved"] is False
+
+
 def test_evaluate_empty_pool_zero_recall():
     trace = DecisionTrace()  # no rank record
     report = er.evaluate({"plan": {}, "selected": [], "trace": trace}, TARGETS)

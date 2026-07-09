@@ -66,6 +66,15 @@ _ARXIV_LINK_RE = re.compile(
     r"arxiv\.org/(?:abs|pdf)/(\d{4}\.\d{4,5})(?:v\d+)?", re.IGNORECASE
 )
 
+# arXiv TEXTUAL citation: "arXiv 2504.02263", "arXiv: 2311.18677v4", "**arXiv**: <id>",
+# or an `arxiv:` frontmatter field. Requires the "arxiv" token within a few non-word
+# chars of an arxiv-shaped id (\d{4}\.\d{4,5}) so it is high-precision (no bare-number
+# false positives). Most wiki pages cite papers this way, NOT as arxiv.org/abs URLs
+# (which typically only exist on an already-ingested paper's sources page).
+_ARXIV_TEXT_RE = re.compile(
+    r"arxiv\W{0,4}(\d{4}\.\d{4,5})(?:v\d+)?", re.IGNORECASE
+)
+
 # DOI links: doi.org/<doi>, doi: <doi>, or a bare 10.NNNN/... token.
 _DOI_LINK_RE = re.compile(
     r"(?:doi\.org/|\bdoi:\s*)?(10\.\d{4,9}/[^\s)\]\}\"'<>]+)", re.IGNORECASE
@@ -124,6 +133,9 @@ def harvest_cited_ids(vault_root: str) -> dict:
             continue
         rel = f.relative_to(vroot).as_posix()
         for m in _ARXIV_LINK_RE.finditer(text):
+            cid = f"arxiv:{m.group(1)}"
+            cited.setdefault(cid, {"id_type": "arxiv", "pages": set()})["pages"].add(rel)
+        for m in _ARXIV_TEXT_RE.finditer(text):
             cid = f"arxiv:{m.group(1)}"
             cited.setdefault(cid, {"id_type": "arxiv", "pages": set()})["pages"].add(rel)
         for m in _DOI_LINK_RE.finditer(text):

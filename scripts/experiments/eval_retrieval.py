@@ -153,14 +153,22 @@ def _target_label(target: dict) -> str:
 # ---------------------------------------------------------------------------
 
 
-def evaluate(result: dict, targets: dict) -> dict:
-    """Compute per-target found/rank/selected + recall@5 from a crawl result dict.
+def evaluate(result: dict, targets: dict, backfill_ids: set[str] | None = None) -> dict:
+    """Compute per-target found/rank/selected/backfill + recall@5 from a crawl result.
 
     ``result`` is the dry-run dict from web_crawl.crawl: {plan, selected, trace, ...}.
     The ranked pool is read from the trace's ('rank','scores') record; ranks are
     assigned by descending score (1 = best).  ``selected`` idents come from the
     <=5 selected candidate dicts via web_harvest.candidate_ident.
+
+    ``backfill_ids`` (optional) is the deterministic SET of ids that
+    ``web_backfill.build_backfill`` would surface (membership = backfill would stage it,
+    independent of any per-run --limit batching).  A ``present_in_vault`` target counts as
+    RETRIEVED if it is in the crawl-selected set OR in the backfill set.  Reachability
+    targets (e.g. the chiplog URL) are measured via the crawl path only; backfill (arXiv/
+    DOI ids) does not apply to them.  recall@5 is over the RETRIEVED count.
     """
+    backfill_ids = backfill_ids or set()
     # 1. Build the ranked pool: [(ident, score)] sorted by score desc (stable).
     pool: list[dict] = []
     trace = result.get("trace")
@@ -192,6 +200,7 @@ def evaluate(result: dict, targets: dict) -> dict:
 
     rows: list[dict] = []
     n_selected = 0
+    n_retrieved = 0
     for t in all_targets:
         rank = None
         found = False
@@ -203,8 +212,15 @@ def evaluate(result: dict, targets: dict) -> dict:
                 matched_ident = c.get("ident", "")
                 break
         is_selected = any(_match_ident(sid, t) for sid in selected_idents)
+        # Backfill only surfaces arXiv/DOI ids -> only meaningful for present_in_vault.
+        in_backfill = t["kind"] == "present_in_vault" and any(
+            _match_ident(bid, t) for bid in backfill_ids
+        )
+        is_retrieved = is_selected or in_backfill
         if is_selected:
             n_selected += 1
+        if is_retrieved:
+            n_retrieved += 1
         rows.append(
             {
                 "name": t.get("name", ""),
@@ -213,21 +229,43 @@ def evaluate(result: dict, targets: dict) -> dict:
                 "found": found,
                 "rank": rank,
                 "selected": is_selected,
+                "backfill": in_backfill,
+                "retrieved": is_retrieved,
                 "matched_ident": matched_ident,
             }
         )
 
     total = len(all_targets) or 1
-    recall_at_5 = n_selected / total
+    recall_at_5 = n_retrieved / total
 
     return {
         "recall_at_5": recall_at_5,
+        "n_retrieved_targets": n_retrieved,
         "n_selected_targets": n_selected,
         "n_targets": len(all_targets),
         "pool_size": len(ranked),
         "n_selected_total": len(selected),
+        "with_backfill": bool(backfill_ids),
         "rows": rows,
     }
+
+
+def _compute_backfill_ids(vault_root: str) -> set[str]:
+    """Return the SET of ids web_backfill would surface for this vault.
+
+    Offline: ``build_backfill`` only scans the wiki + ingest index (no network; only
+    ``fetch_arxiv_by_id`` hits the network, and we never call it).  Membership in this
+    set means backfill would stage the id; the per-run ``--limit`` is just batching, so
+    we use SET membership rather than the capped "would stage" list.
+    """
+    try:
+        import web_backfill  # type: ignore[import]
+
+        res = web_backfill.build_backfill(vault_root)
+        return {b["id"] for b in res.get("backfill", [])}
+    except Exception as exc:  # pragma: no cover - defensive
+        print(f"[eval_retrieval] backfill set unavailable: {exc}", file=sys.stderr)
+        return set()
 
 
 def run_crawl(vault_root: str, config: dict, agent_candidates: str | None, limit: int) -> dict:
@@ -266,24 +304,30 @@ def render_scorecard(report: dict, *, vault_root: str, config_path: str) -> str:
     lines.append(f"config     : {config_path}")
     lines.append(f"pool size  : {report['pool_size']} ranked candidates")
     lines.append(f"selected   : {report['n_selected_total']} (crawl top-N)")
+    lines.append(f"backfill   : {'ON' if report.get('with_backfill') else 'off'}")
     lines.append("")
     lines.append(
         f"RECALL@5   : {report['recall_at_5']:.2f}  "
-        f"({report['n_selected_targets']}/{report['n_targets']} targets selected)"
+        f"({report['n_retrieved_targets']}/{report['n_targets']} targets retrieved"
+        f"; {report['n_selected_targets']} via crawl-select)"
     )
     lines.append("")
     # per-target table
-    hdr = f"{'target':<26} {'kind':<17} {'found':<6} {'rank':<5} {'selected'}"
+    hdr = f"{'target':<26} {'kind':<17} {'found':<6} {'rank':<5} {'selected':<9} {'backfill'}"
     lines.append(hdr)
     lines.append("-" * len(hdr))
     for r in report["rows"]:
         rank = str(r["rank"]) if r["rank"] is not None else "-"
+        bf = "yes" if r.get("backfill") else "no"
+        if r["kind"] != "present_in_vault":
+            bf = "n/a"
         lines.append(
             f"{(r['name'] or r['key'])[:25]:<26} "
             f"{r['kind']:<17} "
             f"{('yes' if r['found'] else 'no'):<6} "
             f"{rank:<5} "
-            f"{('YES' if r['selected'] else 'no')}"
+            f"{('YES' if r['selected'] else 'no'):<9} "
+            f"{bf}"
         )
     lines.append("")
     lines.append("keys:")
@@ -307,6 +351,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--vault", default=None, help="Vault path or registered name (default: Disagg-Exp).")
     ap.add_argument("--limit", type=int, default=3, help="Max candidates per source/query (default: 3).")
+    ap.add_argument(
+        "--with-backfill",
+        action="store_true",
+        dest="with_backfill",
+        help=(
+            "Also count a present_in_vault target as retrieved if it is in the "
+            "web_backfill.build_backfill SET (offline; no network -- membership only)."
+        ),
+    )
     ap.add_argument("--json", action="store_true", dest="as_json", help="Emit the report as JSON.")
     args = ap.parse_args(argv)
 
@@ -315,8 +368,12 @@ def main(argv: list[str] | None = None) -> int:
     targets = _load_json(Path(args.targets))
     agent_candidates = args.agent_candidates if args.agent_candidates and Path(args.agent_candidates).exists() else None
 
+    backfill_ids: set[str] = set()
+    if args.with_backfill:
+        backfill_ids = _compute_backfill_ids(vault_root)
+
     result = run_crawl(vault_root, config, agent_candidates, args.limit)
-    report = evaluate(result, targets)
+    report = evaluate(result, targets, backfill_ids)
 
     if args.as_json:
         print(json.dumps({
