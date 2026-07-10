@@ -2,16 +2,16 @@
 name: deep-synthesis
 description: >
   Deep local reasoning across wiki/ + objective/ to produce research/ reports, per-question
-  answers, and topic state-of-knowledge syntheses. Gathers vault context via
+  answers, and concept state-of-knowledge syntheses. Gathers vault context via
   scripts/research_synthesis.gather_local_context, fills RESEARCH_ANALYSIS_PROMPT then
   RESEARCH_SYNTHESIS_PROMPT, writes the report to research/ (routing: --question Q-NNNN ->
-  research/Q-NNNN.md; --topic T-NNNN -> research/T-NNNN.md; --deep "topic text" ->
+  research/Q-NNNN.md; --concept <slug> -> research/<slug>.md; --deep "topic text" ->
   research/deep/YYYY-MM-DD-<slug>.md), and emits objective/direction/ + proposal nodes from
   synthesis output. Surfaces "Already Answerable" recommendations to the user.
   LOCAL-ONLY: no web, no wiki/ writes.
   Triggers on: "deep synthesis", "research deep", "/deep-synthesis", "synthesize research",
   "deep dive on", "analyze question", "research question", "what does the vault say about",
-  "full research report", "deep-synthesis --question", "deep-synthesis --topic",
+  "full research report", "deep-synthesis --question", "deep-synthesis --concept",
   "deep-synthesis --deep".
 allowed-tools: Read Edit Write Glob Grep Bash
 ---
@@ -53,11 +53,11 @@ trigger phrase, e.g. "deep synthesis on Q-0001" or "deep-synthesis --question Q-
 | Argument | Output path | Use case |
 |----------|-------------|----------|
 | `--question Q-NNNN` | `research/Q-NNNN.md` | Full per-question answer |
-| `--topic T-NNNN` | `research/T-NNNN.md` | Topic state-of-knowledge |
+| `--concept <slug>` | `research/<slug>.md` | Concept state-of-knowledge |
 | `--deep "free text"` | `research/deep/YYYY-MM-DD-<slug>.md` | Open-ended deep report |
 
-When no argument is given, ask the user: "Please specify a scope: --question Q-NNNN, --topic
-T-NNNN, or --deep 'topic text'."
+When no argument is given, ask the user: "Please specify a scope: --question Q-NNNN,
+--concept <slug>, or --deep 'topic text'."
 
 ## Step 0 - resolve the vault
 
@@ -82,20 +82,21 @@ Parse the JSON. Extract:
 - `directions`: list of open direction nodes.
 
 Also read `$VAULT_ROOT/objective/purpose/PURPOSE.md` to get the vault purpose text.
-Read active topics from `$VAULT_ROOT/objective/topic/`.
+Read active concepts from `$VAULT_ROOT/wiki/concepts/` (the subject axis; the retired
+`objective/topic/` node type is gone).
 
 Format the open questions as:
 ```
 - Q-NNNN [priority]: <question text from filename slug or body first line>
 ```
 
-Format active topics as:
+Format active concepts as:
 ```
-- T-NNNN: <topic slug from filename>
+- <slug>: <concept title>  (cite as [[wiki/concepts/<slug>]])
 ```
 
 If the scope is `--question Q-NNNN`, filter the open questions to only that question for the
-prompt fill (but keep all topics). If the vault has no objective/ folder yet, proceed with
+prompt fill (but keep all concepts). If the vault has no objective/ folder yet, proceed with
 empty open_questions and note "(objective/ not yet initialized)" as a warning.
 
 ## Step 3 - gather local context
@@ -114,7 +115,7 @@ print(baseline)
 
 Where `<SCOPE TEXT>` is:
 - For `--question Q-NNNN`: the question id + text from the objective node body.
-- For `--topic T-NNNN`: the topic id + slug text.
+- For `--concept <slug>`: the concept slug + the concept page title/body text.
 - For `--deep "free text"`: the free text verbatim.
 
 Also pass the objective frontier nodes as `objective_nodes` argument so research question and
@@ -167,7 +168,7 @@ prompt = fill_analysis_prompt(
     purpose=\"<PURPOSE TEXT>\",
     today=\"<TODAY YYYY-MM-DD>\",
     open_questions=\"<FORMATTED OPEN QUESTIONS>\",
-    active_topics=\"<FORMATTED ACTIVE TOPICS>\",
+    active_concepts=\"<FORMATTED ACTIVE CONCEPTS>\",
     wiki_baseline=\"<WIKI BASELINE FROM STEP 3>\",
     wiki_gaps=\"(none)\",
 )
@@ -220,7 +221,7 @@ prompt = fill_synthesis_prompt(
     purpose=\"<PURPOSE TEXT>\",
     today=\"<TODAY YYYY-MM-DD>\",
     open_questions=\"<FORMATTED OPEN QUESTIONS>\",
-    active_topics=\"<FORMATTED ACTIVE TOPICS>\",
+    active_concepts=\"<FORMATTED ACTIVE CONCEPTS>\",
     gap_analysis=\"<GAP_ANALYSIS FROM STEP 4>\",
     existing_directions=\"<EXISTING DIRECTIONS>\",
 )
@@ -244,7 +245,7 @@ sys.path.insert(0, \".\")
 from scripts.deep_synth_helper import resolve_output_path
 from pathlib import Path
 
-scope = {\"question\": \"<Q-NNNN>\"}  # or {\"topic\": ...} or {\"deep\": ...}
+scope = {\"question\": \"<Q-NNNN>\"}  # or {\"concept\": \"<slug>\"} or {\"deep\": ...}
 out = resolve_output_path(Path(\"$VAULT_ROOT\"), scope, today=\"<TODAY>\")
 print(out)
 "'
@@ -422,7 +423,7 @@ Already answerable: <list or "none">
 ## RBAC write boundaries (do NOT cross)
 
 This skill writes ONLY:
-- `research/` (all sub-paths: deep/, Q-NNNN.md, T-NNNN.md, etc.)
+- `research/` (all sub-paths: deep/, Q-NNNN.md, <concept-slug>.md, etc.)
 - `objective/direction/`
 - `objective/research_question_proposal/`
 - `objective/hot.md` (locked)
@@ -431,7 +432,6 @@ This skill writes ONLY:
 This skill MUST NOT write:
 - `wiki/**` (read-only for this agent)
 - `objective/purpose/` (user-only)
-- `objective/topic/` (user-only)
 - `objective/research_question/` (user-only; no R4 sanction in this skill)
 - `objective/decision/` (user-only)
 - `meta/health_report/`, `meta/cost_report/` (backend agent)

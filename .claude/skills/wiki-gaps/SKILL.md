@@ -47,7 +47,7 @@ type: gap
 id: GAP-NN
 title: "..."
 status: open
-topics: [T-XXXX]
+concepts: ["[[wiki/concepts/<slug>]]"]
 fillable_by: [arxiv, web]
 priority: high|medium|low
 shows_up_in: ["[[wiki/page]]"]
@@ -63,11 +63,11 @@ written_by: wiki
 ```
 
 `wiki/gap/index.md` -- overview index (type: gaps_index). Contains:
-- `## Coverage Map` -- per-topic coverage summary
+- `## Coverage Map` -- per-concept coverage summary
 - `## Stale / Unverified` -- claims needing re-verification
 - `## Self-contained` -- gaps solvable without external sources
 - `## Open-Question Harvest (TOP PRIORITY)` -- verbatim open-question items
-- `## Gap files` -- table of all gap files with priority + topics
+- `## Gap files` -- table of all gap files with priority + concepts
 
 Template for new gap files: `scripts/templates/gap_template.md` (copied to
 `wiki/gap/_template.md` on first run -- see Step 5b below).
@@ -93,8 +93,9 @@ Run the gather helper. It walks `wiki/` (skipping `_template.md`, `index.md`, `h
 `log.md`, `gaps.md`, and any `wiki/gap/` files), extracts `## For future Claude` preambles
 and `## Open Questions` sections verbatim from each page, and assembles the `{wiki_state}`
 block and other inputs needed by `WIKI_GAP_PROMPT`. It also reads
-`objective/purpose/PURPOSE.md` (if present) for `{purpose}` and `objective/topic/` files
-for `{active_topics}`.
+`objective/purpose/PURPOSE.md` (if present) for `{purpose}` and the concept pages under
+`wiki/concepts/` for `{active_concepts}` (the subject axis; the retired `objective/topic/`
+node type is gone).
 
 ```bash
 $PY scripts/wiki_gaps_gather.py "$VAULT_ROOT" --output-json
@@ -103,7 +104,7 @@ $PY scripts/wiki_gaps_gather.py "$VAULT_ROOT" --output-json
 The helper writes a JSON payload to stdout with keys:
 - `purpose`: str (vault purpose text, or "not yet defined" if no PURPOSE.md)
 - `today`: str (ISO date, e.g. "2026-06-21")
-- `active_topics`: str (formatted list from objective/topic/, or "none")
+- `active_concepts`: str (formatted list from wiki/concepts/, or "none")
 - `wiki_state`: str (formatted wiki state block; each page includes its
   `## For future Claude` preamble and `## Open Questions` section verbatim where present)
 
@@ -123,7 +124,7 @@ from scripts.prompts.pipeline_prompts import WIKI_GAP_PROMPT
 filled = WIKI_GAP_PROMPT.format(
     purpose=payload["purpose"],
     today=payload["today"],
-    active_topics=payload["active_topics"],
+    active_concepts=payload["active_concepts"],
     wiki_state=payload["wiki_state"],
 )
 ```
@@ -133,7 +134,7 @@ filled = WIKI_GAP_PROMPT.format(
 Send the filled prompt to the wiki agent model. The prompt instructs the LLM to:
 1. Read the `## Open Questions` sections first (TOP-PRIORITY SIGNAL, harvested verbatim).
 2. Read each `## For future Claude` preamble for staleness/uncertainty caveats.
-3. Survey coverage per active topic.
+3. Survey coverage per active concept.
 4. Surface knowledge gaps, stale claims, and self-contained synthesis tasks.
 
 The output is the structured Gaps text ending with `READY`.
@@ -232,7 +233,7 @@ type: gap
 id: GAP-NN
 title: "..."
 status: open
-topics: [T-XXXX]
+concepts: ["[[wiki/concepts/<slug>]]"]
 fillable_by: [arxiv]
 priority: medium
 shows_up_in: ["[[wiki/page]]"]

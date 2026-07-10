@@ -32,8 +32,9 @@ R4 user-proxy exception (research role only):
   ONLY when the $SB_SANCTIONED_SKILL environment variable equals "question-promote" or
   "question-solve". These two skills are user-invoked, user-approved state transitions. The
   variable MUST be set by the skill before any write and unset after. All other paths in the
-  user-only objective area (purpose/, topic/, decision/) remain denied always, regardless of
-  SB_SANCTIONED_SKILL.
+  user-only objective area (purpose/, decision/) remain denied always, regardless of
+  SB_SANCTIONED_SKILL. (The former user-only topic/ folder was retired; the subject axis now
+  lives in wiki/concepts/ and is referenced from objective nodes via their related: block.)
 
   Contract for Wave-3 skill authors:
     - question-promote/SKILL.md: export SB_SANCTIONED_SKILL=question-promote before writing

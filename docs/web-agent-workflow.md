@@ -28,7 +28,7 @@ flowchart TD
 
   subgraph DEC["1. DECISION + 2. QUERY SYNTHESIS — scripts/web_decision.py (build_plan)"]
     P["parse_gaps + parse_directions"]
-    M["merge_targets<br/>gap+dir into one target<br/>(jaccard+topic ≥ 0.18)"]
+    M["merge_targets<br/>gap+dir into one target<br/>(jaccard+concept ≥ 0.18)"]
     L["assign_lanes<br/>gap / research / news"]
     QS["2. QUERY SYNTHESIS<br/>_derive_gap_queries (deterministic)<br/>reformulation OFF by default"]
     R["route_to_sources<br/>fillable_by → registry"]
@@ -73,8 +73,8 @@ flowchart TD
 
 | Input | Produced by | Read by | Shape |
 |---|---|---|---|
-| `wiki/gap/GAP-NN-<slug>.md` (+ `index.md`) | `wiki-gaps` skill → `scripts/wiki_gaps_split.py` | `web_decision.parse_gaps` | per-gap frontmatter: `id, title, topics[], fillable_by[], priority, shows_up_in[], status` + `## Missing`/`## Why` + a `## Shows up in` body section of `[[wiki/...]]` links (real graph edges to the source pages that dictate the gap). **Note:** frontmatter is parsed as YAML incl. block lists (`fillable_by:` / `topics:` written as `- item` lines), so those fields are no longer silently dropped. |
-| `objective/direction/DIR-NNNN-*.md` | research `obj-synth` | `web_decision.parse_directions` | `serves_question, topics, targets_gap, priority, status` + `## seed_queries`, `## expected_evidence` |
+| `wiki/gap/GAP-NN-<slug>.md` (+ `index.md`) | `wiki-gaps` skill → `scripts/wiki_gaps_split.py` | `web_decision.parse_gaps` | per-gap frontmatter: `id, title, concepts[], fillable_by[], priority, shows_up_in[], status` + `## Missing`/`## Why` + a `## Shows up in` body section of `[[wiki/...]]` links (real graph edges to the source pages that dictate the gap). **Note:** frontmatter is parsed as YAML incl. block lists (`fillable_by:` / `concepts:` written as `- item` lines), so those fields are no longer silently dropped. |
+| `objective/direction/DIR-NNNN-*.md` | research `obj-synth` | `web_decision.parse_directions` | `serves_question, related, targets_gap, priority, status` + `## seed_queries`, `## expected_evidence` |
 | `.claude/web/web-config.json` | user-editable | `web_decision` / `web_crawl` loaders | `new_sources_total`, lane `quota`, `spillover_order`, `registry_boost`, `category_weights` (+ `apply_to_embedding`), `learn`, `query` (`reformulate`), `paid_scrape` |
 | `.claude/web/sources/*.json` | the curated registry (user) | `route_to_sources` | per-source `rss_feed`/`api_endpoint`, `category`, `focus`, `relevance`, `priority` |
 
@@ -85,7 +85,7 @@ flowchart TD
 1. **DECISION** — `scripts/web_decision.py` → `build_plan()`
    - `parse_gaps(gap_dir)` reads `wiki/gap/GAP-*.md` (open only); `parse_directions(dir)` reads open `DIR-*`.
    - `merge_targets()` — one-to-one greedy: a direction folds into the gap it targets when their
-     `targets_gap`↔gap-text Jaccard (+ small topic bonus) ≥ `MERGE_THRESHOLD` (0.18). Merged target
+     `targets_gap`↔gap-text Jaccard (+ small concept bonus) ≥ `MERGE_THRESHOLD` (0.18). Merged target
      keeps **origin = gap** (gaps take precedence) and uses the direction's `seed_queries` +
      `expected_evidence` as the HOW.
    - `assign_lanes()` — gap-origin → **gap**, standalone direction → **research**; `news_target()` adds one **news** target (top registry feeds, `category_weights`-adjusted so vendor blogs don't monopolize the news slot).
@@ -190,7 +190,7 @@ python scripts/web_backfill.py --vault "$VAULT_ROOT" [--dry-run] [--explain] [--
 
 ## Make it transparent (no black box)
 
-- `python scripts/web_decision.py plan --vault <V> --explain` — the planning trace: **merge scoring table** (every gap×direction pair: jaccard/topic_bonus/total/decision), routing, lanes.
+- `python scripts/web_decision.py plan --vault <V> --explain` — the planning trace: **merge scoring table** (every gap×direction pair: jaccard/concept_bonus/total/decision), routing, lanes.
 - `python scripts/web_crawl.py --vault <V> --dry-run --explain` (or `--trace-out f.md`) — the full run: harvest queries + counts (incl. injected `agent-websearch` candidates), rank scores, selection (selected vs rejected-with-reason).
 - Every `meta/nightly_report/<date>.md` embeds the same `## Decision trace`.
 - Trace code: `web_decision.py::DecisionTrace` + `render_trace_markdown()`.

@@ -217,7 +217,7 @@ to `objective/research_question/` remain denied.
 
 - Writes only to the target `objective/research_question/Q-NNNN.md` and `objective/index.md`.
 - Does NOT autonomously decide questions are solved; the user explicitly asserts it.
-- Does NOT create new topics, proposals, or directions; those are separate skills.
+- Does NOT create proposals or directions (separate skills), nor concept pages (wiki-owned).
 - Does NOT write to `wiki/`.
 - ASCII only (no em-dashes, curly quotes, or Unicode math).
 
@@ -226,7 +226,7 @@ to `objective/research_question/` remain denied.
 - `research/{question_id}.md` - standard per-question answer (e.g. research/Q-0001.md).
 - `research/deep/{date}-{slug}.md` - a deep research report that answers the question
   (e.g. research/deep/2026-06-21-hbm-analysis.md).
-- `research/{topic_slug}.md` - a topic synthesis that addresses the question
+- `research/{concept_slug}.md` - a concept synthesis that addresses the question
   (e.g. research/inference-disaggregation.md).
 
 ## Trigger phrases

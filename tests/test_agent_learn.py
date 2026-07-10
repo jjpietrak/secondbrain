@@ -1074,11 +1074,11 @@ class TestPurposeGuard:
         assert "iris" in terms
         assert "tetra" in terms
 
-    def test_build_protected_terms_reads_topics(self, tmp_path):
-        """_build_protected_terms also reads topic/*.md files."""
-        topic_dir = tmp_path / "objective" / "topic"
-        topic_dir.mkdir(parents=True, exist_ok=True)
-        (topic_dir / "T-0001-test.md").write_text(
+    def test_build_protected_terms_reads_concepts(self, tmp_path):
+        """_build_protected_terms reads wiki/concepts/*.md files (topic retired)."""
+        concepts_dir = tmp_path / "wiki" / "concepts"
+        concepts_dir.mkdir(parents=True, exist_ok=True)
+        (concepts_dir / "disaggregation.md").write_text(
             "KV-cache pipeline photonic interconnect prefill disaggregation.",
             encoding="utf-8",
         )
@@ -1090,9 +1090,9 @@ class TestPurposeGuard:
 
     def test_build_protected_terms_skips_template(self, tmp_path):
         """_template.md is NOT read (prefix _ convention)."""
-        topic_dir = tmp_path / "objective" / "topic"
-        topic_dir.mkdir(parents=True, exist_ok=True)
-        (topic_dir / "_template.md").write_text(
+        concepts_dir = tmp_path / "wiki" / "concepts"
+        concepts_dir.mkdir(parents=True, exist_ok=True)
+        (concepts_dir / "_template.md").write_text(
             "templateonlyword unique placeholder text for template files.",
             encoding="utf-8",
         )

@@ -5,7 +5,7 @@ This module is a thin CLI wrapper around scripts.research_synthesis that:
   1. Loads the objective frontier JSON (from a file or via agents.objectives).
   2. Calls gather_local_context() with the combined question/topic text.
   3. Formats the {wiki_baseline} block.
-  4. Formats {open_questions} and {active_topics} strings for the pipeline prompts.
+  4. Formats {open_questions} and {active_concepts} strings for the pipeline prompts.
   5. Formats {existing_directions} string from open direction nodes.
   6. Optionally fills and prints the RESEARCH_ANALYSIS_PROMPT or
      RESEARCH_SYNTHESIS_PROMPT (useful for debugging / manual runs).
@@ -31,12 +31,12 @@ Usage
 
   # Fill RESEARCH_ANALYSIS_PROMPT and print (all required args)
   python scripts/obj_synth_helper.py fill-analysis \
-      --purpose "..." --open-questions "..." --active-topics "..." \
+      --purpose "..." --open-questions "..." --active-concepts "..." \
       --wiki-baseline "..." [--wiki-gaps "..."]
 
   # Fill RESEARCH_SYNTHESIS_PROMPT and print
   python scripts/obj_synth_helper.py fill-synthesis \
-      --purpose "..." --open-questions "..." --active-topics "..." \
+      --purpose "..." --open-questions "..." --active-concepts "..." \
       --gap-analysis "..." [--existing-directions "..."]
 
 All outputs are to stdout (UTF-8). Vault-root defaults to env VAULT_ROOT/VAULT_PATH
@@ -106,9 +106,10 @@ def _format_open_questions(frontier: dict) -> str:
         # Take first non-empty line of body as the question text
         first_line = next((l for l in body.splitlines() if l.strip()), "")
         priority = q.get("priority", "-")
-        topic = q.get("topic", "")
-        topic_str = f" [topic: {topic}]" if topic else ""
-        lines.append(f"{qid}: {first_line} [priority: {priority}]{topic_str}")
+        # Subject axis: concept slugs from the node's related: links (topic retired).
+        concepts = q.get("concepts") or []
+        concepts_str = f" [concepts: {', '.join(concepts)}]" if concepts else ""
+        lines.append(f"{qid}: {first_line} [priority: {priority}]{concepts_str}")
     return "\n".join(lines)
 
 
@@ -129,37 +130,34 @@ def _format_existing_directions(frontier: dict) -> str:
     return "\n".join(lines)
 
 
-def _format_active_topics_from_vault(vault_root: str | None) -> str:
-    """Read objective/topic/*.md and format the {active_topics} block."""
+def _format_active_concepts_from_vault(vault_root: str | None) -> str:
+    """Read wiki/concepts/*.md and format the {active_concepts} block.
+
+    The subject axis is now the set of concept pages under wiki/concepts/ (the
+    retired objective/topic/ nodes are gone). Each active concept is listed as
+    ``<slug>: <title>`` where <slug> is the concept page stem (the value used in
+    ``[[wiki/concepts/<slug>]]`` links).
+    """
     if not vault_root:
-        return "(active topics unavailable - no vault root)"
+        return "(active concepts unavailable - no vault root)"
     vr = Path(vault_root)
-    topic_dir = vr / "objective" / "topic"
-    if not topic_dir.exists():
-        return "(no topics dir found)"
+    concept_dir = vr / "wiki" / "concepts"
+    if not concept_dir.exists():
+        return "(no concepts dir found)"
+    import re
     lines = []
-    for md in sorted(topic_dir.glob("*.md")):
-        if md.name.startswith("_"):
+    for md in sorted(concept_dir.glob("*.md")):
+        if md.name.startswith("_") or md.name in {"index.md"}:
             continue
         text = md.read_text(encoding="utf-8", errors="replace")
-        # Extract frontmatter fields
-        import re
-        fm_m = re.match(r"^---\n(.*?)\n---(?:\n|$)", text, re.DOTALL)
-        status = "active"
-        tid = md.stem
+        slug = md.stem
         title = md.stem
-        if fm_m:
-            for line in fm_m.group(1).splitlines():
-                if line.startswith("id:"):
-                    tid = line.split(":", 1)[1].strip()
-                elif line.startswith("status:"):
-                    status = line.split(":", 1)[1].strip()
-        # Title: first heading in body or stem
+        # Title: first heading in body, else the slug
         heading_m = re.search(r"^#\s+(.+)$", text, re.MULTILINE)
         if heading_m:
             title = heading_m.group(1).strip()
-        lines.append(f"{tid}: {title} [status: {status}]")
-    return "\n".join(lines) if lines else "(no active topics)"
+        lines.append(f"{slug}: {title}")
+    return "\n".join(lines) if lines else "(no active concepts)"
 
 
 def _read_purpose(vault_root: str | None) -> str:
@@ -237,14 +235,14 @@ def _cmd_fill_analysis(args: argparse.Namespace) -> int:
     purpose = args.purpose or _read_purpose(args.vault_root)
     today = _today()
     open_questions = args.open_questions or "(none)"
-    active_topics = args.active_topics or _format_active_topics_from_vault(args.vault_root)
+    active_concepts = args.active_concepts or _format_active_concepts_from_vault(args.vault_root)
     wiki_baseline = args.wiki_baseline or "(no wiki context provided)"
     wiki_gaps = args.wiki_gaps or "(none)"
     prompt = fill_analysis_prompt(
         purpose=purpose,
         today=today,
         open_questions=open_questions,
-        active_topics=active_topics,
+        active_concepts=active_concepts,
         wiki_baseline=wiki_baseline,
         wiki_gaps=wiki_gaps,
     )
@@ -257,14 +255,14 @@ def _cmd_fill_synthesis(args: argparse.Namespace) -> int:
     purpose = args.purpose or _read_purpose(args.vault_root)
     today = _today()
     open_questions = args.open_questions or "(none)"
-    active_topics = args.active_topics or _format_active_topics_from_vault(args.vault_root)
+    active_concepts = args.active_concepts or _format_active_concepts_from_vault(args.vault_root)
     gap_analysis = args.gap_analysis or "(no gap analysis provided)"
     existing_directions = args.existing_directions or "(none)"
     prompt = fill_synthesis_prompt(
         purpose=purpose,
         today=today,
         open_questions=open_questions,
-        active_topics=active_topics,
+        active_concepts=active_concepts,
         gap_analysis=gap_analysis,
         existing_directions=existing_directions,
     )
@@ -329,14 +327,14 @@ def main(argv: list[str] | None = None) -> int:
     fa = sub.add_parser("fill-analysis", help="Fill RESEARCH_ANALYSIS_PROMPT and print")
     fa.add_argument("--purpose", default=None)
     fa.add_argument("--open-questions", default=None)
-    fa.add_argument("--active-topics", default=None)
+    fa.add_argument("--active-concepts", default=None)
     fa.add_argument("--wiki-baseline", default=None)
     fa.add_argument("--wiki-gaps", default=None)
 
     fs = sub.add_parser("fill-synthesis", help="Fill RESEARCH_SYNTHESIS_PROMPT and print")
     fs.add_argument("--purpose", default=None)
     fs.add_argument("--open-questions", default=None)
-    fs.add_argument("--active-topics", default=None)
+    fs.add_argument("--active-concepts", default=None)
     fs.add_argument("--gap-analysis", default=None)
     fs.add_argument("--existing-directions", default=None)
 

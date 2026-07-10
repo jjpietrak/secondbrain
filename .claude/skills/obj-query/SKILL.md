@@ -6,9 +6,11 @@ description: >
   retrieves relevant wiki pages, and synthesizes a concise, cited answer
   to agenda questions such as "what open high-priority questions touch
   optical accelerators?", "which questions are answerable now?", or "what
-  directions are open for topic T-0006?". Returns the answer INLINE in
+  directions are open for concept kv-cache?". Returns the answer INLINE in
   chat (no filing in Phase 2). Read-only over objective/, research/, and
-  wiki/. No web access. Higher-effort reasoning (research agent credit pool).
+  wiki/ (concepts under wiki/concepts/ are the subject axis - the retired
+  objective/topic/ node type is gone). No web access. Higher-effort reasoning
+  (research agent credit pool).
   Triggers on: "obj-query", "/obj-query", "what open questions",
   "which questions are answerable", "what directions are open",
   "open frontier", "objective graph query", "query the objectives",
@@ -68,11 +70,11 @@ Identify the query type from the user's request:
 
 | Query type | Keywords / shape | Primary data source |
 |------------|-----------------|---------------------|
-| Open questions by topic | "open questions about T-NNNN", "what questions touch <topic>" | objective frontier - research_questions |
+| Open questions by concept | "open questions about <concept>", "what questions touch <concept>" | objective frontier - research_questions |
 | High-priority open questions | "high priority open questions", "what should we research next" | objective frontier - research_questions priority:high |
 | Answerable now | "answerable now", "which can we answer with current wiki" | frontier + wiki retrieval intersection |
 | Open directions by question | "open directions for Q-NNNN", "what directions exist for <question>" | objective frontier - directions by serves_question |
-| Open directions by topic | "what directions are open for topic T-NNNN" | frontier - directions by topics field |
+| Open directions by concept | "what directions are open for concept <slug>" | frontier - directions by related/concepts field |
 | Full frontier dump | "show the open frontier", "what is open" | full frontier payload |
 | Decision audit | "what constraints apply", "active decisions" | decisions only |
 | Purpose query | "what is the vault purpose", "what is this vault about" | objective/purpose/PURPOSE.md |
@@ -107,7 +109,7 @@ and stop gracefully.
 Skip this step for pure frontier-dump and decision-audit queries (no wiki needed).
 
 For queries that require cross-referencing the wiki (e.g. "which questions are answerable
-now?", "what wiki content covers T-0001?"):
+now?", "what wiki content covers concept kv-cache?"):
 
 ### Preferred: retrieval pipeline (when provisioned)
 ```bash
@@ -166,9 +168,11 @@ Return the answer inline in chat. Structure it as:
 
 ### Answer templates by query type
 
-**Open questions by topic (T-NNNN filter):**
+**Open questions by concept (<slug> filter):**
 List each matching Q-NNNN with: priority, created date, `solved: no/yes`, and the question
-text (from the file body). Cite with `[[objective/research_question/Q-NNNN-<slug>]]`.
+text (from the file body). A question relates to a concept when it links
+`[[wiki/concepts/<slug>]]` (via its `related:` block). Cite with
+`[[objective/research_question/Q-NNNN-<slug>]]`.
 
 **Answerable now:**
 For each open Q-NNNN: check if wiki pages retrieved cover its subject matter with enough
@@ -178,8 +182,9 @@ depth to warrant an answer. Classify as:
 - PARTIALLY: wiki has some coverage but gaps remain.
 - NOT YET: wiki has no substantive coverage; needs new ingest first.
 
-**Open directions for Q-NNNN or T-NNNN:**
-List each matching DIR-NNNN with: priority, status, `serves_question`, `targets_gap` field.
+**Open directions for Q-NNNN or concept <slug>:**
+List each matching DIR-NNNN with: priority, status, `serves_question`, `targets_gap` field
+(match on the direction's `related:` concept links for concept-scoped queries).
 Cite with `[[objective/direction/DIR-NNNN-<slug>]]`. If no matching directions exist, say so
 and suggest running `obj-synth` to generate directions.
 
@@ -233,7 +238,7 @@ RBAC: `research/query/` is research-writable. No RBAC exception needed.
 
 - Read-only over `objective/`, `wiki/`, `research/`. No writes except the optional filing
   in Step 6.
-- Does NOT write to `wiki/`, `objective/purpose/`, `objective/topic/`,
+- Does NOT write to `wiki/`, `objective/purpose/`,
   `objective/research_question/`, or `objective/decision/`.
 - Does NOT call `python -m agents.objectives next_id` (no node creation).
 - Does NOT run the synthesis pipeline (`RESEARCH_ANALYSIS_PROMPT`, `RESEARCH_SYNTHESIS_PROMPT`).
@@ -255,5 +260,5 @@ frontier JSON (small) -> stop if it fully answers. wiki retrieval (top-5 pages ~
 - "open frontier" / "show the frontier"
 - "objective graph query" / "query the objectives"
 - "what research questions touch" / "which objectives relate to"
-- "what should we research next" / "what is open for topic"
+- "what should we research next" / "what is open for concept"
 - "active decisions" (when asking about objective graph constraints)
