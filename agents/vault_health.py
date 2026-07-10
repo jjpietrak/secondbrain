@@ -74,8 +74,7 @@ TYPE_REQUIRED: dict[str, set[str]] = {
     "synthesis": WIKI_REQUIRED,
     # --- objective types ---
     "purpose": {"type", "created", "updated", "status"},
-    "topic": {"type", "id", "created", "updated", "status"},
-    "research_question": {"type", "id", "created", "updated", "solved", "topic", "priority"},
+    "research_question": {"type", "id", "created", "updated", "solved", "priority"},
     "direction": {"type", "id", "created", "updated", "status", "serves_question", "priority"},
     "research_question_proposal": {"type", "id", "created", "updated", "status"},
     "decision": {"type", "id", "created", "updated", "status", "scope"},
@@ -106,7 +105,7 @@ def _link_target(raw: str) -> str:
     """Normalize a wikilink target to the page stem it resolves to.
 
     Wikilinks in this vault are frequently path-qualified ([[sources/Foo]],
-    [[wiki/concepts/Bar]], [[objective/topic/T-0001]]). Pages are keyed by bare
+    [[wiki/concepts/Bar]], [[objective/direction/DIR-0001]]). Pages are keyed by bare
     stem, so resolve a link to its last path segment (and drop any leading/trailing
     whitespace). LINK_RE already strips a trailing |alias and #heading.
     """

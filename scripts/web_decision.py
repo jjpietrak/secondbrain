@@ -26,6 +26,29 @@ import sys
 from pathlib import Path
 from typing import Any
 
+# Reuse the shared concept-slug extractor from the objective engine so the
+# gap/direction subject vocabulary stays identical across both graphs.
+_CODE_ROOT = Path(__file__).resolve().parent.parent
+if str(_CODE_ROOT) not in sys.path:
+    sys.path.insert(0, str(_CODE_ROOT))
+try:
+    from agents.objectives import concept_slugs  # type: ignore
+except Exception:  # pragma: no cover - defensive fallback
+    _CONCEPT_LINK_RE = re.compile(
+        r"\[\[\s*(?:wiki/)?concepts/([^\]|#]+?)\s*(?:[|#][^\]]*)?\]\]",
+        re.IGNORECASE,
+    )
+
+    def concept_slugs(text: str) -> list[str]:  # type: ignore
+        seen: set[str] = set()
+        out: list[str] = []
+        for m in _CONCEPT_LINK_RE.finditer(text or ""):
+            slug = m.group(1).strip()
+            if slug and slug not in seen:
+                seen.add(slug)
+                out.append(slug)
+        return out
+
 # ---------------------------------------------------------------------------
 # Decision trace
 # ---------------------------------------------------------------------------
@@ -80,13 +103,22 @@ def _candidate_ident(cand: dict) -> str:
 # Merge threshold
 # ---------------------------------------------------------------------------
 
-# Minimum Jaccard-plus-topic-bonus score required for a (gap, direction) pair
-# to be merged. Set empirically against the Inference-Disagg vault:
-#   - DIR-0004 / GAP-08 scores ~0.24 (strong lexical overlap on "prior-art /
-#     Photons-to-Tokens / cited / papers / ingested" + shared T-0006) -> merges.
-#   - DIR-0001 / GAP-02..GAP-08 score ~0.03-0.07 (domain stoplist strips the
-#     ubiquitous "optical" token; no lexical anchor remaining) -> do NOT merge.
-# 0.18 is the right split point: comfortably below 0.24 and above 0.07.
+# Minimum Jaccard-plus-concept-bonus score required for a (gap, direction) pair
+# to be merged. The bonus shape is unchanged from the retired topic scheme
+# (+0.05 per shared subject, capped at +0.10) and the Jaccard is still computed
+# from the SAME text fields (direction.targets_gap vs gap.title+missing), which
+# this refactor does not touch. The subject axis simply moved from T-NNNN topic
+# ids to `[[wiki/concepts/<slug>]]` links (a ~1:1 remap per the migration table),
+# so the numeric behaviour is preserved:
+#   - a gap+direction sharing >=1 concept (+0.05) merges on modest lexical
+#     overlap (jaccard ~0.14 -> ~0.19 > 0.18); with 2 shared concepts (+0.10)
+#     even weak overlap clears the bar.
+#   - unrelated pairs (0 shared concepts, jaccard ~0.03-0.07 after the domain
+#     stoplist) stay well below 0.18 and do NOT merge.
+# 0.18 is retained as the split point. NOTE (orchestrator): verify against the
+# live Inference-Disagg vault AFTER the frontmatter migration that the known
+# gap<->direction merge (formerly DIR-0004/GAP-08 via shared T-0006, now via a
+# shared concept) still lands, and re-tune only if a real merge is lost.
 MERGE_THRESHOLD: float = 0.18
 
 # Domain tokens that are too ubiquitous in this vault to be discriminative.
@@ -141,12 +173,11 @@ def _jaccard(a: frozenset[str], b: frozenset[str]) -> float:
 # ---------------------------------------------------------------------------
 
 _PRIORITY_RE = re.compile(r"^(high|medium|low)\b", re.IGNORECASE)
-_TOPIC_RE = re.compile(r"T-\d+")
 _FILLABLE_TAG_RE = re.compile(
     r"\b(arxiv|web|github|forum|x)\b", re.IGNORECASE
 )
 
-# Regex to extract YAML inline-list items, e.g. [T-0006, T-0003] or ["[[...]]", "[[...]]"]
+# Regex to extract YAML inline-list items, e.g. [arxiv, web] or ["[[...]]", "[[...]]"]
 _YAML_LIST_RE = re.compile(r'\[([^\]]*)\]')
 
 
@@ -182,7 +213,7 @@ def parse_gaps(
     Only gaps with status: open (or missing status) are included.
 
     Returns list of dicts with keys:
-      id, title, shows_up_in, missing, fillable_by, topics, priority
+      id, title, shows_up_in, missing, fillable_by, concepts, priority
     """
     d = Path(gap_dir)
     if not d.is_dir():
@@ -229,9 +260,9 @@ def parse_gaps(
             )
         )
 
-        # topics: YAML inline list [T-0006, T-0003] or plain string
-        topics_raw = fm.get("topics", "")
-        topics = _TOPIC_RE.findall(topics_raw)
+        # concepts: YAML list of [[wiki/concepts/<slug>]] wikilinks (replaces topics)
+        concepts_raw = fm.get("concepts", "")
+        concepts = concept_slugs(concepts_raw)
 
         # priority: plain string (high/medium/low)
         priority_raw = fm.get("priority", "medium").strip()
@@ -245,7 +276,7 @@ def parse_gaps(
                 "shows_up_in": shows_up_in,
                 "missing": missing,
                 "fillable_by": fillable_by,
-                "topics": topics,
+                "concepts": concepts,
                 "priority": priority,
             }
         )
@@ -255,7 +286,7 @@ def parse_gaps(
             "parse",
             "gaps",
             gaps=[
-                {"id": g["id"], "priority": g["priority"], "topics": g["topics"], "fillable_by": g["fillable_by"]}
+                {"id": g["id"], "priority": g["priority"], "concepts": g["concepts"], "fillable_by": g["fillable_by"]}
                 for g in gaps
             ],
             count=len(gaps),
@@ -284,8 +315,8 @@ def _parse_frontmatter(text: str) -> dict:
                             - b
     Block-list items (indented "- item" lines following a key with an empty
     inline value) are collected into a bracketed inline-list string
-    (e.g. "[T-0001, T-0002]") so downstream list parsers
-    (_parse_gap_frontmatter_list / _TOPIC_RE.findall / _FILLABLE_TAG_RE.findall)
+    (e.g. "[[[wiki/concepts/kv-cache]], [[wiki/concepts/moe]]]") so downstream
+    list parsers (_parse_gap_frontmatter_list / concept_slugs / _FILLABLE_TAG_RE)
     see a consistent shape. Return contract stays dict[str, str].
     """
     m = re.match(r"^---\r?\n(.*?)\r?\n---\r?\n", text, re.DOTALL)
@@ -381,7 +412,7 @@ def parse_directions(
     """Read all DIR-*.md files (skip _template + status != open).
 
     Returns list of dicts with keys:
-      id, serves_question, topics, targets_gap, priority, status,
+      id, serves_question, concepts, targets_gap, priority, status,
       seed_queries, expected_evidence, solves_when
     """
     d = Path(direction_dir)
@@ -410,8 +441,8 @@ def parse_directions(
         # Could be a single Q-id or comma-separated; store as list
         serves_question = [q.strip() for q in serves_q_raw.split(",") if q.strip()]
 
-        topics_raw = fm.get("topics", "").strip()
-        topics = _TOPIC_RE.findall(topics_raw)
+        related_raw = fm.get("related", "").strip()
+        concepts = concept_slugs(related_raw)
 
         targets_gap = fm.get("targets_gap", "").strip().strip('"')
         priority_raw = fm.get("priority", "medium").strip()
@@ -437,7 +468,7 @@ def parse_directions(
             {
                 "id": dir_id,
                 "serves_question": serves_question,
-                "topics": topics,
+                "concepts": concepts,
                 "targets_gap": targets_gap,
                 "priority": priority,
                 "status": status,
@@ -456,7 +487,7 @@ def parse_directions(
                 {
                     "id": di["id"],
                     "priority": di["priority"],
-                    "topics": di["topics"],
+                    "concepts": di["concepts"],
                     "serves_question": di["serves_question"],
                 }
                 for di in directions
@@ -483,14 +514,14 @@ def _max_priority(a: str, b: str) -> str:
 
 
 def _score_gap_direction(gap: dict, direction: dict) -> float:
-    """Score a (gap, direction) pair by lexical similarity + shared-topic bonus.
+    """Score a (gap, direction) pair by lexical similarity + shared-concept bonus.
 
     Algorithm:
     1. Tokenize direction.targets_gap and (gap.title + " " + gap.missing) using
        _tokenize() -- lowercased, split on non-alphanumerics, drop tokens < 4
        chars, English stopwords, and the domain stoplist.
     2. Jaccard = |intersection| / |union| of the two token sets.
-    3. Add +0.05 per shared topic id (capped at +0.10).
+    3. Add +0.05 per shared concept slug (capped at +0.10).
 
     Returns a float in [0, 1.10] (practically much lower).
     """
@@ -500,13 +531,13 @@ def _score_gap_direction(gap: dict, direction: dict) -> float:
 
     jaccard = _jaccard(dir_tokens, gap_tokens)
 
-    # Topic bonus: +0.05 per shared topic id, capped at +0.10
-    gap_topics = set(gap.get("topics", []))
-    dir_topics = set(direction.get("topics", []))
-    shared_topics = len(gap_topics & dir_topics)
-    topic_bonus = min(shared_topics * 0.05, 0.10)
+    # Concept bonus: +0.05 per shared concept slug, capped at +0.10
+    gap_concepts = set(gap.get("concepts", []))
+    dir_concepts = set(direction.get("concepts", []))
+    shared_concepts = len(gap_concepts & dir_concepts)
+    concept_bonus = min(shared_concepts * 0.05, 0.10)
 
-    return jaccard + topic_bonus
+    return jaccard + concept_bonus
 
 
 def merge_targets(
@@ -600,10 +631,10 @@ def merge_targets(
         gap_text = gap.get("title", "") + " " + gap.get("missing", "")
         gap_tokens = _tokenize(gap_text)
         jaccard = _jaccard(dir_tokens, gap_tokens)
-        gap_topics = set(gap.get("topics", []))
-        dir_topics = set(direction.get("topics", []))
-        shared = len(gap_topics & dir_topics)
-        topic_bonus = min(shared * 0.05, 0.10)
+        gap_concepts = set(gap.get("concepts", []))
+        dir_concepts = set(direction.get("concepts", []))
+        shared = len(gap_concepts & dir_concepts)
+        concept_bonus = min(shared * 0.05, 0.10)
 
         if score < MERGE_THRESHOLD:
             decision = "below-threshold"
@@ -622,7 +653,7 @@ def merge_targets(
                 "gap": gap["id"],
                 "direction": direction["id"],
                 "jaccard": round(jaccard, 4),
-                "topic_bonus": round(topic_bonus, 4),
+                "concept_bonus": round(concept_bonus, 4),
                 "total": round(score, 4),
                 "decision": decision,
             })
@@ -1039,11 +1070,11 @@ def route_to_sources(
 
 
 def _target_keywords(target: dict) -> list[str]:
-    """Extract keywords from target topics, title, and queries."""
+    """Extract keywords from target concepts, title, and queries."""
     keywords = []
-    # Topic IDs -> topic tokens
-    for topic in target.get("_gap", {}).get("topics", []) if target.get("_gap") else []:
-        keywords.append(topic)
+    # Concept slugs -> keyword seeds (hyphens split into words downstream by callers)
+    for slug in target.get("_gap", {}).get("concepts", []) if target.get("_gap") else []:
+        keywords.append(slug)
     # Title words
     title = ""
     if target.get("_gap"):
@@ -1503,13 +1534,13 @@ def render_trace_markdown(trace: DecisionTrace) -> str:
             lines.append("### Gaps")
             lines.append("")
             for g in gaps_rec["data"]["gaps"]:
-                lines.append(f"- **{g['id']}** priority={g['priority']} topics={','.join(g['topics'])} fillable_by={','.join(g['fillable_by'])}")
+                lines.append(f"- **{g['id']}** priority={g['priority']} concepts={','.join(g['concepts'])} fillable_by={','.join(g['fillable_by'])}")
             lines.append("")
         if dirs_rec:
             lines.append("### Directions")
             lines.append("")
             for d in dirs_rec["data"]["directions"]:
-                lines.append(f"- **{d['id']}** priority={d['priority']} topics={','.join(d['topics'])} serves={','.join(d['serves_question'])}")
+                lines.append(f"- **{d['id']}** priority={d['priority']} concepts={','.join(d['concepts'])} serves={','.join(d['serves_question'])}")
             if dirs_rec["data"]["skipped"]:
                 lines.append("")
                 lines.append("Skipped (template or non-open):")
@@ -1523,11 +1554,11 @@ def render_trace_markdown(trace: DecisionTrace) -> str:
         _h(2, f"Merge scoring (MERGE_THRESHOLD={threshold})")
         pairs = merge_rec["data"]["pairs"]
         if pairs:
-            lines.append("| gap | direction | jaccard | topic_bonus | total | decision |")
-            lines.append("|-----|-----------|---------|-------------|-------|----------|")
+            lines.append("| gap | direction | jaccard | concept_bonus | total | decision |")
+            lines.append("|-----|-----------|---------|---------------|-------|----------|")
             for p in pairs:
                 lines.append(
-                    f"| {p['gap']} | {p['direction']} | {p['jaccard']:.4f} | {p['topic_bonus']:.4f} | {p['total']:.4f} | {p['decision']} |"
+                    f"| {p['gap']} | {p['direction']} | {p['jaccard']:.4f} | {p['concept_bonus']:.4f} | {p['total']:.4f} | {p['decision']} |"
                 )
             lines.append("")
         else:

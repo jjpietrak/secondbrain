@@ -45,6 +45,7 @@ id: GAP-08
 title: "Optical prior art -- citations [3]-[6] from Photons to Tokens not ingested"
 status: open
 topics: [T-0006]
+concepts: ["[[wiki/concepts/optical-compute]]"]
 fillable_by: [arxiv]
 priority: medium
 shows_up_in: ["[[wiki/sources/photons-to-tokens]]"]
@@ -69,6 +70,7 @@ id: GAP-04
 title: "LLM serving systems coverage is thin"
 status: open
 topics: [T-0003]
+concepts: ["[[wiki/concepts/llm-serving]]", "[[wiki/concepts/pd-scheduling]]"]
 fillable_by: [arxiv, web, github]
 priority: high
 shows_up_in: ["[[wiki/entities/splitwise]]"]
@@ -120,7 +122,7 @@ id: DIR-0004
 created: 2026-06-22
 updated: 2026-06-22
 serves_question: Q-0005
-topics: T-0006, T-0007
+related: ["[[wiki/concepts/optical-compute]]", "[[wiki/concepts/photonic-accelerator]]"]
 targets_gap: Four optical-AI prior-art papers cited by Photons-to-Tokens are not yet ingested
 priority: medium
 status: open
@@ -360,11 +362,11 @@ class TestParseGaps:
         g08 = next(g for g in gaps if g["id"] == "GAP-08")
         assert g08["title"] == "Optical prior art -- citations [3]-[6] from Photons to Tokens not ingested"
 
-    def test_gap08_single_topic(self, tmp_path):
+    def test_gap08_single_concept(self, tmp_path):
         gap_dir = _make_gap_dir(tmp_path, {"GAP-08-optical-prior-art.md": GAP_08_FILE})
         gaps = parse_gaps(str(gap_dir))
         g08 = next(g for g in gaps if g["id"] == "GAP-08")
-        assert g08["topics"] == ["T-0006"]
+        assert g08["concepts"] == ["optical-compute"]
 
     def test_gap08_fillable_by_bare_tag(self, tmp_path):
         gap_dir = _make_gap_dir(tmp_path, {"GAP-08-optical-prior-art.md": GAP_08_FILE})
@@ -378,11 +380,12 @@ class TestParseGaps:
         g08 = next(g for g in gaps if g["id"] == "GAP-08")
         assert g08["priority"] == "medium"
 
-    def test_gap04_multi_topic(self, tmp_path):
+    def test_gap04_multi_concept(self, tmp_path):
         gap_dir = _make_gap_dir(tmp_path, {"GAP-04-llm-serving.md": GAP_04_FILE})
         gaps = parse_gaps(str(gap_dir))
         g04 = next(g for g in gaps if g["id"] == "GAP-04")
-        assert "T-0003" in g04["topics"]
+        assert "pd-scheduling" in g04["concepts"]
+        assert "llm-serving" in g04["concepts"]
 
     def test_gap04_multi_tag_fillable_by(self, tmp_path):
         gap_dir = _make_gap_dir(tmp_path, {"GAP-04-llm-serving.md": GAP_04_FILE})
@@ -445,10 +448,10 @@ shows_up_in: []
         assert gaps[0]["missing"] == ""  # no ## Missing section
 
     def test_output_dict_shape(self, tmp_path):
-        """Output dict shape must be unchanged: id, title, shows_up_in, missing, fillable_by, topics, priority."""
+        """Output dict shape must be: id, title, shows_up_in, missing, fillable_by, concepts, priority."""
         gap_dir = _make_gap_dir(tmp_path, {"GAP-08-optical-prior-art.md": GAP_08_FILE})
         gaps = parse_gaps(str(gap_dir))
-        required_keys = {"id", "title", "shows_up_in", "missing", "fillable_by", "topics", "priority"}
+        required_keys = {"id", "title", "shows_up_in", "missing", "fillable_by", "concepts", "priority"}
         assert required_keys.issubset(gaps[0].keys())
 
     def test_missing_as_body_text(self, tmp_path):
@@ -482,6 +485,9 @@ status: open
 topics:
 - T-0001
 - T-0002
+concepts:
+- "[[wiki/concepts/kv-cache]]"
+- "[[wiki/concepts/moe]]"
 fillable_by:
 - arxiv
 priority: high
@@ -527,11 +533,11 @@ class TestParseFrontmatterBlockList:
         assert fm["status"] == "open"
 
     def test_parse_gaps_block_list_non_empty_routing_fields(self, tmp_path):
-        """End-to-end: a real block-list gap file yields non-empty topics + fillable_by."""
+        """End-to-end: a real block-list gap file yields non-empty concepts + fillable_by."""
         gap_dir = _make_gap_dir(tmp_path, {"GAP-11-splitwise.md": GAP_BLOCK_LIST_FILE})
         gaps = parse_gaps(str(gap_dir))
         g11 = next(g for g in gaps if g["id"] == "GAP-11")
-        assert g11["topics"] == ["T-0001", "T-0002"]
+        assert g11["concepts"] == ["kv-cache", "moe"]
         assert g11["fillable_by"] == ["arxiv"]
 
 
@@ -596,13 +602,13 @@ priority: medium
         assert len(tagged) == 1
         assert tagged[0]["query"] == "optical LLM accelerator prior art comparison"
 
-    def test_topics_parsed_from_frontmatter(self, tmp_path):
+    def test_concepts_parsed_from_frontmatter(self, tmp_path):
         d = tmp_path / "direction"
         d.mkdir()
         (d / "DIR-0004-optical.md").write_text(DIR_WITH_PLAIN_QUERIES, encoding="utf-8")
         dirs = parse_directions(str(d))
-        assert "T-0006" in dirs[0]["topics"]
-        assert "T-0007" in dirs[0]["topics"]
+        assert "optical-compute" in dirs[0]["concepts"]
+        assert "photonic-accelerator" in dirs[0]["concepts"]
 
     def test_expected_evidence_captured(self, tmp_path):
         d = tmp_path / "direction"
@@ -1806,7 +1812,7 @@ class TestDecisionTrace:
         merge_targets([gap], [direction], trace=t)
         md = render_trace_markdown(t)
         assert "## Merge scoring" in md
-        assert "| gap | direction | jaccard | topic_bonus | total | decision |" in md
+        assert "| gap | direction | jaccard | concept_bonus | total | decision |" in md
 
     def test_render_trace_contains_selection_section(self):
         t = DecisionTrace()

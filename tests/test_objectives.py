@@ -58,7 +58,8 @@ id: Q-0001
 created: 2026-01-01
 updated: 2026-06-01
 solved: "no"
-topic: T-0001
+related:
+  - "[[wiki/concepts/disaggregated-inference]]"
 priority: high
 answer_ref: ""
 ---
@@ -73,7 +74,8 @@ id: Q-0002
 created: 2026-02-01
 updated: 2026-06-10
 solved: "yes"
-topic: T-0001
+related:
+  - "[[wiki/concepts/disaggregated-inference]]"
 priority: medium
 answer_ref: "research/Q-0002.md"
 ---
@@ -90,7 +92,8 @@ created: 2026-02-10
 updated: 2026-06-01
 generated_by: research
 serves_question: Q-0001
-topics: [T-0001]
+related:
+  - "[[wiki/concepts/disaggregated-inference]]"
 targets_gap: latency-floor
 priority: high
 status: open
@@ -117,7 +120,8 @@ created: 2026-03-01
 updated: 2026-06-01
 generated_by: research
 serves_question: Q-0001
-topics: [T-0001]
+related:
+  - "[[wiki/concepts/disaggregated-inference]]"
 targets_gap: network-latency
 priority: medium
 status: open
@@ -144,7 +148,8 @@ created: 2026-01-05
 updated: 2026-04-01
 generated_by: research
 serves_question: Q-0002
-topics: [T-0001]
+related:
+  - "[[wiki/concepts/disaggregated-inference]]"
 targets_gap: hbm-vs-sram
 priority: low
 status: crawled
@@ -262,7 +267,7 @@ def test_scan_parses_nodes() -> None:
         assert q1["type"] == "research_question"
         assert q1["solved"] == "no"
         assert q1["priority"] == "high"
-        assert q1["topic"] == "T-0001"
+        assert q1["concepts"] == ["disaggregated-inference"]
 
         q2 = next(n for n in nodes if n["id"] == "Q-0002")
         assert q2["solved"] == "yes"
@@ -407,7 +412,8 @@ id: Q-0001
 created: 2026-01-01
 updated: 2026-01-01
 solved: "no"
-topic: T-0001
+related:
+  - "[[wiki/concepts/disaggregated-inference]]"
 priority: medium
 answer_ref: ""
 ---
@@ -421,7 +427,7 @@ created: 2026-01-01
 updated: 2026-01-01
 generated_by: research
 serves_question: Q-0001
-topics: []
+related: []
 targets_gap: ""
 priority: medium
 status: open
@@ -522,14 +528,14 @@ def test_next_id_format() -> None:
         vault.mkdir()
         obj_init.run_apply(vault)
 
-        # Set topic counter to 99.
+        # Set direction counter to 99.
         index_path = vault / "objective" / "index.md"
         text = index_path.read_text(encoding="utf-8")
-        text = text.replace("  topic: 1", "  topic: 99")
+        text = text.replace("  direction: 1", "  direction: 99")
         index_path.write_text(text, encoding="utf-8")
 
-        id99 = objectives.next_id(vault, "topic")
-        assert id99 == "T-0099", f"expected T-0099, got {id99!r}"
+        id99 = objectives.next_id(vault, "direction")
+        assert id99 == "DIR-0099", f"expected DIR-0099, got {id99!r}"
 
     print("PASS test_next_id_format")
 
