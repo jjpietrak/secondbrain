@@ -203,12 +203,21 @@ def audit(
     dup_stems: dict[str, list[str]] = {}
 
     for page in all_pages:
+        content = page.read_text(errors="replace")
+        # Extract links from ALL pages (including skippable meta-pages like index.md,
+        # hot.md, log.md) so their outgoing links count as inbound backlinks for the
+        # pages they reference. Without this, gap/index.md's links to GAP-* pages are
+        # invisible and those GAP pages falsely appear as orphans.
+        links = extract_wikilinks(content)
+        all_links[page.stem] = links
+        for link in links:
+            backlinks.setdefault(link, []).append(page.stem)
+
         if is_skippable(page):
             continue
         area = _area_for(page, vault)
         rel = str(page.relative_to(vault))
         prefix = f"[{area}] "
-        content = page.read_text(errors="replace")
 
         # duplicate detection runs over ALL non-skippable pages (global, cross-area)
         dup_stems.setdefault(_norm_stem(page.stem), []).append(rel)
@@ -258,10 +267,6 @@ def audit(
                     issues["stale"].append(f"{prefix}{rel}")
             except ValueError:
                 pass
-        links = extract_wikilinks(content)
-        all_links[page.stem] = links
-        for link in links:
-            backlinks.setdefault(link, []).append(page.stem)
 
     for page in all_pages:
         if is_skippable(page):
