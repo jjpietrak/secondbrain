@@ -75,7 +75,8 @@ This returns a JSON object with:
 - `combined_ranked`: combined priority-ranked list
 
 Also read `objective/purpose/PURPOSE.md` for the vault purpose statement. Read
-`objective/topic/*.md` for active topics. These are the inputs to the pipeline.
+`wiki/concepts/*.md` for active concepts (the subject axis; the retired
+`objective/topic/` node type is gone). These are the inputs to the pipeline.
 
 If `objective/` is not yet scaffolded (exit non-zero from the frontier command), run:
 ```bash
@@ -86,11 +87,11 @@ then retry.
 ## Step 3 - Gather wiki context
 
 Use `scripts/research_synthesis.py` to keyword-score the wiki for pages relevant to the
-open questions and active topics:
+open questions and active concepts:
 
 ```bash
 wsl.exe -- bash -lc 'cd /home/jpietrak/second_brain && .venv/bin/python scripts/obj_synth_helper.py \
-  --gather-context "<question_text_and_topics_combined>" \
+  --gather-context "<question_text_and_concepts_combined>" \
   --vault-root "$VAULT_ROOT" \
   --frontier-json /tmp/frontier.json'
 ```
@@ -121,16 +122,17 @@ Format the gathered inputs:
 - `{today}`: today's date (YYYY-MM-DD)
 - `{open_questions}`: formatted list from the frontier JSON, one per line:
   `Q-NNNN: <question text> [priority: high/medium/low]`
-- `{active_topics}`: list from `objective/topic/*.md`, one per line:
-  `T-NNNN: <topic title> [status: active/paused]`
+- `{active_concepts}`: list from `wiki/concepts/*.md`, one per line:
+  `<slug>: <concept title>` (cite as `[[wiki/concepts/<slug>]]`)
 - `{wiki_baseline}`: output of `excerpts_to_wiki_baseline()` from step 3
 - `{wiki_gaps}`: gaps content from a recent wiki-gaps run, or `"(none)"`
 
-Use `fill_analysis_prompt()` from `scripts/research_synthesis.py`:
+Use `fill_analysis_prompt()` from `scripts/research_synthesis.py` (the 4th positional
+argument carries the active-concepts block):
 
 ```python
 from scripts.research_synthesis import fill_analysis_prompt
-prompt = fill_analysis_prompt(purpose, today, open_questions, active_topics,
+prompt = fill_analysis_prompt(purpose, today, open_questions, active_concepts,
                                wiki_baseline, wiki_gaps)
 ```
 
@@ -143,7 +145,7 @@ Format the synthesis inputs:
 - `{purpose}`: same as above
 - `{today}`: same as above
 - `{open_questions}`: same as above (now with per-question gap status from step 4)
-- `{active_topics}`: same as above
+- `{active_concepts}`: same as above
 - `{gap_analysis}`: the full output from step 4 (RESEARCH_ANALYSIS_PROMPT output)
 - `{existing_directions}`: read existing open `direction` nodes from the frontier JSON;
   format as: `DIR-NNNN: <title> [serves: Q-NNNN]` (one per line). Use `"(none)"` if
@@ -153,7 +155,7 @@ Use `fill_synthesis_prompt()` from `scripts/research_synthesis.py`:
 
 ```python
 from scripts.research_synthesis import fill_synthesis_prompt, parse_directions, parse_proposals
-prompt = fill_synthesis_prompt(purpose, today, open_questions, active_topics,
+prompt = fill_synthesis_prompt(purpose, today, open_questions, active_concepts,
                                 gap_analysis, existing_directions)
 ```
 
@@ -185,7 +187,8 @@ Call `parse_directions(synthesis_output)` to extract direction dicts. For each d
    updated: YYYY-MM-DD
    generated_by: research
    serves_question: <value from direction.fields.serves_question>
-   topics: <value from direction.fields.topics>
+   related: <concept links from direction.fields.related - a YAML block list of
+             [[wiki/concepts/<slug>]] wikilinks, or `related: []` when none>
    targets_gap: <value from direction.fields.targets_gap>
    priority: <value from direction.fields.priority | split " - " [0] | strip>
    status: open
@@ -347,7 +350,7 @@ Run these commands within WSL (prepend `wsl.exe -- bash -lc 'cd /home/jpietrak/s
 
 - **MAY write:** `objective/direction/`, `objective/research_question_proposal/`,
   `objective/hot.md`, `objective/index.md`.
-- **MUST NOT write:** `wiki/` (any path), `objective/purpose/`, `objective/topic/`,
+- **MUST NOT write:** `wiki/` (any path), `objective/purpose/`,
   `objective/research_question/`, `objective/decision/`, `raw/`, `meta/ingest_index*`,
   `meta/health_report/`, `meta/cost_report/`, `docs/`, `agents/`, `scripts/`.
 - The `PreToolUse` RBAC guard (`scripts/rbac_guard.py`) enforces this allowlist. Treat
@@ -383,9 +386,10 @@ path-qualified wikilinks; no aliases).
 - Follow [`skills/references/ai-first-rules.md`](../references/ai-first-rules.md) and
   [`write-rules.md`](../references/write-rules.md). ASCII only - no em-dashes, curly
   quotes, or Unicode math. Use ` - ` for dashes.
-- Frontmatter field keys must be VERBATIM (serves_question, topics, targets_gap,
+- Frontmatter field keys must be VERBATIM (serves_question, related, targets_gap,
   reasoning_pattern, expected_evidence, seed_queries, solves_when, priority) - these
-  are parsed by `parse_directions()` and consumed by the Phase 3 web agent.
+  are parsed by `parse_directions()` and consumed by the Phase 3 web agent. The subject
+  axis is carried by concept wikilinks in `related:` (the retired `topics:` field is gone).
 - Anti-fabrication: never invent a gap, direction, or proposal. Every direction traces
   to an open question + a specific wiki gap (cite the [[wiki/page]] or direction id).
 - Cost: all reasoning = research agent credit pool ($0 marginal). No paid route.

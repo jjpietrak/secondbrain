@@ -59,7 +59,7 @@ forwards to the ranker; `--limit N` bounds per-source harvest.
 ### What `web_crawl.py` does internally (and how to inspect each stage)
 
 1. **DECISION** — `scripts/web_decision.py build_plan` reads the per-gap files
-   `wiki/gap/GAP-*.md` (each with `## Missing` / `topics` / `fillable_by` — TOP PRIORITY) +
+   `wiki/gap/GAP-*.md` (each with `## Missing` / `concepts` / `fillable_by` — TOP PRIORITY) +
    open `objective/direction/*` + the registry + config, and emits a ranked crawl plan. Gap
    queries are derived deterministically from the gap title + the cleaned first sentence of
    `## Missing` (markdown/wikilinks/citation-brackets stripped). Inspect it standalone:
@@ -178,7 +178,7 @@ The user reviews `meta/nightly_report/<date>.md` and picks **0-5**:
   `agents.ingest_index enqueue` (a Bash call). MAY raise `objective/agent_todo/` only if a future
   decision grants it (not in 3A).
 - **MUST NOT write:** `wiki/` (wiki owns ingest), `raw/` (Needs-Approval, wiki writes on approve),
-  `objective/direction|research_question|decision|purpose|topic`, `meta/health_report|cost_report`.
+  `objective/direction|research_question|decision|purpose`, `meta/health_report|cost_report`.
 - **No `Edit`** anywhere; analysis is Read/Grep/Glob + WebSearch/WebFetch only.
 
 ## Phase 3B -- Perplexity Tier-2 harvest (opt-in, GATED)

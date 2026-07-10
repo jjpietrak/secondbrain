@@ -9,10 +9,10 @@ Public surface
 --------------
 gather_wiki_state(vault_root) -> dict
     Main entry point.  Returns a payload dict with keys:
-        purpose      : str  (vault purpose, or "not yet defined")
-        today        : str  (ISO date, e.g. "2026-06-21")
-        active_topics: str  (formatted topic list, or "none")
-        wiki_state   : str  (formatted wiki-state block for WIKI_GAP_PROMPT)
+        purpose        : str  (vault purpose, or "not yet defined")
+        today          : str  (ISO date, e.g. "2026-06-21")
+        active_concepts: str  (formatted concept list, or "none")
+        wiki_state     : str  (formatted wiki-state block for WIKI_GAP_PROMPT)
 
         open_question_count: int  (count of open-question items harvested)
         page_count          : int (pages included in wiki_state)
@@ -256,34 +256,41 @@ def _read_purpose(vault_root: Path) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Active topics reader
+# Active concepts reader
 # ---------------------------------------------------------------------------
 
-def _read_active_topics(vault_root: Path) -> str:
-    """Read active topics from objective/topic/*.md.
+def _read_active_concepts(vault_root: Path) -> str:
+    """Read active concepts from wiki/concepts/*.md.
 
-    Returns a formatted string for {active_topics} in the prompt.
-    Returns "none" if no topics exist.
+    The subject axis is now the set of concept pages under wiki/concepts/ (the
+    retired objective/topic/ nodes are gone). Each concept is listed as
+    ``- <slug>: <summary>`` where <slug> is the concept page stem (the value used
+    in ``[[wiki/concepts/<slug>]]`` links).
+
+    Returns a formatted string for {active_concepts} in the prompt.
+    Returns "none" if no concept pages exist.
     """
-    topics_dir = vault_root / "objective" / "topic"
-    if not topics_dir.exists():
+    concepts_dir = vault_root / "wiki" / "concepts"
+    if not concepts_dir.exists():
         return "none"
     entries: list[str] = []
-    for topic_path in sorted(topics_dir.glob("*.md")):
-        if topic_path.name.startswith("_template"):
+    for concept_path in sorted(concepts_dir.glob("*.md")):
+        if concept_path.name.startswith("_template") or concept_path.name in SKIP_NAMES:
             continue
         try:
-            content = topic_path.read_text(encoding="utf-8", errors="ignore")
-            fm, body = _parse_frontmatter(content)
-            status = fm.get("status", "active")
-            if status not in {"active", ""}:
-                continue  # skip paused/completed topics
-            tid = fm.get("id", topic_path.stem)
-            # First non-empty body line as the topic summary.
+            content = concept_path.read_text(encoding="utf-8", errors="ignore")
+            _, body = _parse_frontmatter(content)
+            slug = concept_path.stem
+            # First non-empty, non-heading body line as the concept summary.
             summary = next(
-                (ln.strip() for ln in body.splitlines() if ln.strip()), topic_path.stem
+                (
+                    ln.strip().lstrip("#").strip()
+                    for ln in body.splitlines()
+                    if ln.strip() and not ln.strip().startswith("#")
+                ),
+                slug,
             )
-            entries.append(f"- {tid}: {summary}")
+            entries.append(f"- {slug}: {summary}")
         except OSError:
             continue
     return "\n".join(entries) if entries else "none"
@@ -339,7 +346,7 @@ def gather_wiki_state(vault_root: Optional[str | Path] = None) -> dict:
     Returns
     -------
     dict with keys:
-        purpose, today, active_topics, wiki_state,
+        purpose, today, active_concepts, wiki_state,
         open_question_count, page_count
     """
     root = _resolve_vault_root(vault_root)
@@ -361,12 +368,12 @@ def gather_wiki_state(vault_root: Optional[str | Path] = None) -> dict:
     wiki_state = _format_wiki_state(pages)
 
     purpose = _read_purpose(root)
-    active_topics = _read_active_topics(root)
+    active_concepts = _read_active_concepts(root)
 
     return {
         "purpose": purpose,
         "today": today,
-        "active_topics": active_topics,
+        "active_concepts": active_concepts,
         "wiki_state": wiki_state,
         "open_question_count": open_question_count,
         "page_count": len(pages),
@@ -405,7 +412,7 @@ def main() -> None:
         print(f"Open-question items: {payload['open_question_count']}")
         print(f"Today       : {payload['today']}")
         print(f"Purpose     : {payload['purpose'][:120]}...")
-        print(f"Topics      :\n{payload['active_topics']}")
+        print(f"Concepts    :\n{payload['active_concepts']}")
 
 
 if __name__ == "__main__":

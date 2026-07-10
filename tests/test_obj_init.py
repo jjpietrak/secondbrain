@@ -37,7 +37,6 @@ obj_init = _load("obj_init", "scripts/obj_init.py")
 
 EXPECTED_FOLDERS = [
     "objective/purpose",
-    "objective/topic",
     "objective/research_question",
     "objective/decision",
     "objective/research_question_proposal",
@@ -47,7 +46,6 @@ EXPECTED_FOLDERS = [
 
 EXPECTED_TEMPLATES = [
     "objective/purpose/_template.md",
-    "objective/topic/_template.md",
     "objective/research_question/_template.md",
     "objective/decision/_template.md",
     "objective/research_question_proposal/_template.md",
@@ -78,11 +76,11 @@ def test_apply_creates_structure() -> None:
 
         plan = obj_init.run_apply(vault)
 
-        # All 7 subdirs must exist.
+        # All expected subdirs must exist (the retired topic/ folder is gone).
         for rel in EXPECTED_FOLDERS:
             assert (vault / rel).is_dir(), f"missing folder: {rel}"
 
-        # All 7 templates must exist.
+        # All expected templates must exist.
         for rel in EXPECTED_TEMPLATES:
             path = vault / rel
             assert path.exists(), f"missing template: {rel}"
@@ -97,7 +95,6 @@ def test_apply_creates_structure() -> None:
         assert index_path.exists(), "objective/index.md not created"
         index_text = index_path.read_text(encoding="utf-8")
         assert "next_id:" in index_text, "index.md missing next_id block"
-        assert "topic: 1" in index_text
         assert "research_question: 1" in index_text
         assert "direction: 1" in index_text
 
@@ -155,15 +152,15 @@ def test_apply_is_idempotent() -> None:
 def test_apply_does_not_overwrite_existing_template() -> None:
     with tempfile.TemporaryDirectory() as td:
         vault = Path(td) / "vault"
-        (vault / "objective" / "topic").mkdir(parents=True)
-        existing_content = "# custom topic template\n"
-        (vault / "objective" / "topic" / "_template.md").write_text(
+        (vault / "objective" / "research_question").mkdir(parents=True)
+        existing_content = "# custom research_question template\n"
+        (vault / "objective" / "research_question" / "_template.md").write_text(
             existing_content, encoding="utf-8"
         )
 
         obj_init.run_apply(vault)
 
-        kept = (vault / "objective" / "topic" / "_template.md").read_text(encoding="utf-8")
+        kept = (vault / "objective" / "research_question" / "_template.md").read_text(encoding="utf-8")
         assert kept == existing_content, (
             "apply overwrote an existing _template.md"
         )
@@ -208,10 +205,6 @@ def test_template_frontmatter_per_type() -> None:
         cases = {
             "objective/purpose/_template.md": {
                 "must_contain": ["type: purpose", "id: purpose", "status: active", "vault:"],
-            },
-            "objective/topic/_template.md": {
-                "must_contain": ["type: topic", "id: T-NNNN", "status: active",
-                                 "related_questions:"],
             },
             "objective/research_question/_template.md": {
                 "must_contain": ["type: research_question", "id: Q-NNNN", 'solved: "no"',

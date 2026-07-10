@@ -44,10 +44,10 @@ VAULT PURPOSE:
 
 TODAY: {today}
 
-ACTIVE TOPICS:
-{active_topics}
+ACTIVE CONCEPTS:
+{active_concepts}
 
-CURRENT WIKI STATE (entities + concepts/synthesis + sources, retrieved for the active topics). For each page, its "## For future Claude" preamble and its "## Open Questions" section are included verbatim where present:
+CURRENT WIKI STATE (entities + concepts/synthesis + sources, retrieved for the active concepts). For each page, its "## For future Claude" preamble and its "## Open Questions" section are included verbatim where present:
 {wiki_state}
 
 TOP-PRIORITY SIGNAL - read this first:
@@ -59,7 +59,7 @@ Output EXACTLY this structure (markdown), nothing else:
 - [Each unresolved item lifted near-verbatim from a page's "## Open Questions" section, or a staleness/uncertainty caveat in its "## For future Claude" preamble - cite the [[wiki/page]] it came from. These rank first as crawl directions.]
 
 ## Coverage Map
-- [Per active topic: "solid" | "thin" | "absent", with a representative [[wiki/...]] page]
+- [Per active concept: "solid" | "thin" | "absent", with a representative [[wiki/...]] page]
 
 ## Knowledge Gaps
 For each gap, one block:
@@ -67,7 +67,7 @@ For each gap, one block:
 - shows_up_in: [thin [[wiki/page]] / an entity referenced with no page / a concept with no examples / a claim with no source]
 - missing: [the specific external knowledge that would close it]
 - fillable_by: web | x | arxiv | github | forum
-- topic: [related topic id]
+- concepts: [[[wiki/concepts/<slug>]] link(s) naming the subject concept(s) this gap relates to]
 - priority: high | medium | low  -  [boost to high if it also appears in the Open-Question Harvest]
 
 ## Stale / Unverified
@@ -129,9 +129,9 @@ End with one final line: "READY".
 # ===========================================================================
 
 # Research agent, top-down per-question analysis (skills: obj-query / research-deep).
-# Reasons over the OBJECTIVES (purpose, open questions, topics), reading the wiki
+# Reasons over the OBJECTIVES (purpose, open questions, concepts), reading the wiki
 # and reconciling against the Wiki agent's Gaps. Emits NO queries - synthesis does that.
-RESEARCH_ANALYSIS_PROMPT = """You are the Research Agent analyzing the open research agenda against what the vault KNOWS, before any new web research. You reason over OBJECTIVES (purpose, questions, topics), not keywords. Never fabricate; cite vault claims with [[wikilinks]] and date external facts.
+RESEARCH_ANALYSIS_PROMPT = """You are the Research Agent analyzing the open research agenda against what the vault KNOWS, before any new web research. You reason over OBJECTIVES (purpose, questions, concepts), not keywords. Never fabricate; cite vault claims with [[wikilinks]] and date external facts.
 
 VAULT PURPOSE (the fixed mission):
 {purpose}
@@ -141,10 +141,10 @@ TODAY: {today}
 OPEN / UNANSWERED RESEARCH QUESTIONS (solved=no; each serves the purpose):
 {open_questions}
 
-ACTIVE TOPICS (each open question relates to one or more):
-{active_topics}
+ACTIVE CONCEPTS (each open question relates to one or more):
+{active_concepts}
 
-RELEVANT WIKI KNOWLEDGE (retrieved for these questions/topics; page "## For future Claude" + "## Open Questions" sections included where present):
+RELEVANT WIKI KNOWLEDGE (retrieved for these questions/concepts; page "## For future Claude" + "## Open Questions" sections included where present):
 {wiki_baseline}
 
 WIKI-AGENT GAPS (bottom-up gaps + Open-Question Harvest already surfaced - reconcile against, do not duplicate):
@@ -162,7 +162,7 @@ For EACH open research question, one block:
 - Gap: [the specific missing knowledge blocking a SOLVED answer]
 - Stale / contradicted: [vault claims to re-verify - [[wiki/file]] + date; "none found" if so]
 - Status: open | partial | blocked  -  [one-line justification]
-- Related topics: [topic ids]
+- Related concepts: [[[wiki/concepts/<slug>]] link(s)]
 
 ## Cross-Cutting Gaps
 - [gaps spanning multiple questions/topics; reconcile with the WIKI-AGENT GAPS above]
@@ -188,8 +188,8 @@ TODAY: {today}
 OPEN RESEARCH QUESTIONS (with per-question gaps from analysis):
 {open_questions}
 
-ACTIVE TOPICS:
-{active_topics}
+ACTIVE CONCEPTS:
+{active_concepts}
 
 GAP ANALYSIS (research per-question analysis + wiki-agent gaps, converged; Open-Question Harvest items rank first):
 {gap_analysis}
@@ -201,7 +201,7 @@ Produce 3-7 directions. Output ONLY the blocks below, each in EXACTLY this forma
 
 ### DIRECTION: <short imperative title>
 - serves_question: <research_question id(s)>
-- topics: <related topic id(s)>
+- related: <[[wiki/concepts/<slug>]] link(s) naming the subject concept(s)>
 - targets_gap: <the specific gap this closes; prefer gaps from the Open-Question Harvest>
 - reasoning_pattern: <1-2 sentences: the hypothesis for WHERE the evidence lives and WHY looking there advances the question. The objective-driven angle, not keywords.>
 - expected_evidence: <the KIND of source/finding that would actually advance the question, so the Web agent can rank candidates - e.g. "a benchmarked measurement on real hardware, not a survey", "a primary arXiv paper", "a vendor datasheet", "practitioner discourse">
@@ -321,7 +321,7 @@ def parse_directions(synth_text: str) -> list[dict]:
                 key, _, val = stripped.partition(":")
                 key = key.strip().lower().replace(" ", "_")
                 if key in {
-                    "serves_question", "topics", "targets_gap", "reasoning_pattern",
+                    "serves_question", "related", "targets_gap", "reasoning_pattern",
                     "expected_evidence", "seed_queries", "solves_when", "priority",
                 }:
                     current["fields"][key] = val.strip()
