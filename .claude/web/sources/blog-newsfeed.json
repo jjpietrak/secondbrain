@@ -2,7 +2,7 @@
     "metadata": {
       "version": "1.0",
       "generated": "2026-06-19",
-      "total_sources": 44,
+      "total_sources": 45,
       "scope": "Blogs, news feeds, and announcements (excludes research paper databases)",
       "categories": ["vendor_blogs", "research_institutions", "benchmarking", "inference_frameworks", "hardware_analysis", "conferences", "model_releases", "quantization", "hyperscaler_infrastructure", "market_analysis", "specialist_research"]
     },
@@ -27,7 +27,7 @@
         "focus": "GTC announcements, chip releases, dataflow innovations, Dynamo disaggregation framework",
         "update_frequency": "2-3x/week",
         "relevance": 5,
-        "priority": "critical"
+        "priority": "high"
       },
       {
         "id": "amd_instinct_blog",
@@ -61,7 +61,7 @@
         "focus": "LLMware ASIC, speculative execution, custom silicon for inference",
         "update_frequency": "1-2x/month",
         "relevance": 4,
-        "priority": "high",
+        "priority": "critical",
         "note": "Post-NVIDIA acquisition (late 2025)"
       },
       {
@@ -84,7 +84,7 @@
         "focus": "Gaudi training processors, Goya inference ASICs, distributed training, RoCE networking",
         "update_frequency": "1-2x/month",
         "relevance": 3,
-        "priority": "medium"
+        "priority": "high"
       },
       {
         "id": "sambanova_blog",
@@ -106,7 +106,7 @@
         "focus": "Grayskull/Wormhole ASIC architecture, open-source software",
         "update_frequency": "monthly",
         "relevance": 3,
-        "priority": "medium"
+        "priority": "high"
       },
       {
         "id": "etched_ai_blog",
@@ -128,7 +128,7 @@
         "focus": "MLPerf v6.0 announcements, methodology updates, benchmark releases",
         "update_frequency": "quarterly",
         "relevance": 4,
-        "priority": "high"
+        "priority": "critical"
       },
       {
         "id": "inferencex_semianalysis",
@@ -174,6 +174,18 @@
         "update_frequency": "1-2x/month",
         "relevance": 5,
         "priority": "critical"
+      },
+      {
+        "id": "perplexity_research_blog",
+        "name": "Perplexity Research Blog",
+        "url": "https://research.perplexity.ai/",
+        "rss_feed": "https://research.perplexity.ai/rss",
+        "category": "inference_frameworks",
+        "focus": "Production MoE inference at scale: PD disaggregation, custom kernels (CuTeDSL), quantization (MXFP8/MXFP4), NVLink/Blackwell deployments, EP and DP-EP sharding strategies, speculative decoding",
+        "update_frequency": "monthly",
+        "relevance": 5,
+        "priority": "high",
+        "note": "rss_feed is a best-guess Ghost-pattern URL and is UNVERIFIED; reach this source via WebSearch discovery path if the feed does not resolve. High-quality engineering posts from a major inference operator."
       },
       {
         "id": "ray_serve_blog",
@@ -229,7 +241,7 @@
         "focus": "Semiconductor design trends, fab capacity, HBM advances, chip announcements",
         "update_frequency": "daily",
         "relevance": 3,
-        "priority": "medium"
+        "priority": "high"
       },
       {
         "id": "toms_hardware",
@@ -262,7 +274,7 @@
         "focus": "AI Index Report 2026, policy, AI safety, hardware implications",
         "update_frequency": "quarterly",
         "relevance": 3,
-        "priority": "medium"
+        "priority": "high"
       },
       {
         "id": "mit_csail",
@@ -306,7 +318,7 @@
         "focus": "GPT releases, reasoning models, inference advances, technical updates",
         "update_frequency": "1-2x/month",
         "relevance": 4,
-        "priority": "high"
+        "priority": "critical"
       },
       {
         "id": "anthropic_blog",
@@ -317,7 +329,7 @@
         "focus": "Claude model releases, scaling laws, safety research, technical announcements",
         "update_frequency": "1-2x/month",
         "relevance": 3,
-        "priority": "medium"
+        "priority": "critical"
       },
       {
         "id": "meta_ai_blog",
@@ -416,7 +428,7 @@
         "focus": "Broad AI trends, emerging models, infrastructure news, accessibility to practitioners",
         "update_frequency": "weekly",
         "relevance": 3,
-        "priority": "medium"
+        "priority": "critical"
       },
       {
         "id": "thinking_machines_ai_blog",
@@ -427,7 +439,7 @@
         "focus": "Computational thinking, AI applications, reasoning systems, infrastructure implications",
         "update_frequency": "1-2x/month",
         "relevance": 3,
-        "priority": "medium"
+        "priority": "critical"
       },
       {
         "id": "chiplog",
@@ -483,7 +495,7 @@
           "focus": "GPU/ASIC architecture innovations, memory hierarchies, tensor processing",
           "update_frequency": "annual",
           "relevance": 5,
-          "priority": "critical"
+          "priority": "high"
         },
         {
           "id": "micro_2026",
@@ -493,7 +505,7 @@
           "focus": "Microarchitectural innovations for AI accelerators",
           "update_frequency": "annual",
           "relevance": 5,
-          "priority": "critical"
+          "priority": "high"
         },
         {
           "id": "pldi_2026",
@@ -503,7 +515,7 @@
           "focus": "Compiler optimizations for heterogeneous accelerators, MLIR advances",
           "update_frequency": "annual",
           "relevance": 4,
-          "priority": "high"
+          "priority": "medium"
         },
         {
           "id": "mlsys_2026",

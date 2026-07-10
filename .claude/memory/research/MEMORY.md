@@ -48,14 +48,29 @@ current; never store fact bodies here.
 - Deep zone analysis: H800 dead zone for DeepSeek-V3 at NF<=2; Step-3 essentially immune.
 - Minimum B_ScaleOut to eliminate dead zone at NF=X for DeepSeek-V3: 20*X GB/s.
 
-## Objective graph state (updated 2026-06-26, post-correction)
+## obj-synth run (2026-07-10, post-promote direction audit)
 
-- Current open research questions: 5 (Q-0001..Q-0003, Q-0005..Q-0006); Q-0004 SOLVED.
-- Current open directions: 9 (DIR-0001..DIR-0009; DIR-0006 in complete/ as provenance record).
-  DIR-0007/0008/0009 bodies corrected for Tetra=FFN-only role 2026-06-26.
-- Current proposals: 4 (QP-0001, QP-0002, QP-0003, QP-0004), all pending user approval.
-- Last skill run: obj-reconcile + arch-correction, 2026-06-26.
+- DIR-0007 reassigned: serves_question changed from Q-0001 to Q-0007 (C_min_afd content belongs to Q-0007, not Q-0001).
+- DIR-0003 updated: revised framing to match Q-0003 elevated priority; BW_egress formula / FTL / CPO vs PCIe / GAP-05.
+- DIR-0010 created: serves Q-0008 (software disagg + compiler design); covers EaaS interface, Iris Tetra FFN-only fit, compiler graph partitioning + A2E/E2A IR + PhaseGate.
+- No stray directions found. All 10 active directions cover valid open questions.
+- hot.md rewritten: current state table, phase 3 crawl targets, already-answerable list.
+- Phase 3 crawl blockers for Q-0008: arXiv 2509.17863 (EaaS) and 2508.02520 (xDeepServe) un-ingested.
+- GAP-05 (optical KV layout / format-translation cost) unresolved; blocks DIR-0003 acceptance criterion D.
+
+## Objective graph state (updated 2026-07-10, post-promote QP-0001 -> Q-0008)
+
+- Current open research questions: 7 (Q-0001..Q-0003, Q-0005..Q-0008); Q-0004 SOLVED.
+- Q-0007 promoted from QP-0003 (chunked-prefill AFD C_min_afd); user-assigned ID (not auto).
+- Q-0008 promoted from QP-0001 (software disagg primitives + serving interface); extended
+  with compiler design scope (AFD inter-pool data movement, XLA/TVM/IREE gap, DSL primitives).
+  Priority: high. Topic: software-disagg-serving. File: Q-0008-software-disagg-compiler-heterogeneous-inference.md
+- Current open directions: 10 (DIR-0001..DIR-0005, DIR-0007..DIR-0010; DIR-0006 in complete/).
+  DIR-0007 reassigned Q-0001->Q-0007; DIR-0003 updated for revised Q-0003; DIR-0010 new for Q-0008.
+- Current proposals: 1 (QP-0004 pending); QP-0001 (approved/promoted -> Q-0008) deleted 2026-07-10.
+- Last skill run: question-promote QP-0001 -> Q-0008 (with compiler design extension), 2026-07-10.
 - Report: research/deep/2026-06-26-megascale-infer-pa-afd-disagg-chunked-prefill.md (revised)
+- index.md next_id.research_question = 9 (Q-0008 allocated; next auto is Q-0009)
 
 ## Key synthesis: AFD + chunked prefill (2026-06-26) -- CORRECTED 2026-06-26
 
@@ -93,7 +108,22 @@ disaggregation, not just prefill-vs-decode:
 - Q-0004 -> SOLVED (2026-06-24): solved: yes; answer_ref: wiki/sources/llmservingsim-2-2602.23036.md.
   All 3 acceptance criteria met. No separate research/Q-0004.md written; source page is the answer ref.
   question-solve used SB_SANCTIONED_SKILL=question-solve; index updated (6 open, 1 solved); relink applied.
-- Q-0002..Q-0003, Q-0005..Q-0006 -> no reports yet.
+- Q-0003 -> REVISED + ELEVATED (2026-07-10): priority raised low -> high. Challenge analysis added.
+  Revised framing: NVIDIA BW_egress formula vs. Iris Tetra FTL; PCIe 256 GB/s floor coverage;
+  CPO vs. PCIe per-token latency penalty. GAP-05 identified as blocking prerequisite.
+  Key finding: beyond-the-buzz "not a bottleneck" conclusion conditional on homogeneous Blackwell
+  clusters; does not apply to Tetra (BW_egress proportional to 1/FTL).
+- Q-0002, Q-0005..Q-0006 -> no reports yet.
+- Q-0003 body update (2026-07-10): added "Known techniques" subsection with F3 (pipelined
+  layer-by-layer KV transfer for 128K+) and F4 (ZTE 1D tensor flattening; blocker-dependency
+  Q-0003 <-> Q-0008). Written via SB_SANCTIONED_SKILL=question-promote.
+- QP-0004 body update (2026-07-10): added "Segment-level plan search" subsection -- segment-level
+  Algorithm-1 framing, 6-complexity-dimension mapping, cross-refs to chunked-prefill-afd and
+  deployment-plan-search concepts. updated: set to 2026-07-10.
+- DIR-0007 body update (2026-07-10): added "C_min_afd contradiction note" between expected_evidence
+  and seed_queries. Documents 8K analytical floor vs. 512-4096 empirical AFD2 sweep (lumai-afd-
+  modelling-june2026 slide 15). Three reconciliation hypotheses enumerated. solves_when now requires
+  reconciliation as fourth condition.
 
 ## RBAC R4 contract reminder
 
