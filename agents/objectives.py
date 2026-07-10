@@ -7,7 +7,6 @@ graph without ever reading JSON.
 
 Node types and id schemes:
   purpose                    -> id: purpose (single file)
-  topic                      -> id: T-NNNN
   research_question          -> id: Q-NNNN, solved: yes|no
   decision                   -> id: D-NNNN, status: active|superseded|archived
   research_question_proposal -> id: QP-NNNN, status: pending|approved|rejected
@@ -96,22 +95,81 @@ _FM_RE = re.compile(r"^---\n(.*?)\n---(?:\n|$)", re.DOTALL)
 def _parse_fm(text: str) -> dict[str, str]:
     """Parse YAML-ish frontmatter into a flat str->str dict.
 
-    Handles simple scalar values, quoted strings, and inline lists.
+    Handles simple scalar values, quoted strings, inline lists, and YAML block
+    lists.  A key with an empty inline value followed by indented "- item" lines
+    (e.g. a ``related:`` block of quoted wikilinks) is collected into a bracketed
+    inline-list string (e.g. "[[[wiki/concepts/kv-cache]], [[wiki/concepts/moe]]]")
+    so downstream extractors see a consistent shape.
     Does NOT parse nested mappings (next_id block is handled separately).
     """
     m = _FM_RE.match(text)
     if not m:
         return {}
     fm: dict[str, str] = {}
-    for line in m.group(1).splitlines():
-        if ":" not in line or line.lstrip().startswith("#"):
+    lines = m.group(1).splitlines()
+    n = len(lines)
+    i = 0
+    while i < n:
+        line = lines[i]
+        stripped = line.lstrip()
+        if ":" not in line or stripped.startswith("#") or stripped.startswith("- "):
+            i += 1
             continue
         k, _, v = line.partition(":")
+        key = k.strip().lower()
         raw = v.strip()
+        if raw == "":
+            # Empty inline value: look ahead for a YAML block list ("- item").
+            items: list[str] = []
+            j = i + 1
+            while j < n and lines[j].lstrip().startswith("- "):
+                item = lines[j].lstrip()[2:].strip()
+                if len(item) >= 2 and item[0] in ('"', "'") and item[-1] == item[0]:
+                    item = item[1:-1]
+                items.append(item)
+                j += 1
+            if items:
+                fm[key] = "[" + ", ".join(items) + "]"
+                i = j
+                continue
+            fm[key] = ""
+            i += 1
+            continue
         if len(raw) >= 2 and raw[0] in ('"', "'") and raw[-1] == raw[0]:
             raw = raw[1:-1]
-        fm[k.strip().lower()] = raw
+        fm[key] = raw
+        i += 1
     return fm
+
+
+# ---------------------------------------------------------------------------
+# Concept-link helper (shared: reused by web_decision.py)
+# ---------------------------------------------------------------------------
+
+# Match a concept wikilink: [[wiki/concepts/<slug>]] or bare [[concepts/<slug>]],
+# tolerating an alias (|Alias) and/or anchor (#heading) suffix.
+_CONCEPT_LINK_RE = re.compile(
+    r"\[\[\s*(?:wiki/)?concepts/([^\]|#]+?)\s*(?:[|#][^\]]*)?\]\]",
+    re.IGNORECASE,
+)
+
+
+def concept_slugs(text: str) -> list[str]:
+    """Extract concept slugs from concept wikilinks found in `text`.
+
+    Accepts ``[[wiki/concepts/<slug>]]`` and bare ``[[concepts/<slug>]]``; strips
+    any ``|alias`` and ``#anchor`` suffix.  Returns slugs in order of appearance,
+    de-duplicated.  `text` may be a raw frontmatter value, a bracketed inline
+    list, or any prose containing such links.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for m in _CONCEPT_LINK_RE.finditer(text or ""):
+        slug = m.group(1).strip()
+        if slug and slug not in seen:
+            seen.add(slug)
+            out.append(slug)
+    return out
 
 
 def _parse_next_id_block(text: str) -> dict[str, int]:
@@ -158,7 +216,6 @@ def _body(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 _TYPE_TO_PREFIX = {
-    "topic": "T",
     "research_question": "Q",
     "decision": "D",
     "research_question_proposal": "QP",
@@ -168,7 +225,6 @@ _TYPE_TO_PREFIX = {
 
 _TYPE_TO_DIR = {
     "purpose": "purpose",
-    "topic": "topic",
     "research_question": "research_question",
     "decision": "decision",
     "research_question_proposal": "research_question_proposal",
@@ -292,7 +348,8 @@ def scan_objectives(vault_root: Path) -> list[dict]:
                 "serves_question": fm.get("serves_question", ""),
                 "from_gap": fm.get("from_gap", ""),
                 "answer_ref": fm.get("answer_ref", ""),
-                "topic": fm.get("topic", ""),
+                "related": fm.get("related", ""),
+                "concepts": concept_slugs(fm.get("related", "")),
                 "path": vault_rel,
                 "stem": md.stem,
                 "body": _body(text),
@@ -333,7 +390,7 @@ def build_index(vault_root: Path, dry_run: bool = False) -> str:
     lines.append("type: index")
     lines.append(f"updated: {today}")
     lines.append("next_id:")
-    for nt in ("topic", "research_question", "decision",
+    for nt in ("research_question", "decision",
                "research_question_proposal", "direction", "agent_todo"):
         v = existing_next_id.get(nt, 1)
         lines.append(f"  {nt}: {v}")
@@ -353,7 +410,7 @@ def build_index(vault_root: Path, dry_run: bool = False) -> str:
     lines.append("")
     lines.append("| Type | Count |")
     lines.append("|------|-------|")
-    for t in ("purpose", "topic", "research_question", "decision",
+    for t in ("purpose", "research_question", "decision",
               "research_question_proposal", "direction", "agent_todo"):
         c = type_counts.get(t, 0)
         lines.append(f"| {t} | {c} |")
@@ -659,7 +716,7 @@ def _relink_hot_md(
     return record
 
 # Types where written_by = USER (user-authored nodes).
-_USER_AUTHORED_TYPES = {"purpose", "topic", "research_question", "decision"}
+_USER_AUTHORED_TYPES = {"purpose", "research_question", "decision"}
 
 # Agent-authored types get written_by from generated_by (fallback: "research").
 _AGENT_AUTHORED_TYPES = {"direction", "research_question_proposal", "agent_todo"}
@@ -770,34 +827,17 @@ def _build_links_section(
 
     link_lines: list[str] = []
 
-    if node_type == "topic":
-        link_lines.append(f"- part of: {_wikilink('purpose', id_relpath_map)}")
-        rq_raw = fm.get("related_questions", "")
-        for qid in _parse_inline_list(rq_raw):
-            if re.match(r"^Q-\d{4}$", qid):
-                link_lines.append(f"- question: {_wikilink(qid, id_relpath_map)}")
-
-    elif node_type == "research_question":
-        # Primary topic from frontmatter
-        topic_fm = fm.get("topic", "").strip()
-        if re.match(r"^T-\d{4}$", topic_fm):
-            link_lines.append(f"- topic: {_wikilink(topic_fm, id_relpath_map)}")
-        # Secondary topics from body preamble: "Secondary topic: T-NNNN"
-        seen_topics: set[str] = {topic_fm}
-        for m in re.finditer(r"Secondary topic:\s*(T-\d{4})", body):
-            tid = m.group(1)
-            if tid not in seen_topics:
-                seen_topics.add(tid)
-                link_lines.append(f"- topic: {_wikilink(tid, id_relpath_map)}")
+    if node_type == "research_question":
+        # Concept associations come from the related: block of concept links.
+        for slug in concept_slugs(fm.get("related", "")):
+            link_lines.append(f"- concept: [[wiki/concepts/{slug}]]")
 
     elif node_type == "direction":
         sq = fm.get("serves_question", "").strip()
         if re.match(r"^Q-\d{4}$", sq):
             link_lines.append(f"- serves: {_wikilink(sq, id_relpath_map)}")
-        topics_raw = fm.get("topics", "")
-        for tid in _parse_inline_list(topics_raw):
-            if re.match(r"^T-\d{4}$", tid):
-                link_lines.append(f"- topic: {_wikilink(tid, id_relpath_map)}")
+        for slug in concept_slugs(fm.get("related", "")):
+            link_lines.append(f"- concept: [[wiki/concepts/{slug}]]")
 
     elif node_type == "research_question_proposal":
         from_gap = fm.get("from_gap", "")
@@ -807,15 +847,13 @@ def _build_links_section(
             if qid not in seen:
                 seen.add(qid)
                 link_lines.append(f"- relates to: {_wikilink(qid, id_relpath_map)}")
-        for tid in _extract_ids_from_text(combined_text, r"T-\d{4}"):
-            if tid not in seen:
-                seen.add(tid)
-                link_lines.append(f"- topic: {_wikilink(tid, id_relpath_map)}")
+        for slug in concept_slugs(fm.get("related", "")):
+            link_lines.append(f"- concept: [[wiki/concepts/{slug}]]")
 
     elif node_type == "decision":
         scope = fm.get("scope", "").strip()
         # If scope is a node id, link it; else link PURPOSE for known generic scopes.
-        if re.match(r"^(T|Q|DIR)-\d{4}$", scope):
+        if re.match(r"^(Q|DIR)-\d{4}$", scope):
             link_lines.append(f"- governs: {_wikilink(scope, id_relpath_map)}")
         else:
             # all / research / wiki / web / empty -> governs PURPOSE
@@ -1144,7 +1182,7 @@ def _verb_status(vault_root: Path, args: argparse.Namespace) -> int:
         print(json.dumps(out, indent=2))
     else:
         print("Objective node counts:")
-        for t in ("purpose", "topic", "research_question", "decision",
+        for t in ("purpose", "research_question", "decision",
                   "research_question_proposal", "direction", "agent_todo"):
             print(f"  {t:35s}: {counts.get(t, 0)}")
         print(f"  research_question open/solved          : {unsolved}/{solved}")
@@ -1216,7 +1254,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("decisions", help="List active decision nodes")
     sub.add_parser("status", help="Count nodes per type")
     ni = sub.add_parser("next-id", help="Emit + increment next id for a node type")
-    ni.add_argument("node_type", help="Node type: topic|research_question|decision|etc.")
+    ni.add_argument("node_type", help="Node type: research_question|decision|direction|etc.")
     rl = sub.add_parser(
         "relink",
         help="Add written_by + ## Links sections to objective nodes; clean up own-id aliases",

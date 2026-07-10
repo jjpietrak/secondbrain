@@ -193,7 +193,7 @@ def _extract_keywords(reason: str) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# PURPOSE/topic guard: build protected terms from vault purpose + topics
+# PURPOSE/concept guard: build protected terms from vault purpose + concepts
 # ---------------------------------------------------------------------------
 
 def _build_protected_terms(vault_root: str) -> set[str]:
@@ -201,7 +201,7 @@ def _build_protected_terms(vault_root: str) -> set[str]:
 
     Reads:
       <vault_root>/objective/purpose/PURPOSE.md
-      <vault_root>/objective/topic/*.md  (all .md except _template.md)
+      <vault_root>/wiki/concepts/*.md  (all .md except _template.md)
 
     Lowercases + tokenizes each file's full text using the same tokenizer as
     _extract_keywords (split on non-alphanumeric, keep tokens >= 4 chars).
@@ -227,13 +227,13 @@ def _build_protected_terms(vault_root: str) -> set[str]:
     purpose_file = vault_path / "objective" / "purpose" / "PURPOSE.md"
     _ingest_file(purpose_file)
 
-    # topic/*.md (skip _template.md)
-    topic_dir = vault_path / "objective" / "topic"
-    if topic_dir.is_dir():
-        for topic_file in topic_dir.glob("*.md"):
-            if topic_file.name.startswith("_"):
+    # wiki/concepts/*.md (skip _template.md)
+    concepts_dir = vault_path / "wiki" / "concepts"
+    if concepts_dir.is_dir():
+        for concept_file in concepts_dir.glob("*.md"):
+            if concept_file.name.startswith("_"):
                 continue
-            _ingest_file(topic_file)
+            _ingest_file(concept_file)
 
     return protected
 
@@ -565,7 +565,7 @@ def learn(
     raw_data = _ii._load(None, root=vault_path)
     rows = list(raw_data.get("sources", {}).values())
 
-    # Guard 2: build protected terms from PURPOSE + topic files (never penalise these)
+    # Guard 2: build protected terms from PURPOSE + concept files (never penalise these)
     protected_terms = _build_protected_terms(vault_root)
 
     # Filter: only rows discovered by this agent
@@ -658,7 +658,7 @@ def learn(
         if harvest_reject_kw and is_reject and reason:
             kws = _extract_keywords(reason)
             for kw in kws:
-                # Guard 2: never count terms that appear in the vault PURPOSE/topics
+                # Guard 2: never count terms that appear in the vault PURPOSE/concepts
                 if kw in protected_terms:
                     continue
                 # Guard 1: count this token once for this distinct reason

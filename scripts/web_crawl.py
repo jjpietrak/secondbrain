@@ -756,12 +756,11 @@ def _relevance_paragraph(cand: dict) -> str:
 
 _RL_GAP_RE = _re.compile(r"^GAP-\d+$", _re.IGNORECASE)
 _RL_OBJ_RE = _re.compile(
-    r"^(DIR|Q|T|D|QP)-(\d{4,})$", _re.IGNORECASE
+    r"^(DIR|Q|D|QP)-(\d{4,})$", _re.IGNORECASE
 )
 _RL_OBJ_SUBDIR = {
     "DIR": "direction",
     "Q": "question",
-    "T": "topic",
     "D": "decision",
     "QP": "question",
 }

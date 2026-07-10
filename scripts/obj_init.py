@@ -13,7 +13,6 @@ Two modes:
 Node types and folders created:
 
     objective/purpose/          _template.md
-    objective/topic/            _template.md
     objective/research_question/_template.md
     objective/decision/         _template.md
     objective/research_question_proposal/  _template.md
@@ -50,7 +49,6 @@ SCHEMA_VERSION = 1
 
 OBJECTIVE_FOLDERS = [
     "objective/purpose",
-    "objective/topic",
     "objective/research_question",
     "objective/decision",
     "objective/research_question_proposal",
@@ -93,37 +91,6 @@ Edit only the body (the frontmatter status field is user-controlled).
 """
 
 
-def _topic_template() -> str:
-    return """\
----
-type: topic
-id: T-NNNN
-created: {{date}}
-updated: {{date}}
-status: active
-related_questions: []
----
-
-## For future Claude
-This is a TOPIC node. Topics are confirmed research directions or sub-problems
-under the vault purpose. They are USER-ONLY (never created by agents).
-status: active | paused | completed
-related_questions: list of Q-NNNN ids that fall under this topic.
-
-# Topic: {{title}}
-
-## Summary
-<!-- One paragraph: what this topic covers and why it matters. -->
-
-## Open questions
-<!-- Q-NNNN wikilinks pointing to research_question nodes. -->
--
-
-## Key findings so far
--
-"""
-
-
 def _research_question_template() -> str:
     return """\
 ---
@@ -132,7 +99,7 @@ id: Q-NNNN
 created: {{date}}
 updated: {{date}}
 solved: "no"
-topic: T-NNNN
+related: []
 priority: medium
 answer_ref: ""
 ---
@@ -141,6 +108,8 @@ answer_ref: ""
 This is a RESEARCH QUESTION node. It is USER-ONLY.
 solved: "yes" | "no" -- only the USER sets this; agents NEVER flip it autonomously.
 priority: high | medium | low
+related: list of [[wiki/concepts/<slug>]] wikilinks tying this question to its
+subject concepts (plus any cross-node links); replaces the old topic: field.
 answer_ref: filled by question-solve skill pointing to research/<question_id>.md
 
 # Research question
@@ -223,7 +192,7 @@ created: {{date}}
 updated: {{date}}
 written_by: research
 serves_question: Q-NNNN
-topics: []
+related: []
 targets_gap: ""
 priority: medium
 status: open
@@ -231,7 +200,8 @@ status: open
 
 ## For future Claude
 This is a DIRECTION node. Directions are crawl/reasoning trajectories proposed
-by the research agent, not yet promoted to topics. Written by obj-synth or
+by the research agent. related: list of [[wiki/concepts/<slug>]] wikilinks
+naming the subject concepts (replaces the old topics: field). Written by obj-synth or
 deep-synthesis skills. status: open | crawled | superseded.
 priority: high | medium | low.
 The body fields (reasoning_pattern, expected_evidence, seed_queries, solves_when)
@@ -284,7 +254,6 @@ def _index_seed(today: str) -> str:
 type: index
 updated: {today}
 next_id:
-  topic: 1
   research_question: 1
   decision: 1
   research_question_proposal: 1
@@ -340,7 +309,6 @@ Keep under ~500 words; older context graduates to objective/index.md log rows.
 # Only paths inside objective/ subdirs (not the flat files).
 TEMPLATES: dict[str, type] = {
     "objective/purpose/_template.md": _purpose_template,
-    "objective/topic/_template.md": _topic_template,
     "objective/research_question/_template.md": _research_question_template,
     "objective/decision/_template.md": _decision_template,
     "objective/research_question_proposal/_template.md": _research_question_proposal_template,

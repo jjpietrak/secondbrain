@@ -79,7 +79,7 @@ FIXTURE_ANALYSIS = textwrap.dedent("""\
     - shows_up_in: [[wiki/concepts/hbm-bandwidth]]; [[wiki/entities/nvidia-h100]]
     - missing: a benchmarked HBM utilization figure at batch size 1 on H100
     - fillable_by: arxiv | web (recent GPU benchmarks)
-    - topic: T-0001, T-0002
+    - concepts: [[wiki/concepts/hbm-bandwidth]], [[wiki/concepts/roofline]]
     - priority: high  -  appears directly in Open-Question Harvest
 
     ### GAP-02: Roofline model for H100 decode phase
@@ -190,12 +190,12 @@ def test_parse_analysis_fillable_by_multi_tag():
     assert set(g08["fillable_by"]) == {"arxiv", "web", "github"}
 
 
-def test_parse_analysis_topics_list():
-    """GAP-01 has two topics: T-0001, T-0002."""
+def test_parse_analysis_concepts_list():
+    """GAP-01 has two concepts: hbm-bandwidth, roofline."""
     result = parse_analysis(FIXTURE_ANALYSIS)
     g01 = next(g for g in result["gaps"] if g["id"] == "GAP-01")
-    assert "T-0001" in g01["topics"]
-    assert "T-0002" in g01["topics"]
+    assert "hbm-bandwidth" in g01["concepts"]
+    assert "roofline" in g01["concepts"]
 
 
 def test_parse_analysis_priority_first_word():
@@ -321,7 +321,7 @@ def test_split_dry_run_index_path():
 
 
 def test_split_dry_run_gap_file_frontmatter():
-    """Gap file frontmatter has type:gap, id, status:open, topics/fillable_by/priority."""
+    """Gap file frontmatter has type:gap, id, status:open, concepts/fillable_by/priority."""
     result = split(FIXTURE_ANALYSIS, "/tmp/nonexistent_vault_dryrun", apply=False, today="2026-06-23")
     gap01 = next(f for f in result["files"] if "GAP-01" in f["path"])
     content = gap01["content"]
@@ -329,10 +329,10 @@ def test_split_dry_run_gap_file_frontmatter():
     assert "type: gap" in content
     assert "id: GAP-01" in content
     assert "status: open" in content
-    # topics is a YAML list (block or flow style -- just check key + values present)
-    assert "topics:" in content
-    assert "T-0001" in content
-    assert "T-0002" in content
+    # concepts is a YAML list (block or flow style -- just check key + values present)
+    assert "concepts:" in content
+    assert "hbm-bandwidth" in content
+    assert "roofline" in content
     # fillable_by is a YAML list (block or flow style)
     assert "fillable_by:" in content
     assert "arxiv" in content
@@ -419,8 +419,8 @@ def test_split_apply_gap_file_content():
         assert "type: gap" in content
         assert "id: GAP-01" in content
         assert "status: open" in content
-        assert "topics:" in content
-        assert "T-0001" in content
+        assert "concepts:" in content
+        assert "hbm-bandwidth" in content
         assert "fillable_by:" in content
         assert "arxiv" in content
         assert "priority: high" in content
