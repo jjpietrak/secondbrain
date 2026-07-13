@@ -97,7 +97,8 @@ Use the target folder's `_template.md` (the merged superset: live fields + froze
 `ai-first: true`). Always include the universal fields (`type`, `created`, `updated`,
 `tags` including the type, `status`, `ai-first: true`) plus `related:` and, where the note
 draws on external material, `sources:` with `[[sources/X]]` links. For an entity note, follow
-the bi-temporal rule: append to `timeline:`, never overwrite `role`/`status`.
+the bi-temporal rule: append to `timeline:`, never overwrite `role`/`status`. If the entity has
+a code repository in `raw/code/`, set `repo: "[[sources/<name>-repo]]"` in frontmatter.
 
 ---
 

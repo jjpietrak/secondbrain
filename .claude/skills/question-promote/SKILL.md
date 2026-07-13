@@ -166,15 +166,16 @@ Let the helper compute the frontmatter and format it. Then:
    The write is inside a subprocess or shell block. Ensure `SB_SANCTIONED_SKILL` is unset
    in the main skill environment after the locked write completes.
 
-## Step 5 - mark the proposal as approved
+## Step 5 - mark the proposal approved and move it to promoted/
 
 ```bash
 export SB_SANCTIONED_SKILL=question-promote
 ```
 
-Use the helper to update proposal frontmatter:
+Use the helper to update proposal frontmatter, then move the file to the `promoted/` subfolder:
 
 ```bash
+# 1. Update frontmatter in-place (set status: approved, promoted_to: Q-NNNN)
 python -c "
 import sys
 sys.path.insert(0, os.environ.get('CODE_PATH', '.'))
@@ -186,16 +187,18 @@ content = proposal_file.read_text()
 updated = mark_proposal_approved(content)
 proposal_file.write_text(updated)
 "
-```
 
-Acquire a lock, write, then release:
-```bash
-bash scripts/wiki-lock.sh acquire "${PROPOSAL_PATH}" || { sleep 2; bash scripts/wiki-lock.sh acquire "${PROPOSAL_PATH}"; }
-# Update (write the content with status: approved)
-bash scripts/wiki-lock.sh release "${PROPOSAL_PATH}"
+# 2. Move to promoted/ subfolder to remove it from the active proposal list
+PROMOTED_DIR="$VAULT_ROOT/objective/research_question_proposal/promoted"
+mkdir -p "$PROMOTED_DIR"
+mv "${PROPOSAL_PATH}" "$PROMOTED_DIR/$(basename ${PROPOSAL_PATH})"
 
 unset SB_SANCTIONED_SKILL
 ```
+
+The `promoted/` subfolder keeps the proposal as a permanent record (traceable from the
+new Q-NNNN via `promoted_from:` frontmatter) while removing it from the active pending
+list that `agents.objectives frontier` and `obj-reconcile` scan.
 
 ## Step 6 - update objective/index.md (locked)
 
@@ -225,10 +228,11 @@ Display:
 ```
 **Promotion complete:**
 - Created: objective/research_question/{NEW_ID}-{slug}.md
-- Marked: {QP_ID} status: approved
+- Moved: {QP_ID} -> objective/research_question_proposal/promoted/{QP_ID}-{slug}.md (status: approved)
 - Updated: objective/index.md operation log
 
 The research question is now open (solved: no) and ready for synthesis.
+The proposal has been archived to promoted/ and is no longer in the active pending list.
 ```
 
 ## RBAC Notes - R4 user-proxy exception
@@ -254,8 +258,9 @@ to `objective/research_question/` remain denied.
 
 ## Boundaries
 
-- Writes only to `objective/research_question/`, the proposal file (to mark approved), and
-  `objective/index.md`.
+- Writes to `objective/research_question/` (new Q-NNNN file), `objective/index.md`, and
+  moves the promoted proposal from `objective/research_question_proposal/` to
+  `objective/research_question_proposal/promoted/` (status: approved, permanent record).
 - Does NOT autonomously decide which proposals to promote; the user explicitly approves
   each one.
 - Does NOT create decisions (user-only) or concept pages (wiki-owned under `wiki/concepts/`);

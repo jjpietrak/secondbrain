@@ -151,6 +151,7 @@ tags:
   - person       # or: company, tool
 role: "Senior Engineer"        # current role
 company: "[[Acme Corp]]"       # current company
+repo: "[[sources/foo-repo]]"   # optional: [[sources/<name>-repo]] if a raw/code/ repo exists for this entity
 last_interaction: 2026-03-24
 timeline:                       # bi-temporal facts — never delete, only append
   - fact: "CTO at Acme Corp"
