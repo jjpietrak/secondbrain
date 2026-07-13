@@ -9,4 +9,4 @@ This document lists the agents in the Second Brain v0.2 system, their status, an
 | Wiki Agent | active | Librarian that takes care of 'ingest' action and wiki health. |
 | Websearch Agent | active | Coordinates different webcrawl engines, source ranking and propagates insighits from user feedback on accepted/rejected sources. Uses that feedback to improve the search prompts and tool usage. |
 | Research Director | backlog (TBD) | TBD synthesize RA work and deliver high-level insights |
-| Code Agent | backlog (TBD) | TBD write code experiments and confront Obsidian with existing Lumai repos, i.e. AFD Sim |
+| Code Agent | backlog (TBD) | TBD write code experiments and confront Obsidian with existing internal code repos |

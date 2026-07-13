@@ -301,8 +301,8 @@ def pending(name: str | None = None) -> list[Path]:
         rec = led.get(sid)
         is_pending = rec is None or rec.get("status") != "ingested" \
             or rec.get("content_hash") != info["content_hash"]
+        seen_ids.add(sid)
         if is_pending:
-            seen_ids.add(sid)
             out.append(p)
     return out
 
@@ -588,11 +588,10 @@ _OBJ_SUBDIR = {
     "DIR": "direction",
     "Q": "research_question",
     "QP": "research_question_proposal",
-    "T": "topic",
     "D": "decision",
 }
-# Regex matching a supported objective id: DIR-0001, Q-0007, QP-0001, T-0003, D-0001
-_OBJ_ID_RE = re.compile(r"^(DIR|QP|Q|T|D)-(\d+)$", re.IGNORECASE)
+# Regex matching a supported objective id: DIR-0001, Q-0007, QP-0001, D-0001
+_OBJ_ID_RE = re.compile(r"^(DIR|QP|Q|D)-(\d+)$", re.IGNORECASE)
 # Regex matching a GAP id: GAP-01, GAP-08 etc.
 _GAP_ID_RE = re.compile(r"^GAP-\d+$", re.IGNORECASE)
 

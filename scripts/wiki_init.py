@@ -204,7 +204,6 @@ source_url: ""              # frozen schema alias for url
 content_hash: ""            # frozen schema: drift detection
 confidence: medium          # high | medium | low
 status: seed                # seed | developing | mature | evergreen
-key_claims: []
 tags:
   - source
 ai-first: true

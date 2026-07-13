@@ -74,7 +74,8 @@ Read the matched proposal file. Verify frontmatter fields:
 
 Extract from the proposal:
 - `priority`: high | medium | low (defaults to medium if missing).
-- `topic`: the T-NNNN if the proposal specifies it; else empty (user may set this).
+- `related`: the `[[wiki/concepts/<slug>]]` concept links carried on the proposal (the
+  subject axis; may be empty). These flow into the new question's `related:` block.
 - Body: the question text (first line or full body).
 
 ## Step 2 - confirm with the user
@@ -86,7 +87,7 @@ Proposal to promote:
 **ID:** {QP_ID}
 **Status:** pending
 **Priority:** {priority}
-**Topic:** {topic or "(not set)"}
+**Concepts:** {related concept links or "(none)"}
 
 **Question:**
 {first 200 chars of body}
@@ -117,7 +118,8 @@ from scripts.question_lifecycle import proposal_to_question_frontmatter
 from pathlib import Path
 
 proposal_file = Path('${PROPOSAL_PATH}').read_text()
-fm = proposal_to_question_frontmatter(proposal_file, '${NEW_ID}', topic='${TOPIC}')
+# The helper carries the proposal's [[wiki/concepts/<slug>]] links into related:.
+fm = proposal_to_question_frontmatter(proposal_file, '${NEW_ID}')
 
 # Build the frontmatter block.
 fm_lines = [
@@ -126,7 +128,7 @@ fm_lines = [
     f'created: {fm[\"created\"]}',
     f'updated: {fm[\"updated\"]}',
     f'solved: {fm[\"solved\"]}',
-    f'topic: {fm[\"topic\"]}',
+    f'related: {fm[\"related\"]}',
     f'priority: {fm[\"priority\"]}',
     f'answer_ref: {fm[\"answer_ref\"]}',
 ]
@@ -164,15 +166,16 @@ Let the helper compute the frontmatter and format it. Then:
    The write is inside a subprocess or shell block. Ensure `SB_SANCTIONED_SKILL` is unset
    in the main skill environment after the locked write completes.
 
-## Step 5 - mark the proposal as approved
+## Step 5 - mark the proposal approved and move it to promoted/
 
 ```bash
 export SB_SANCTIONED_SKILL=question-promote
 ```
 
-Use the helper to update proposal frontmatter:
+Use the helper to update proposal frontmatter, then move the file to the `promoted/` subfolder:
 
 ```bash
+# 1. Update frontmatter in-place (set status: approved, promoted_to: Q-NNNN)
 python -c "
 import sys
 sys.path.insert(0, os.environ.get('CODE_PATH', '.'))
@@ -184,16 +187,18 @@ content = proposal_file.read_text()
 updated = mark_proposal_approved(content)
 proposal_file.write_text(updated)
 "
-```
 
-Acquire a lock, write, then release:
-```bash
-bash scripts/wiki-lock.sh acquire "${PROPOSAL_PATH}" || { sleep 2; bash scripts/wiki-lock.sh acquire "${PROPOSAL_PATH}"; }
-# Update (write the content with status: approved)
-bash scripts/wiki-lock.sh release "${PROPOSAL_PATH}"
+# 2. Move to promoted/ subfolder to remove it from the active proposal list
+PROMOTED_DIR="$VAULT_ROOT/objective/research_question_proposal/promoted"
+mkdir -p "$PROMOTED_DIR"
+mv "${PROPOSAL_PATH}" "$PROMOTED_DIR/$(basename ${PROPOSAL_PATH})"
 
 unset SB_SANCTIONED_SKILL
 ```
+
+The `promoted/` subfolder keeps the proposal as a permanent record (traceable from the
+new Q-NNNN via `promoted_from:` frontmatter) while removing it from the active pending
+list that `agents.objectives frontier` and `obj-reconcile` scan.
 
 ## Step 6 - update objective/index.md (locked)
 
@@ -223,10 +228,11 @@ Display:
 ```
 **Promotion complete:**
 - Created: objective/research_question/{NEW_ID}-{slug}.md
-- Marked: {QP_ID} status: approved
+- Moved: {QP_ID} -> objective/research_question_proposal/promoted/{QP_ID}-{slug}.md (status: approved)
 - Updated: objective/index.md operation log
 
 The research question is now open (solved: no) and ready for synthesis.
+The proposal has been archived to promoted/ and is no longer in the active pending list.
 ```
 
 ## RBAC Notes - R4 user-proxy exception
@@ -252,11 +258,14 @@ to `objective/research_question/` remain denied.
 
 ## Boundaries
 
-- Writes only to `objective/research_question/`, the proposal file (to mark approved), and
-  `objective/index.md`.
+- Writes to `objective/research_question/` (new Q-NNNN file), `objective/index.md`, and
+  moves the promoted proposal from `objective/research_question_proposal/` to
+  `objective/research_question_proposal/promoted/` (status: approved, permanent record).
 - Does NOT autonomously decide which proposals to promote; the user explicitly approves
   each one.
-- Does NOT create new topics or decisions; those are user-only.
+- Does NOT create decisions (user-only) or concept pages (wiki-owned under `wiki/concepts/`);
+  it only carries the proposal's existing `[[wiki/concepts/<slug>]]` links into the new
+  question's `related:` block.
 - Does NOT write to `wiki/`.
 - ASCII only (no em-dashes, curly quotes, or Unicode math).
 

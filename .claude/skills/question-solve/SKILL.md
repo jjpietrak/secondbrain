@@ -160,7 +160,19 @@ In the context of this skill:
    bash scripts/wiki-lock.sh release "${QUESTION_PATH}"
    ```
 
-3. **Clear sanction immediately after:**
+3. **Move the file to the `solved/` subdirectory:**
+   After writing the updated frontmatter, move the question file:
+   ```bash
+   SOLVED_DIR="$VAULT_ROOT/objective/research_question/solved"
+   mkdir -p "$SOLVED_DIR"
+   SOLVED_PATH="$SOLVED_DIR/$(basename ${QUESTION_PATH})"
+   mv "${QUESTION_PATH}" "$SOLVED_PATH"
+   ```
+   All subsequent references (index.md rows, relink output) must use the new
+   `solved/`-prefixed path. The `objective/index.md` node catalog row must also be
+   updated to reflect the new path if it stores a path column.
+
+4. **Clear sanction immediately after:**
    ```bash
    unset SB_SANCTIONED_SKILL
    ```
@@ -185,11 +197,11 @@ have been solved. This is informational only (the source of truth is the questio
 Display:
 ```
 **Question marked solved:**
-- Question: objective/research_question/{QUESTION_ID}-{slug}.md
+- Question: objective/research_question/solved/{QUESTION_ID}-{slug}.md
 - Answer reference: {ANSWER_REF}
 - Updated: objective/index.md operation log
 
-The question is now closed (solved: yes).
+The question is now closed (solved: yes) and moved to the solved/ subfolder.
 ```
 
 ## RBAC Notes - R4 user-proxy exception
@@ -215,9 +227,10 @@ to `objective/research_question/` remain denied.
 
 ## Boundaries
 
-- Writes only to the target `objective/research_question/Q-NNNN.md` and `objective/index.md`.
+- Writes to `objective/research_question/Q-NNNN.md` (frontmatter update), then moves it
+  to `objective/research_question/solved/Q-NNNN.md`. Also writes `objective/index.md`.
 - Does NOT autonomously decide questions are solved; the user explicitly asserts it.
-- Does NOT create new topics, proposals, or directions; those are separate skills.
+- Does NOT create proposals or directions (separate skills), nor concept pages (wiki-owned).
 - Does NOT write to `wiki/`.
 - ASCII only (no em-dashes, curly quotes, or Unicode math).
 
@@ -226,7 +239,7 @@ to `objective/research_question/` remain denied.
 - `research/{question_id}.md` - standard per-question answer (e.g. research/Q-0001.md).
 - `research/deep/{date}-{slug}.md` - a deep research report that answers the question
   (e.g. research/deep/2026-06-21-hbm-analysis.md).
-- `research/{topic_slug}.md` - a topic synthesis that addresses the question
+- `research/{concept_slug}.md` - a concept synthesis that addresses the question
   (e.g. research/inference-disaggregation.md).
 
 ## Trigger phrases

@@ -33,27 +33,34 @@ TODAY = "2026-06-21"
 
 
 def test_proposal_to_question_basic():
-    """Basic proposal -> question transform."""
+    """Basic proposal -> question transform.
+
+    The subject axis is carried by concept links (the retired topic: field is
+    gone): the proposal's related: concept links are copied into the new
+    question's related: field.
+    """
     proposal = """---
 type: research_question_proposal
 id: QP-0001
 created: 2026-06-21
 updated: 2026-06-21
 generated_by: research
+related:
+  - "[[wiki/concepts/hbm-bandwidth]]"
 status: pending
 ---
 What is the HBM bandwidth utilization ceiling?"""
 
-    result = proposal_to_question_frontmatter(
-        proposal, "Q-0001", topic="T-0001", today=TODAY
-    )
+    result = proposal_to_question_frontmatter(proposal, "Q-0001", today=TODAY)
 
     assert result["type"] == "research_question"
     assert result["id"] == "Q-0001"
     assert result["created"] == TODAY
     assert result["updated"] == TODAY
     assert result["solved"] == "no"
-    assert result["topic"] == "T-0001"
+    # Concept link carried into related:; the retired topic: field is absent.
+    assert "topic" not in result
+    assert "[[wiki/concepts/hbm-bandwidth]]" in result["related"]
     assert result["answer_ref"] == ""
 
 
@@ -96,15 +103,16 @@ Test"""
     assert result["priority"] == "medium"
 
 
-def test_proposal_to_question_topic_optional():
-    """Topic defaults to empty string if not provided."""
+def test_proposal_to_question_related_empty_when_no_concepts():
+    """related: is an empty YAML list when the proposal links no concepts."""
     proposal = """---
 type: research_question_proposal
 ---
 Test"""
 
-    result = proposal_to_question_frontmatter(proposal, "Q-0005", topic="", today=TODAY)
-    assert result["topic"] == ""
+    result = proposal_to_question_frontmatter(proposal, "Q-0005", today=TODAY)
+    assert result["related"] == "[]"
+    assert "topic" not in result
 
 
 def test_proposal_to_question_no_frontmatter():
@@ -118,12 +126,11 @@ def test_proposal_to_question_no_frontmatter():
 
 
 def test_proposal_to_question_whitespace_stripped():
-    """ID and topic whitespace is stripped."""
+    """ID whitespace is stripped."""
     result = proposal_to_question_frontmatter(
-        "---\n---\nTest", "  Q-0007  ", topic="  T-0001  ", today=TODAY
+        "---\n---\nTest", "  Q-0007  ", today=TODAY
     )
     assert result["id"] == "Q-0007"
-    assert result["topic"] == "T-0001"
 
 
 # ---------------------------------------------------------------------------
@@ -223,7 +230,7 @@ id: Q-0001
 created: 2026-06-21
 updated: 2026-06-21
 solved: "no"
-topic: T-0001
+related: "[[wiki/concepts/inference-disagg]]"
 priority: high
 answer_ref: ""
 ---
@@ -277,7 +284,7 @@ def test_mark_question_solved_preserves_other_fields():
     question = """---
 type: research_question
 id: Q-0004
-topic: T-0001
+related: "[[wiki/concepts/inference-disagg]]"
 priority: high
 solved: "no"
 answer_ref: ""
@@ -286,7 +293,7 @@ Text"""
 
     result = mark_question_solved(question, "research/Q-0004.md", today=TODAY)
     assert "id: Q-0004" in result
-    assert "topic: T-0001" in result
+    assert 'related: "[[wiki/concepts/inference-disagg]]"' in result
     assert "priority: high" in result
     assert 'solved: "yes"' in result
 
@@ -356,6 +363,8 @@ type: research_question_proposal
 id: QP-0001
 created: 2026-06-21
 priority: high
+related:
+  - "[[wiki/concepts/hbm-bandwidth]]"
 status: pending
 ---
 Why is HBM bandwidth limited?"""
@@ -366,10 +375,11 @@ Why is HBM bandwidth limited?"""
 
     # Step 2: Create question frontmatter from proposal.
     q_fm = proposal_to_question_frontmatter(
-        proposal, "Q-0001", topic="T-0001", today="2026-06-21"
+        proposal, "Q-0001", today="2026-06-21"
     )
     assert q_fm["type"] == "research_question"
     assert q_fm["priority"] == "high"
+    assert "[[wiki/concepts/hbm-bandwidth]]" in q_fm["related"]
 
     # Step 3: Create the question file with the frontmatter + proposal body.
     question_content = f"""---
@@ -378,7 +388,7 @@ id: {q_fm['id']}
 created: {q_fm['created']}
 updated: {q_fm['updated']}
 solved: {q_fm['solved']}
-topic: {q_fm['topic']}
+related: {q_fm['related']}
 priority: {q_fm['priority']}
 answer_ref: {q_fm['answer_ref']}
 ---

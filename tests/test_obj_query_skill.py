@@ -101,7 +101,7 @@ id: Q-0001
 created: 2026-01-01
 updated: 2026-06-01
 solved: "no"
-topic: T-0001
+related: "[[wiki/concepts/disaggregation]]"
 priority: high
 answer_ref: ""
 ---
@@ -116,7 +116,7 @@ id: Q-0002
 created: 2026-02-01
 updated: 2026-06-01
 solved: "no"
-topic: T-0001
+related: "[[wiki/concepts/disaggregation]]"
 priority: medium
 answer_ref: ""
 ---
@@ -131,7 +131,7 @@ id: Q-0003
 created: 2026-01-15
 updated: 2026-06-15
 solved: "yes"
-topic: T-0002
+related: "[[wiki/concepts/hbm-cost]]"
 priority: low
 answer_ref: "research/Q-0003.md"
 ---
@@ -148,7 +148,7 @@ created: 2026-02-01
 updated: 2026-06-01
 generated_by: research
 serves_question: Q-0001
-topics: [T-0001]
+related: "[[wiki/concepts/disaggregation]]"
 targets_gap: optical-interconnect
 priority: high
 status: open
@@ -175,7 +175,7 @@ created: 2026-03-01
 updated: 2026-06-01
 generated_by: research
 serves_question: Q-0001
-topics: [T-0001]
+related: "[[wiki/concepts/disaggregation]]"
 targets_gap: silicon-photonics-maturity
 priority: medium
 status: open
@@ -202,7 +202,7 @@ created: 2026-04-01
 updated: 2026-06-01
 generated_by: research
 serves_question: Q-0002
-topics: [T-0001]
+related: "[[wiki/concepts/disaggregation]]"
 targets_gap: bandwidth-model
 priority: low
 status: open
@@ -405,17 +405,16 @@ def test_step3_full_frontier_dump() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test: Step 2 - topic filter (open questions for T-0001)
+# Test: Step 2 - concept filter (open questions touching a concept)
 # ---------------------------------------------------------------------------
 
-def test_step2_topic_filter() -> None:
-    """The skill applies a topic filter for 'what open questions touch T-0001'.
+def test_step2_concept_filter() -> None:
+    """The skill filters open questions by the subject concept (the retired topic
+    axis is now concept links in related:).
 
-    The skill uses the frontier output and filters by the `topic` field.
     Asserts:
-    - Q-0001 and Q-0002 both have topic=T-0001 and appear in the frontier.
-    - Q-0003 (topic=T-0002) does not appear (also solved).
-    - All T-0001 directions are present in the frontier.
+    - Q-0001 and Q-0002 both link [[wiki/concepts/disaggregation]] and appear in the frontier.
+    - Q-0003 (concept hbm-cost) does not appear (also solved).
     """
     with tempfile.TemporaryDirectory() as td:
         vault = Path(td) / "vault"
@@ -425,18 +424,18 @@ def test_step2_topic_filter() -> None:
         result = objectives.open_frontier(vault)
         rqs = result["research_questions"]
 
-        t0001_questions = [n for n in rqs if n.get("topic") == "T-0001"]
-        ids = {n["id"] for n in t0001_questions}
-        assert "Q-0001" in ids, "Q-0001 (topic T-0001) should survive T-0001 filter"
-        assert "Q-0002" in ids, "Q-0002 (topic T-0001) should survive T-0001 filter"
+        disagg_questions = [n for n in rqs if "disaggregation" in n.get("concepts", [])]
+        ids = {n["id"] for n in disagg_questions}
+        assert "Q-0001" in ids, "Q-0001 (concept disaggregation) should survive the filter"
+        assert "Q-0002" in ids, "Q-0002 (concept disaggregation) should survive the filter"
 
-        # T-0002 question Q-0003 is solved so not in frontier anyway, but
-        # also check no T-0002 leaks in.
-        assert all(n.get("topic") != "T-0002" for n in rqs), (
-            "T-0002 questions should not appear in the frontier (Q-0003 is solved)"
+        # Q-0003 (concept hbm-cost) is solved so not in frontier anyway, but
+        # also check no hbm-cost concept leaks in.
+        assert all("hbm-cost" not in n.get("concepts", []) for n in rqs), (
+            "hbm-cost questions should not appear in the frontier (Q-0003 is solved)"
         )
 
-    print("PASS test_step2_topic_filter")
+    print("PASS test_step2_concept_filter")
 
 
 # ---------------------------------------------------------------------------

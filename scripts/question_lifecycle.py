@@ -7,10 +7,11 @@ just frontmatter parsing and YAML scaffolding.
 
 Public functions:
 
-  proposal_to_question_frontmatter(proposal_path, next_id, topic=None)
+  proposal_to_question_frontmatter(proposal_path, next_id)
     -> dict: frontmatter for the new research_question node
-    Read QP-NNNN proposal file, extract question text + id, return frontmatter
-    for the new Q-NNNN node.
+    Read QP-NNNN proposal file, extract question text + id, carry the proposal's
+    [[wiki/concepts/<slug>]] links into the new Q-NNNN node's related: field, and
+    return the frontmatter for the new node.
 
   mark_proposal_approved(proposal_path)
     -> str: new content with status: approved set
@@ -22,9 +23,9 @@ Public functions:
 
 Frontmatter field references (from phase-2-objectives.md):
   research_question_proposal:
-    type, id, created, updated, written_by, from_gap, status: pending|approved|rejected
+    type, id, created, updated, written_by, from_gap, related, status: pending|approved|rejected
   research_question:
-    type, id, created, updated, solved: yes|no, topic, priority, answer_ref
+    type, id, created, updated, solved: yes|no, related, priority, answer_ref
 """
 
 from __future__ import annotations
@@ -35,6 +36,39 @@ from pathlib import Path
 
 
 FM_RE = re.compile(r"^---\n(.*?)\n---(?:\n|$)", re.DOTALL)
+
+# Concept-link extractor (mirror of agents.objectives.concept_slugs; this module
+# imports nothing from agents/). Accepts [[wiki/concepts/<slug>]] and bare
+# [[concepts/<slug>]], stripping any |alias / #anchor suffix.
+_CONCEPT_LINK_RE = re.compile(
+    r"\[\[\s*(?:wiki/)?concepts/([^\]|#]+?)\s*(?:[|#][^\]]*)?\]\]",
+    re.IGNORECASE,
+)
+
+
+def _concept_slugs(text: str) -> list[str]:
+    """Extract concept slugs (order-preserving, de-duplicated) from text."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for slug in _CONCEPT_LINK_RE.findall(text or ""):
+        slug = slug.strip()
+        if slug and slug not in seen:
+            seen.add(slug)
+            out.append(slug)
+    return out
+
+
+def _render_related_value(slugs: list[str]) -> str:
+    """Render a related: frontmatter VALUE as a valid YAML inline flow list.
+
+    Empty -> "[]".  Non-empty -> '["[[wiki/concepts/<slug>]]", ...]' which is
+    valid YAML and matches the concept-link representation the objective engine
+    parses (concept_slugs).
+    """
+    if not slugs:
+        return "[]"
+    items = ", ".join(f'"[[wiki/concepts/{s}]]"' for s in slugs)
+    return f"[{items}]"
 
 
 def _parse_fm(text: str) -> dict[str, str]:
@@ -66,19 +100,22 @@ def _body(text: str) -> str:
 
 
 def proposal_to_question_frontmatter(
-    proposal_text: str, next_id: str, topic: str = "", today: str | None = None
+    proposal_text: str, next_id: str, today: str | None = None
 ) -> dict[str, str]:
     """Parse a proposal node and return frontmatter dict for the new research_question.
+
+    The subject axis is carried by concept links (the retired topic: field is
+    gone): any [[wiki/concepts/<slug>]] link in the proposal's related: block is
+    copied into the new question's related: field.
 
     Args:
         proposal_text: Full proposal file content (with frontmatter + body).
         next_id: The new Q-NNNN id allocated by agents.objectives.next_id().
-        topic: The topic T-NNNN this question belongs to (from user or proposal).
-               If empty, defaults to "".
         today: YYYY-MM-DD date string. Defaults to today.
 
     Returns:
-        dict with keys: type, id, created, updated, solved, topic, priority, answer_ref
+        dict with keys: type, id, created, updated, solved, related, priority, answer_ref
+        (the related value is a YAML inline list of concept wikilinks, or "[]").
     """
     if today is None:
         today = datetime.date.today().isoformat()
@@ -90,13 +127,20 @@ def proposal_to_question_frontmatter(
     if priority not in ("high", "medium", "low"):
         priority = "medium"
 
+    # Carry the proposal's concept links into the new question's related: field.
+    # _parse_fm drops YAML block-list items, so scan the raw frontmatter block
+    # (not the body) for [[wiki/concepts/<slug>]] links.
+    _fm_m = FM_RE.match(proposal_text)
+    _fm_text = _fm_m.group(1) if _fm_m else proposal_text
+    slugs = _concept_slugs(_fm_text)
+
     return {
         "type": "research_question",
         "id": next_id.strip(),
         "created": today,
         "updated": today,
         "solved": "no",
-        "topic": topic.strip(),
+        "related": _render_related_value(slugs),
         "priority": priority,
         "answer_ref": "",
     }

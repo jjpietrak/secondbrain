@@ -5,7 +5,7 @@ No LLM, no network, no real vault.  $0.
 
 Covers:
   - slugify: basic conversion, truncation, ASCII enforcement.
-  - resolve_output_path: all four scope shapes (question / topic / topic_slug / deep).
+  - resolve_output_path: all scope shapes (question / concept / deep).
   - format_research_report_frontmatter: correct YAML fields present.
   - format_direction_frontmatter: correct YAML fields; priority sanitized.
   - format_proposal_frontmatter: correct YAML fields.
@@ -91,22 +91,23 @@ def test_resolve_output_path_question_strips_whitespace():
 
 
 # ---------------------------------------------------------------------------
-# resolve_output_path - topic scope
+# resolve_output_path - concept scope
 # ---------------------------------------------------------------------------
 
-def test_resolve_output_path_topic():
+def test_resolve_output_path_concept():
     with tempfile.TemporaryDirectory() as tmp:
         vault = Path(tmp) / "vault"
         vault.mkdir()
-        out = resolve_output_path(vault, {"topic": "T-0001"}, today=TODAY)
-        assert out == vault / "research" / "T-0001.md"
+        out = resolve_output_path(vault, {"concept": "kv-cache"}, today=TODAY)
+        assert out == vault / "research" / "kv-cache.md"
 
 
-def test_resolve_output_path_topic_slug():
+def test_resolve_output_path_concept_slugified():
+    """A free-text concept title is slugified into the filename."""
     with tempfile.TemporaryDirectory() as tmp:
         vault = Path(tmp) / "vault"
         vault.mkdir()
-        out = resolve_output_path(vault, {"topic_slug": "inference-disagg"}, today=TODAY)
+        out = resolve_output_path(vault, {"concept": "Inference Disagg"}, today=TODAY)
         assert out == vault / "research" / "inference-disagg.md"
 
 
@@ -165,13 +166,15 @@ def test_format_research_report_frontmatter_question_scope():
     assert fm.endswith("---")
 
 
-def test_format_research_report_frontmatter_topic_scope():
+def test_format_research_report_frontmatter_concept_scope():
     fm = format_research_report_frontmatter(
-        scope={"topic": "T-0002"},
+        scope={"concept": "kv-cache"},
         today=TODAY,
-        topic_id="T-0002",
+        concept_slug="kv-cache",
     )
-    assert "topic: T-0002" in fm
+    assert "related:" in fm
+    assert "[[wiki/concepts/kv-cache]]" in fm
+    assert "topic:" not in fm
 
 
 def test_format_research_report_frontmatter_explicit_ids_override_scope():
@@ -185,14 +188,14 @@ def test_format_research_report_frontmatter_explicit_ids_override_scope():
 
 
 def test_format_research_report_frontmatter_no_ids():
-    """When scope has no question/topic and no explicit ids, fields are empty strings."""
+    """When scope has no question/concept and no explicit ids, fields are empty/absent."""
     fm = format_research_report_frontmatter(
         scope={"deep": "some topic"},
         today=TODAY,
     )
     # Fields exist but may be empty; no KeyError
     assert "type: research_report" in fm
-    assert "topic:" in fm
+    assert "related:" in fm
     assert "serves_question:" in fm
 
 
@@ -202,7 +205,7 @@ def test_format_research_report_frontmatter_no_ids():
 
 _SAMPLE_DIRECTION_FIELDS = {
     "serves_question": "Q-0001",
-    "topics": "T-0001",
+    "related": "[[wiki/concepts/inference-disagg]]",
     "targets_gap": "no benchmark for batch-size-1 HBM utilization",
     "reasoning_pattern": "Look for roofline analyses in hardware papers.",
     "expected_evidence": "a benchmarked measurement on real hardware",
@@ -219,7 +222,8 @@ def test_format_direction_frontmatter_required_fields():
     assert f"created: {TODAY}" in fm
     assert "written_by: research" in fm
     assert "serves_question: Q-0001" in fm
-    assert "topics: T-0001" in fm
+    assert "related:" in fm
+    assert "[[wiki/concepts/inference-disagg]]" in fm
     assert "status: open" in fm
 
 

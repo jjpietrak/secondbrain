@@ -108,13 +108,14 @@ def build_objective_fixture(root: Path) -> None:
     # Well-formed research_question
     _write(root / "objective/research_question/Q-0001-good.md",
         "---\ntype: research_question\nid: Q-0001\ncreated: 2026-06-01\n"
-        "updated: 2026-06-18\nsolved: \"no\"\ntopic: T-0001\npriority: high\n"
+        "updated: 2026-06-18\nsolved: \"no\"\n"
+        "related:\n  - \"[[wiki/concepts/disaggregated-inference]]\"\npriority: high\n"
         "written_by: USER\n---\n"
         "Can optical accelerators replace HBM? Links to [[wiki/concepts/hub]] "
         "and also more text here to make this page long enough body for the check.\n"
     )
 
-    # research_question with missing required keys (missing solved, topic, priority)
+    # research_question with missing required keys (missing solved, priority)
     _write(root / "objective/research_question/Q-0002-bad.md",
         "---\ntype: research_question\nid: Q-0002\ncreated: 2026-06-01\n"
         "updated: 2026-06-18\nwritten_by: USER\n---\n"
@@ -323,7 +324,7 @@ def test_all_areas_surfaces_objective_issues() -> None:
         build_all_areas_fixture(root)
         issues, total = vh.audit(root, areas=("wiki", "objective", "research"))
 
-        # Q-0002-bad is missing solved, topic, priority
+        # Q-0002-bad is missing solved, priority
         assert any("Q-0002-bad" in i for i in issues["missing_frontmatter"]), \
             "Q-0002-bad (missing required frontmatter) must be flagged"
 
@@ -466,13 +467,13 @@ def test_wiki_page_missing_sources_flagged() -> None:
 
 
 def test_research_question_missing_solved_flagged() -> None:
-    """research_question type requires solved, topic, priority; missing ones flagged."""
+    """research_question type requires solved, priority; missing ones flagged."""
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         _write(root / "objective/research_question/Q-bad.md",
             "---\ntype: research_question\nid: Q-bad\ncreated: 2026-06-01\n"
             "updated: 2026-06-18\n---\n"
-            "Missing solved, topic, priority. Enough body text here.\n"
+            "Missing solved, priority. Enough body text here.\n"
         )
         issues, total = vh.audit(root, areas=("objective",))
         mf_items = issues["missing_frontmatter"]
@@ -481,8 +482,8 @@ def test_research_question_missing_solved_flagged() -> None:
         # Check that at least one of the missing keys is mentioned
         q_bad_issues = [i for i in mf_items if "Q-bad" in i]
         combined = " ".join(q_bad_issues)
-        assert "solved" in combined or "topic" in combined or "priority" in combined, \
-            f"missing keys (solved/topic/priority) must be mentioned; got: {q_bad_issues}"
+        assert "solved" in combined or "priority" in combined, \
+            f"missing keys (solved/priority) must be mentioned; got: {q_bad_issues}"
 
 
 def test_decision_missing_scope_flagged() -> None:

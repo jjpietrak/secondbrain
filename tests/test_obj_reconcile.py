@@ -6,18 +6,18 @@ no network. The fixture covers:
   - A direction serving an orphan question -> stale-orphan detection
   - Two proposals with >60% body overlap   -> duplicate-proposals flag
   - A proposal that duplicates an open Q   -> redundant-proposal detection
-  - A research_question with no topic      -> no-topic flag
+  - A research_question with no linked concept -> no-linked-concept flag
 
 Tests verify:
   1. detect_stale_directions identifies the solved-question direction.
   2. detect_stale_directions identifies the orphan-question direction.
   3. detect_duplicate_proposals identifies the overlapping proposal pair.
   4. detect_proposal_vs_question identifies the proposal redundant with a Q.
-  5. detect_no_topic_questions flags the topicless question.
+  5. detect_no_concept_questions flags the question with no linked concept.
   6. run_all_detections returns all four finding categories.
   7. apply_resolutions supersedes the stale direction (writes status: superseded).
   8. apply_resolutions rejects the redundant proposal (writes status: rejected).
-  9. apply_resolutions writes an agent_todo for the no-topic question.
+  9. apply_resolutions writes an agent_todo for the no-linked-concept question.
   10. apply_resolutions writes an agent_todo for duplicate proposals.
   11. apply_resolutions dry_run produces no file writes.
   12. token_overlap smoke tests (identical, disjoint, partial).
@@ -52,7 +52,7 @@ from scripts.obj_reconcile_helper import (
     apply_frontmatter_update,
     apply_resolutions,
     detect_duplicate_proposals,
-    detect_no_topic_questions,
+    detect_no_concept_questions,
     detect_proposal_vs_question,
     detect_stale_directions,
     run_all_detections,
@@ -99,19 +99,19 @@ def vault(tmp_path: Path) -> Path:
         "created": today,
         "updated": today,
         "solved": '"yes"',
-        "topic": "T-0001",
+        "related": "[[wiki/concepts/inference-disagg]]",
         "priority": "high",
         "answer_ref": "research/Q-0001.md",
     }, body="# What is the latency floor?\n")
 
-    # Q-0002: open and topicless (Pass E) - rich body so QP-0003 overlaps at >0.6
-    _write_node(rq_dir, "Q-0002-no-topic.md", {
+    # Q-0002: open with no linked concept (Pass E) - rich body so QP-0003 overlaps at >0.6
+    _write_node(rq_dir, "Q-0002-no-concept.md", {
         "type": "research_question",
         "id": "Q-0002",
         "created": today,
         "updated": today,
         "solved": '"no"',
-        "topic": "",
+        "related": "",
         "priority": "medium",
         "answer_ref": "",
     }, body=(
@@ -128,7 +128,7 @@ def vault(tmp_path: Path) -> Path:
         "created": today,
         "updated": today,
         "solved": '"no"',
-        "topic": "T-0001",
+        "related": "[[wiki/concepts/scheduling]]",
         "priority": "low",
         "answer_ref": "",
     }, body="# What scheduling policies minimize tail latency in disaggregated inference?\n")
@@ -144,7 +144,7 @@ def vault(tmp_path: Path) -> Path:
         "updated": today,
         "generated_by": "research",
         "serves_question": "Q-0001",
-        "topics": "T-0001",
+        "related": "[[wiki/concepts/inference-disagg]]",
         "targets_gap": "Latency floor measurement",
         "priority": "high",
         "status": "open",
@@ -158,7 +158,7 @@ def vault(tmp_path: Path) -> Path:
         "updated": today,
         "generated_by": "research",
         "serves_question": "Q-9999",
-        "topics": "T-0001",
+        "related": "[[wiki/concepts/inference-disagg]]",
         "targets_gap": "Orphaned gap",
         "priority": "low",
         "status": "open",
@@ -172,7 +172,7 @@ def vault(tmp_path: Path) -> Path:
         "updated": today,
         "generated_by": "research",
         "serves_question": "Q-0003",
-        "topics": "T-0001",
+        "related": "[[wiki/concepts/inference-disagg]]",
         "targets_gap": "Scheduling latency gap",
         "priority": "low",
         "status": "open",
@@ -186,7 +186,7 @@ def vault(tmp_path: Path) -> Path:
         "updated": today,
         "generated_by": "research",
         "serves_question": "Q-0001",
-        "topics": "T-0001",
+        "related": "[[wiki/concepts/inference-disagg]]",
         "targets_gap": "Already handled",
         "priority": "low",
         "status": "superseded",
@@ -201,7 +201,7 @@ def vault(tmp_path: Path) -> Path:
         "updated": today,
         "generated_by": "research",
         "serves_question": "Q-0001",
-        "topics": "T-0001",
+        "related": "[[wiki/concepts/inference-disagg]]",
         "targets_gap": "Crawled gap",
         "priority": "medium",
         "status": "crawled",
@@ -264,16 +264,6 @@ def vault(tmp_path: Path) -> Path:
         "status": "rejected",
         "rejection_reason": "manual rejection",
     }, body=overlap_body)
-
-    # --- topics ---
-    _write_node(obj / "topic", "T-0001-inference-disagg.md", {
-        "type": "topic",
-        "id": "T-0001",
-        "created": today,
-        "updated": today,
-        "status": "active",
-        "related_questions": "[Q-0001, Q-0003]",
-    }, body="# Inference Disaggregation Architecture\n")
 
     # --- agent_todo ---
     agent_todo_dir = obj / "agent_todo"
@@ -444,21 +434,32 @@ class TestDetectProposalVsQuestion:
 
 
 # ---------------------------------------------------------------------------
-# 4. detect_no_topic_questions
+# 4. detect_no_concept_questions
 # ---------------------------------------------------------------------------
 
-class TestDetectNoTopicQuestions:
-    def test_detects_topicless_question(self, vault: Path) -> None:
-        """Q-0002 has topic: '' -> should appear in no-topic findings."""
+class TestDetectNoConceptQuestions:
+    def test_detects_conceptless_question(self, vault: Path) -> None:
+        """Q-0002 has related: '' (no concept link) -> should appear in findings."""
         nodes = _load_nodes(vault)
-        findings = detect_no_topic_questions(nodes)
+        findings = detect_no_concept_questions(nodes)
         flagged_ids = {f["node_id"] for f in findings}
         assert "Q-0002" in flagged_ids
 
-    def test_question_with_topic_not_flagged(self, vault: Path) -> None:
-        """Q-0001 (solved, has topic) and Q-0003 (open, has topic) should not be flagged."""
+    def test_finding_type_is_no_linked_concept(self, vault: Path) -> None:
+        """The finding type is 'no-linked-concept'."""
         nodes = _load_nodes(vault)
-        findings = detect_no_topic_questions(nodes)
+        findings = detect_no_concept_questions(nodes)
+        for f in findings:
+            if f["node_id"] == "Q-0002":
+                assert f["type"] == "no-linked-concept"
+                break
+        else:
+            pytest.fail("Q-0002 not found in no-linked-concept findings")
+
+    def test_question_with_concept_not_flagged(self, vault: Path) -> None:
+        """Q-0001 and Q-0003 carry a related: concept link -> should not be flagged."""
+        nodes = _load_nodes(vault)
+        findings = detect_no_concept_questions(nodes)
         flagged_ids = {f["node_id"] for f in findings}
         assert "Q-0001" not in flagged_ids
         assert "Q-0003" not in flagged_ids
@@ -476,7 +477,7 @@ class TestRunAllDetections:
         assert "stale_directions" in result
         assert "duplicate_proposals" in result
         assert "redundant_proposals" in result
-        assert "no_topic_questions" in result
+        assert "no_concept_questions" in result
 
     def test_non_empty_findings(self, vault: Path) -> None:
         """All four categories have at least one finding in the fixture."""
@@ -485,7 +486,7 @@ class TestRunAllDetections:
         assert len(result["stale_directions"]) >= 1
         assert len(result["duplicate_proposals"]) >= 1
         assert len(result["redundant_proposals"]) >= 1
-        assert len(result["no_topic_questions"]) >= 1
+        assert len(result["no_concept_questions"]) >= 1
 
 
 # ---------------------------------------------------------------------------
@@ -528,23 +529,23 @@ class TestApplyResolutions:
         assert "rejection_reason:" in content
         assert "Q-0002" in content
 
-    def test_writes_todo_for_no_topic_question(self, vault: Path) -> None:
-        """apply_resolutions writes a TODO node for Q-0002 (no topic)."""
+    def test_writes_todo_for_no_concept_question(self, vault: Path) -> None:
+        """apply_resolutions writes a TODO node for Q-0002 (no linked concept)."""
         nodes = _load_nodes(vault)
         findings = run_all_detections(nodes)
         from agents import objectives  # noqa: PLC0415
         apply_resolutions(vault, findings, "2026-06-21", objectives_mod=objectives)
 
         todo_dir = vault / "objective" / "agent_todo"
-        # slug() lowercases the suffix, so filename has no-topic-q-0002
-        todo_files = list(todo_dir.glob("TODO-*-no-topic-q-0002*.md"))
+        # slug() lowercases the suffix, so filename has no-concept-q-0002
+        todo_files = list(todo_dir.glob("TODO-*-no-concept-q-0002*.md"))
         assert len(todo_files) >= 1, (
-            f"Expected TODO file matching 'TODO-*-no-topic-q-0002*.md' in {todo_dir}, "
+            f"Expected TODO file matching 'TODO-*-no-concept-q-0002*.md' in {todo_dir}, "
             f"found: {list(todo_dir.glob('TODO-*.md'))}"
         )
         content = todo_files[0].read_text(encoding="utf-8")
         assert "Q-0002" in content
-        assert "topic" in content.lower()
+        assert "concept" in content.lower()
 
     def test_writes_todo_for_duplicate_proposals(self, vault: Path) -> None:
         """apply_resolutions writes a TODO node for the QP-0001/QP-0002 duplicate pair."""
@@ -567,7 +568,7 @@ class TestApplyResolutions:
         from agents import objectives  # noqa: PLC0415
         summary = apply_resolutions(vault, findings, "2026-06-21", objectives_mod=objectives)
         assert summary["superseded"] >= 1  # at least DIR-0001 stale-solved
-        assert summary["todos_written"] >= 1  # at least the no-topic Q-0002
+        assert summary["todos_written"] >= 1  # at least the no-concept Q-0002
 
     def test_dry_run_no_file_writes(self, vault: Path) -> None:
         """With dry_run=True, no files are modified or created."""
