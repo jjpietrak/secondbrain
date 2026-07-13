@@ -74,8 +74,7 @@ TYPE_REQUIRED: dict[str, set[str]] = {
     "synthesis": WIKI_REQUIRED,
     # --- objective types ---
     "purpose": {"type", "created", "updated", "status"},
-    "topic": {"type", "id", "created", "updated", "status"},
-    "research_question": {"type", "id", "created", "updated", "solved", "topic", "priority"},
+    "research_question": {"type", "id", "created", "updated", "solved", "priority"},
     "direction": {"type", "id", "created", "updated", "status", "serves_question", "priority"},
     "research_question_proposal": {"type", "id", "created", "updated", "status"},
     "decision": {"type", "id", "created", "updated", "status", "scope"},
@@ -106,7 +105,7 @@ def _link_target(raw: str) -> str:
     """Normalize a wikilink target to the page stem it resolves to.
 
     Wikilinks in this vault are frequently path-qualified ([[sources/Foo]],
-    [[wiki/concepts/Bar]], [[objective/topic/T-0001]]). Pages are keyed by bare
+    [[wiki/concepts/Bar]], [[objective/direction/DIR-0001]]). Pages are keyed by bare
     stem, so resolve a link to its last path segment (and drop any leading/trailing
     whitespace). LINK_RE already strips a trailing |alias and #heading.
     """
@@ -204,12 +203,21 @@ def audit(
     dup_stems: dict[str, list[str]] = {}
 
     for page in all_pages:
+        content = page.read_text(errors="replace")
+        # Extract links from ALL pages (including skippable meta-pages like index.md,
+        # hot.md, log.md) so their outgoing links count as inbound backlinks for the
+        # pages they reference. Without this, gap/index.md's links to GAP-* pages are
+        # invisible and those GAP pages falsely appear as orphans.
+        links = extract_wikilinks(content)
+        all_links[page.stem] = links
+        for link in links:
+            backlinks.setdefault(link, []).append(page.stem)
+
         if is_skippable(page):
             continue
         area = _area_for(page, vault)
         rel = str(page.relative_to(vault))
         prefix = f"[{area}] "
-        content = page.read_text(errors="replace")
 
         # duplicate detection runs over ALL non-skippable pages (global, cross-area)
         dup_stems.setdefault(_norm_stem(page.stem), []).append(rel)
@@ -259,10 +267,6 @@ def audit(
                     issues["stale"].append(f"{prefix}{rel}")
             except ValueError:
                 pass
-        links = extract_wikilinks(content)
-        all_links[page.stem] = links
-        for link in links:
-            backlinks.setdefault(link, []).append(page.stem)
 
     for page in all_pages:
         if is_skippable(page):

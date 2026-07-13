@@ -215,8 +215,9 @@ also carries the `## For future Claude` preamble and `ai-first: true`.
 - **concepts/** (abstract: ideas/frameworks/theories/methods): `type: concept`, `complexity`,
   `domain`, `status`, `aliases`, `related`, `sources`, `tags: [concept]`.
 - **sources/** (one summary per ingested raw source): `type: source`, `source_type`, `author`,
-  `date_published`, `url`, `confidence`, `key_claims`, `status`, `related`, `sources` (the
+  `date_published`, `url`, `confidence`, `status`, `related`, `sources` (the
   `[[raw/...]]` file(s)), `tags: [source]`. ADD `content_hash` where useful (mirrors the index).
+  Key claims live in the body **`## Key claims`** section, NOT in frontmatter.
 - **synthesis/**: `type: synthesis`, `synthesis_type`, `subjects`, `dimensions`, `verdict`,
   `status`, `tags: [synthesis]` (produced mainly by `wiki-synth`, not the per-source path).
 

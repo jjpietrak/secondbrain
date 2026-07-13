@@ -27,7 +27,7 @@ parse_analysis(md: str) -> dict
               "shows_up_in": [...],
               "missing": "...",
               "fillable_by": [...],
-              "topics": [...],
+              "concepts": [...],
               "priority": "high|medium|low",
               "why": "...",
             },
@@ -74,6 +74,28 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+
+# Reuse the shared concept-slug extractor from the objective engine.
+_CODE_ROOT = Path(__file__).resolve().parent.parent
+if str(_CODE_ROOT) not in sys.path:
+    sys.path.insert(0, str(_CODE_ROOT))
+try:
+    from agents.objectives import concept_slugs  # type: ignore
+except Exception:  # pragma: no cover - defensive fallback
+    _CONCEPT_LINK_RE = re.compile(
+        r"\[\[\s*(?:wiki/)?concepts/([^\]|#]+?)\s*(?:[|#][^\]]*)?\]\]",
+        re.IGNORECASE,
+    )
+
+    def concept_slugs(text: str) -> list[str]:  # type: ignore
+        seen: set[str] = set()
+        out: list[str] = []
+        for m in _CONCEPT_LINK_RE.finditer(text or ""):
+            slug = m.group(1).strip()
+            if slug and slug not in seen:
+                seen.add(slug)
+                out.append(slug)
+        return out
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -138,8 +160,10 @@ def _extract_open_questions_section(md: str) -> str:
 # ---------------------------------------------------------------------------
 
 _PRIORITY_WORD_RE = re.compile(r"^(high|medium|low)\b", re.IGNORECASE)
-_TOPIC_RE = re.compile(r"T-\d+")
 _FILLABLE_TAG_RE = re.compile(r"\b(arxiv|web|github|forum|x)\b", re.IGNORECASE)
+# Bare concept-slug token (lowercase words separated by hyphens), used only as a
+# fallback when a `concepts:` analysis line lists slugs without wikilink syntax.
+_BARE_SLUG_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)+")
 
 
 def _parse_gap_block(gap_id: str, title: str, block: str) -> dict:
@@ -160,7 +184,9 @@ def _parse_gap_block(gap_id: str, title: str, block: str) -> dict:
     shows_up_in_raw = _field("shows_up_in")
     missing = _field("missing")
     fillable_by_raw = _field("fillable_by")
-    topic_raw = _field("topic")
+    # Accept either a `concepts:` line (preferred) or the legacy `topic:` line
+    # for backward-compat during migration; both are parsed for concept slugs.
+    concepts_raw = _field("concepts") or _field("topic")
     priority_raw = _field("priority")
 
     # shows_up_in: split on ';' then strip whitespace
@@ -171,8 +197,10 @@ def _parse_gap_block(gap_id: str, title: str, block: str) -> dict:
         dict.fromkeys(t.lower() for t in _FILLABLE_TAG_RE.findall(fillable_by_raw))
     )
 
-    # topics: T-NNNN patterns
-    topics = _TOPIC_RE.findall(topic_raw)
+    # concepts: [[wiki/concepts/<slug>]] wikilinks (fallback: bare slug tokens)
+    concepts = concept_slugs(concepts_raw)
+    if not concepts and concepts_raw:
+        concepts = list(dict.fromkeys(_BARE_SLUG_RE.findall(concepts_raw.lower())))
 
     # priority: first word only; why = remainder
     pm = _PRIORITY_WORD_RE.match(priority_raw)
@@ -188,7 +216,7 @@ def _parse_gap_block(gap_id: str, title: str, block: str) -> dict:
         "shows_up_in": shows_up_in,
         "missing": missing,
         "fillable_by": fillable_by,
-        "topics": topics,
+        "concepts": concepts,
         "priority": priority,
         "why": why,
     }
@@ -329,7 +357,7 @@ def _render_gap_file(
         ("id", gap["id"]),
         ("title", gap["title"]),
         ("status", "open"),
-        ("topics", gap["topics"]),
+        ("concepts", [f"[[wiki/concepts/{s}]]" for s in gap["concepts"]]),
         ("fillable_by", gap["fillable_by"]),
         ("priority", gap["priority"]),
         ("shows_up_in", gap["shows_up_in"]),
@@ -401,15 +429,18 @@ def _render_index(
     table_lines = [
         "## Gap files",
         "",
-        "| File | Priority | Topics |",
+        "| File | Priority | Concepts |",
         "| --- | --- | --- |",
     ]
     for g in gaps:
         slug = slugify(g["title"])
         link = f"[[wiki/gap/{g['id']}-{slug}]]"
         priority = g["priority"]
-        topics = ", ".join(g["topics"]) if g["topics"] else "-"
-        table_lines.append(f"| {link} | {priority} | {topics} |")
+        concepts = (
+            ", ".join(f"[[wiki/concepts/{s}]]" for s in g["concepts"])
+            if g["concepts"] else "-"
+        )
+        table_lines.append(f"| {link} | {priority} | {concepts} |")
 
     sections.append("\n".join(table_lines) + "\n")
 
