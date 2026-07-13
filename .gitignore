@@ -6,6 +6,7 @@
 # Reference repos (cloned, not vendored)
 .osb_reference/
 .co_reference/
+.ursa_reference/
 
 # Python-generated files
 __pycache__/
