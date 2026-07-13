@@ -52,8 +52,8 @@ from scripts import obj_synth_helper as helper
 
 @pytest.fixture()
 def temp_vault(tmp_path: Path) -> Path:
-    """Create a minimal temp vault with wiki/ pages for context scoring."""
-    wiki = tmp_path / "wiki"
+    """Create a minimal temp vault with wiki/concepts/ pages for context scoring."""
+    wiki = tmp_path / "wiki" / "concepts"
     wiki.mkdir(parents=True)
 
     # Page 1: highly relevant to "inference disaggregation latency"
@@ -109,7 +109,6 @@ def temp_vault(tmp_path: Path) -> Path:
     # objective/ structure
     obj_dir = tmp_path / "objective"
     (obj_dir / "purpose").mkdir(parents=True)
-    (obj_dir / "topic").mkdir(parents=True)
     (obj_dir / "research_question").mkdir(parents=True)
     (obj_dir / "direction").mkdir(parents=True)
     (obj_dir / "research_question_proposal").mkdir(parents=True)
@@ -130,21 +129,6 @@ def temp_vault(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
 
-    (obj_dir / "topic" / "T-0001-inference-disagg.md").write_text(
-        textwrap.dedent("""\
-            ---
-            type: topic
-            id: T-0001
-            created: 2026-06-21
-            updated: 2026-06-21
-            status: active
-            related_questions: [Q-0001, Q-0002]
-            ---
-            # Inference Disaggregation Architecture
-        """),
-        encoding="utf-8",
-    )
-
     (obj_dir / "research_question" / "Q-0001-latency-floor.md").write_text(
         textwrap.dedent("""\
             ---
@@ -153,7 +137,7 @@ def temp_vault(tmp_path: Path) -> Path:
             created: 2026-06-21
             updated: 2026-06-21
             solved: "no"
-            topic: T-0001
+            related: "[[wiki/concepts/inference-latency]]"
             priority: high
             answer_ref: ""
             ---
@@ -170,7 +154,7 @@ def temp_vault(tmp_path: Path) -> Path:
             created: 2026-06-21
             updated: 2026-06-21
             solved: "no"
-            topic: T-0001
+            related: "[[wiki/concepts/memory-bandwidth]]"
             priority: medium
             answer_ref: ""
             ---
@@ -216,7 +200,8 @@ def sample_frontier(temp_vault: Path) -> dict:
                 "created": "2026-06-21",
                 "updated": "2026-06-21",
                 "solved": "no",
-                "topic": "T-0001",
+                "related": "[[wiki/concepts/inference-latency]]",
+                "concepts": ["inference-latency"],
                 "priority": "high",
                 "answer_ref": "",
                 "path": "objective/research_question/Q-0001-latency-floor.md",
@@ -228,7 +213,8 @@ def sample_frontier(temp_vault: Path) -> dict:
                 "created": "2026-06-21",
                 "updated": "2026-06-21",
                 "solved": "no",
-                "topic": "T-0001",
+                "related": "[[wiki/concepts/memory-bandwidth]]",
+                "concepts": ["memory-bandwidth"],
                 "priority": "medium",
                 "answer_ref": "",
                 "path": "objective/research_question/Q-0002-memory-bandwidth-wall.md",
@@ -246,7 +232,7 @@ def sample_synthesis_output() -> str:
     return textwrap.dedent("""\
         ### DIRECTION: Measure HBM bandwidth ceiling for 70B decode
         - serves_question: Q-0001
-        - topics: T-0001
+        - related: [[wiki/concepts/inference-latency]]
         - targets_gap: Exact latency floor for 70B inference on HBM3
         - reasoning_pattern: The latency floor is set by arithmetic intensity vs memory bandwidth; find measured hardware benchmarks on A100/H100 for 70B decode batch=1.
         - expected_evidence: A benchmarked measurement on real hardware (not a survey or whitepaper estimate)
@@ -256,7 +242,7 @@ def sample_synthesis_output() -> str:
 
         ### DIRECTION: Survey disaggregation scheduling latency overhead
         - serves_question: Q-0001, Q-0002
-        - topics: T-0001
+        - related: [[wiki/concepts/scheduling]]
         - targets_gap: Scheduling overhead added by prefill/decode disaggregation
         - reasoning_pattern: Disaggregated systems add cross-node coordination latency; find empirical studies comparing monolithic vs disaggregated inference latency.
         - expected_evidence: An empirical comparison paper or system report (e.g. OSDI/SOSP/MLSys)
@@ -366,10 +352,10 @@ class TestFormatFunctions:
         purpose = helper._read_purpose(str(temp_vault))
         assert "inference disaggregation" in purpose.lower()
 
-    def test_format_active_topics(self, temp_vault: Path) -> None:
-        result = helper._format_active_topics_from_vault(str(temp_vault))
-        assert "T-0001" in result
-        assert "active" in result
+    def test_format_active_concepts(self, temp_vault: Path) -> None:
+        result = helper._format_active_concepts_from_vault(str(temp_vault))
+        assert "inference-latency" in result
+        assert "memory-bandwidth" in result
 
 
 # ---------------------------------------------------------------------------
@@ -382,7 +368,7 @@ class TestPromptFill:
             purpose="Test purpose",
             today="2026-06-21",
             open_questions="Q-0001: test question [priority: high]",
-            active_topics="T-0001: test topic [status: active]",
+            active_concepts="inference-latency: Inference Latency",
             wiki_baseline="### [[wiki/test.md]] (score=5)\n\nTest content.",
             wiki_gaps="(none)",
         )
@@ -395,7 +381,7 @@ class TestPromptFill:
             purpose="Test purpose",
             today="2026-06-21",
             open_questions="Q-0001: test question [priority: high]",
-            active_topics="T-0001: test topic [status: active]",
+            active_concepts="inference-latency: Inference Latency",
             gap_analysis="## Per-Question Gap Assessment\n### Q-0001\n- Gap: needs measurement",
             existing_directions="(none)",
         )
@@ -419,7 +405,7 @@ class TestParsers:
         assert d0["title"] == "Measure HBM bandwidth ceiling for 70B decode"
         fields = d0["fields"]
         assert fields["serves_question"] == "Q-0001"
-        assert fields["topics"] == "T-0001"
+        assert fields["related"] == "[[wiki/concepts/inference-latency]]"
         assert "targets_gap" in fields
         assert "reasoning_pattern" in fields
         assert "expected_evidence" in fields
@@ -503,7 +489,7 @@ class TestCLI:
                 py, "scripts/obj_synth_helper.py", "fill-analysis",
                 "--purpose", "Test vault purpose",
                 "--open-questions", "Q-0001: test question [priority: high]",
-                "--active-topics", "T-0001: test topic [status: active]",
+                "--active-concepts", "inference-latency: Inference Latency",
                 "--wiki-baseline", "### [[wiki/test.md]] (score=3)\n\nTest.",
             ],
             capture_output=True, text=True, cwd=str(_REPO_ROOT),
@@ -520,7 +506,7 @@ class TestCLI:
                 py, "scripts/obj_synth_helper.py", "fill-synthesis",
                 "--purpose", "Test vault purpose",
                 "--open-questions", "Q-0001: test question [priority: high]",
-                "--active-topics", "T-0001: test topic [status: active]",
+                "--active-concepts", "inference-latency: Inference Latency",
                 "--gap-analysis", "## Per-Question Gap Assessment\n### Q-0001\n- Gap: test",
             ],
             capture_output=True, text=True, cwd=str(_REPO_ROOT),

@@ -14,11 +14,11 @@ excerpts_to_wiki_baseline(excerpts) -> str
     Format excerpt list as the {wiki_baseline} block expected by both research
     pipeline prompts.
 
-fill_analysis_prompt(purpose, today, open_questions, active_topics,
+fill_analysis_prompt(purpose, today, open_questions, active_concepts,
                      wiki_baseline, wiki_gaps) -> str
     Fill RESEARCH_ANALYSIS_PROMPT with the supplied values.
 
-fill_synthesis_prompt(purpose, today, open_questions, active_topics,
+fill_synthesis_prompt(purpose, today, open_questions, active_concepts,
                       gap_analysis, existing_directions) -> str
     Fill RESEARCH_SYNTHESIS_PROMPT with the supplied values.
 
@@ -90,7 +90,7 @@ MAX_WIKI_HITS = 8          # top-N wiki pages returned
 MAX_EXCERPT_CHARS = 1500   # chars per excerpt (matches OSB MAX_BASELINE_CHARS_PER_NOTE)
 
 # Objective node types included when scanning objective_nodes for context.
-OBJECTIVE_CONTEXT_TYPES = {"research_question", "direction", "topic", "purpose"}
+OBJECTIVE_CONTEXT_TYPES = {"research_question", "direction", "purpose"}
 
 
 # ---------------------------------------------------------------------------
@@ -267,7 +267,7 @@ def fill_analysis_prompt(
     purpose: str,
     today: str,
     open_questions: str,
-    active_topics: str,
+    active_concepts: str,
     wiki_baseline: str,
     wiki_gaps: str = "(none)",
 ) -> str:
@@ -280,7 +280,7 @@ def fill_analysis_prompt(
         purpose=purpose,
         today=today,
         open_questions=open_questions,
-        active_topics=active_topics,
+        active_concepts=active_concepts,
         wiki_baseline=wiki_baseline,
         wiki_gaps=wiki_gaps,
     )
@@ -290,7 +290,7 @@ def fill_synthesis_prompt(
     purpose: str,
     today: str,
     open_questions: str,
-    active_topics: str,
+    active_concepts: str,
     gap_analysis: str,
     existing_directions: str = "(none)",
 ) -> str:
@@ -303,7 +303,7 @@ def fill_synthesis_prompt(
         purpose=purpose,
         today=today,
         open_questions=open_questions,
-        active_topics=active_topics,
+        active_concepts=active_concepts,
         gap_analysis=gap_analysis,
         existing_directions=existing_directions,
     )

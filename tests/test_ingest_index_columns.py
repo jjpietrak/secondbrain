@@ -312,13 +312,6 @@ def test_relevance_links_qp_file_found(tmp_path):
     assert result == "[[objective/research_question_proposal/QP-0001-software-disagg-primitives]]"
 
 
-def test_relevance_links_t_file_found(tmp_path):
-    """T-0003 with matching file -> [[objective/topic/T-0003-<stem>]]."""
-    _make_objective_file(tmp_path, "topic", "T-0003-llm-serving-systems.md")
-    result = ii._relevance_links(["T-0003"], tmp_path)
-    assert result == "[[objective/topic/T-0003-llm-serving-systems]]"
-
-
 def test_relevance_links_d_file_found(tmp_path):
     """D-0001 with matching file -> [[objective/decision/D-0001-<stem>]]."""
     _make_objective_file(tmp_path, "decision", "D-0001-no-web-research.md")

@@ -6,9 +6,9 @@ description: >
   Detects: stale directions (serves a now-solved question or superseded by a newer
   direction), duplicate or overlapping research_question_proposal nodes, proposals that
   duplicate an existing open research_question, directions whose serves_question is
-  already solved, and research_questions with no assigned topic. Resolution respects RBAC:
+  already solved, and research_questions with no linked concept. Resolution respects RBAC:
   research-owned nodes (direction, research_question_proposal, agent_todo) are updated
-  directly (status: superseded / rejected); user-only nodes (research_question, topic,
+  directly (status: superseded / rejected); user-only nodes (research_question,
   purpose, decision) are NEVER edited - inconsistencies touching them are written to
   objective/agent_todo/ as user-facing flags. Adjudication of ambiguous duplicates uses
   the Gemini Flash validation route (direct API via GEMINI_API_KEY; metered, cheap;
@@ -74,7 +74,9 @@ Read all nodes directly from the filesystem for detailed body inspection:
 - `$VAULT_ROOT/objective/direction/` - all DIR-NNNN files (status: open|crawled|superseded)
 - `$VAULT_ROOT/objective/research_question/` - all Q-NNNN files (solved: yes|no)
 - `$VAULT_ROOT/objective/research_question_proposal/` - all QP-NNNN files (status: pending|approved|rejected)
-- `$VAULT_ROOT/objective/topic/` - all T-NNNN files (status: active|paused|completed)
+
+The subject axis lives in each node's `related:` block as `[[wiki/concepts/<slug>]]` links
+(the retired `objective/topic/` node type is gone).
 
 Also read `$VAULT_ROOT/research/` with:
 ```bash
@@ -136,12 +138,14 @@ For each `research_question_proposal` with `status: pending`:
    - RESOLUTION (research-owned): set `status: rejected`,
      `rejection_reason: duplicates existing question Q-NNNN`.
 
-### Pass E - Research questions with no topic
+### Pass E - Research questions with no linked concept
 
-For each `research_question` with `topic` frontmatter field empty or missing:
+For each `research_question` whose `related:` block links no `[[wiki/concepts/<slug>]]`
+(empty or missing):
 - This is a USER-ONLY node - do NOT edit it.
-- FLAG: write an `objective/agent_todo/TODO-NNNN-no-topic-Q-NNNN.md` node pointing to
-  the question, suggesting the user assign a `topic: T-NNNN` field.
+- FLAG: write an `objective/agent_todo/TODO-NNNN-no-concept-Q-NNNN.md` node pointing to
+  the question, suggesting the user add a `[[wiki/concepts/<slug>]]` link to its `related:`
+  block.
 
 ## Step 3 - Apply research-owned resolutions (additive only)
 
@@ -167,12 +171,12 @@ research_question_proposal):
 4. Update the `updated:` field to today's date.
 
 Do NOT delete any file. Do NOT modify the `id:`, `created:`, or `generated_by:` fields.
-Do NOT modify user-only nodes (purpose, topic, research_question, decision).
+Do NOT modify user-only nodes (purpose, research_question, decision).
 
 ## Step 4 - Write agent_todo flags for user-only inconsistencies
 
-For each finding in Pass E (no-topic questions) and for each AMBIGUOUS-DUPLICATE from
-Pass B or C where the judge was unreachable:
+For each finding in Pass E (no-linked-concept questions) and for each AMBIGUOUS-DUPLICATE
+from Pass B or C where the judge was unreachable:
 
 1. Allocate a TODO-NNNN id:
    ```bash
@@ -191,18 +195,20 @@ Pass B or C where the judge was unreachable:
    ```
    Body (use the appropriate template below):
 
-   **For no-topic question (Pass E):**
+   **For no-linked-concept question (Pass E):**
    ```markdown
    ## For future Claude
    This TODO was written by obj-reconcile on YYYY-MM-DD. It flags a research_question that
-   has no assigned topic. The user should assign a topic: T-NNNN field to this question.
+   links no concept. The user should add a [[wiki/concepts/<slug>]] link to this question's
+   `related:` block.
 
-   ## Flag: research_question with no topic
+   ## Flag: research_question with no linked concept
    **Question:** [[objective/research_question/Q-NNNN-<slug>]]
-   **Issue:** The `topic:` field is empty or absent. This question will not appear in any
-   topic-scoped analysis until a topic is assigned.
-   **Suggested action:** Edit `objective/research_question/Q-NNNN-<slug>.md` and set
-   `topic: T-NNNN` to link it to the most appropriate active topic.
+   **Issue:** The `related:` block links no `[[wiki/concepts/<slug>]]`. This question will
+   not appear in any concept-scoped analysis until a concept is linked.
+   **Suggested action:** Edit `objective/research_question/Q-NNNN-<slug>.md` and add a
+   `[[wiki/concepts/<slug>]]` link to its `related:` block, pointing at the most appropriate
+   concept.
    ```
 
    **For ambiguous duplicate (judge unreachable):**
@@ -324,7 +330,6 @@ call to the cost tracker if available.
 - **MUST NOT write:**
   - `wiki/**` (any path)
   - `objective/purpose/` (user-only)
-  - `objective/topic/` (user-only)
   - `objective/research_question/` (user-only; inconsistencies there go to agent_todo/)
   - `objective/decision/` (user-only)
   - `raw/**`, `meta/ingest_index*`
@@ -354,7 +359,7 @@ obj-reconcile complete (YYYY-MM-DD):
   Directions superseded  : N  (stale-solved: A, stale-orphan: B, duplicate: C)
   Proposals rejected     : M  (duplicate-proposal: D, redundant-vs-question: E)
   agent_todo flags written: P
-    - no-topic questions  : F
+    - no-linked-concept Qs: F
     - ambiguous duplicates: G
     - overlapping RQs     : H
   hot.md updated         : yes | deferred (lock held)
@@ -376,4 +381,4 @@ obj-reconcile complete (YYYY-MM-DD):
   = Gemini Flash validation (metered, sub-$0.001 per call). If budget is tight, skip
   the duplicate-classification passes (B and C) and flag everything as ambiguous TODO.
 - Slug generation for agent_todo files: lowercase, hyphens, max 40 chars, ASCII.
-  Example: "no-topic-Q-0003" or "ambig-dup-DIR-0002-DIR-0004".
+  Example: "no-concept-Q-0003" or "ambig-dup-DIR-0002-DIR-0004".

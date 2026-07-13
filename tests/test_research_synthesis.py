@@ -265,7 +265,7 @@ def test_excerpts_to_wiki_baseline_empty_returns_fallback():
 SAMPLE_PURPOSE = "Understand the latency floor of disaggregated inference systems."
 SAMPLE_TODAY = "2026-06-21"
 SAMPLE_OPEN_QUESTIONS = "- Q-0001: What is the HBM bandwidth utilization at batch size 1?"
-SAMPLE_ACTIVE_TOPICS = "- T-0001: Inference disaggregation"
+SAMPLE_ACTIVE_CONCEPTS = "- inference-disagg: Inference disaggregation"
 SAMPLE_WIKI_BASELINE = "### [[wiki/concepts/hbm-bandwidth.md]] (score=12)\n\nHBM bandwidth is 3.35 TB/s on H100."
 SAMPLE_WIKI_GAPS = "- Gap: no concrete benchmark for batch-size-1 utilization"
 
@@ -275,14 +275,14 @@ def test_fill_analysis_prompt_contains_all_inputs():
         purpose=SAMPLE_PURPOSE,
         today=SAMPLE_TODAY,
         open_questions=SAMPLE_OPEN_QUESTIONS,
-        active_topics=SAMPLE_ACTIVE_TOPICS,
+        active_concepts=SAMPLE_ACTIVE_CONCEPTS,
         wiki_baseline=SAMPLE_WIKI_BASELINE,
         wiki_gaps=SAMPLE_WIKI_GAPS,
     )
     assert SAMPLE_PURPOSE in result
     assert SAMPLE_TODAY in result
     assert "Q-0001" in result
-    assert "T-0001" in result
+    assert "inference-disagg" in result
     assert "hbm-bandwidth.md" in result
     assert "batch-size-1" in result
     # Template must end with READY
@@ -295,7 +295,7 @@ def test_fill_analysis_prompt_default_wiki_gaps():
         purpose=SAMPLE_PURPOSE,
         today=SAMPLE_TODAY,
         open_questions=SAMPLE_OPEN_QUESTIONS,
-        active_topics=SAMPLE_ACTIVE_TOPICS,
+        active_concepts=SAMPLE_ACTIVE_CONCEPTS,
         wiki_baseline=SAMPLE_WIKI_BASELINE,
     )
     assert "(none)" in result
@@ -314,14 +314,14 @@ def test_fill_synthesis_prompt_contains_all_inputs():
         purpose=SAMPLE_PURPOSE,
         today=SAMPLE_TODAY,
         open_questions=SAMPLE_OPEN_QUESTIONS,
-        active_topics=SAMPLE_ACTIVE_TOPICS,
+        active_concepts=SAMPLE_ACTIVE_CONCEPTS,
         gap_analysis=SAMPLE_GAP_ANALYSIS,
         existing_directions=SAMPLE_EXISTING_DIRECTIONS,
     )
     assert SAMPLE_PURPOSE in result
     assert SAMPLE_TODAY in result
     assert "Q-0001" in result
-    assert "T-0001" in result
+    assert "inference-disagg" in result
     assert "batch-size-1" in result
     assert "(none)" in result
     assert "READY" in result
@@ -333,7 +333,7 @@ def test_fill_synthesis_prompt_default_existing_directions():
         purpose=SAMPLE_PURPOSE,
         today=SAMPLE_TODAY,
         open_questions=SAMPLE_OPEN_QUESTIONS,
-        active_topics=SAMPLE_ACTIVE_TOPICS,
+        active_concepts=SAMPLE_ACTIVE_CONCEPTS,
         gap_analysis=SAMPLE_GAP_ANALYSIS,
     )
     assert "(none)" in result
@@ -346,7 +346,7 @@ def test_fill_synthesis_prompt_default_existing_directions():
 SAMPLE_SYNTHESIS_OUTPUT = """\
 ### DIRECTION: Measure HBM utilization at batch size 1
 - serves_question: Q-0001
-- topics: T-0001
+- related: [[wiki/concepts/inference-disagg]]
 - targets_gap: no concrete benchmark for batch-size-1 utilization
 - reasoning_pattern: Vendor benchmarks and academic papers usually report peak throughput, not single-request utilization; targeted search for roofline or memory-bandwidth-bound characterizations at batch 1 will surface the real floor.
 - expected_evidence: a benchmarked measurement on real hardware (H100), not a survey
@@ -356,7 +356,7 @@ SAMPLE_SYNTHESIS_OUTPUT = """\
 
 ### DIRECTION: Compare disaggregated vs co-located prefill latency
 - serves_question: Q-0001
-- topics: T-0001
+- related: [[wiki/concepts/inference-disagg]]
 - targets_gap: no comparison of disaggregated vs co-located prefill impact on latency floor
 - reasoning_pattern: Disaggregation separates prefill and decode compute; find papers measuring end-to-end latency under both configurations to isolate the disaggregation overhead.
 - expected_evidence: a paper or benchmark with latency breakdown (prefill vs decode) under disaggregated setup
@@ -383,7 +383,7 @@ def test_parse_directions_returns_non_empty():
 def test_parse_directions_field_keys():
     dirs = parse_directions(SAMPLE_SYNTHESIS_OUTPUT)
     required_fields = {
-        "serves_question", "topics", "targets_gap", "reasoning_pattern",
+        "serves_question", "related", "targets_gap", "reasoning_pattern",
         "expected_evidence", "seed_queries", "solves_when", "priority",
     }
     for d in dirs:
@@ -427,7 +427,7 @@ def test_parse_proposals_no_proposals_marker():
     no_proposal_output = """\
 ### DIRECTION: Some direction
 - serves_question: Q-0001
-- topics: T-0001
+- related: [[wiki/concepts/inference-disagg]]
 - targets_gap: some gap
 - reasoning_pattern: some pattern
 - expected_evidence: some evidence

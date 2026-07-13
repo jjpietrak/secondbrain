@@ -7,7 +7,7 @@ obj-reconcile:
   - detect_orphan_directions(nodes)   -> Pass A variant: serves_question not in graph
   - detect_duplicate_proposals(nodes) -> Pass C/D overlap heuristic (pre-judge step)
   - detect_proposal_vs_question(nodes)-> Pass D: proposal duplicates existing open RQ
-  - detect_no_topic_questions(nodes)  -> Pass E: research_question with no topic field
+  - detect_no_concept_questions(nodes)-> Pass E: research_question with no linked concept
   - token_overlap(text_a, text_b)     -> word-level Jaccard similarity [0.0, 1.0]
   - slug(text, max_len=40)            -> ASCII slug for file naming
   - apply_frontmatter_update(path, updates) -> in-place additive frontmatter edit
@@ -356,23 +356,32 @@ def detect_proposal_vs_question(nodes: list[dict], overlap_threshold: float = 0.
     return findings
 
 
-def detect_no_topic_questions(nodes: list[dict]) -> list[dict]:
-    """Pass E: find research_questions with no topic field (user-only - only flag).
+def detect_no_concept_questions(nodes: list[dict]) -> list[dict]:
+    """Pass E: find research_questions with no linked concept (user-only - only flag).
+
+    A research_question is associated with the subject axis via one or more
+    ``[[wiki/concepts/<slug>]]`` links in its ``related:`` frontmatter. A question
+    whose ``related:`` carries no concept link is flagged.
 
     Returns findings:
-      {type: "no-topic", node_id: Q-NNNN, path, reason: str}
+      {type: "no-linked-concept", node_id: Q-NNNN, path, reason: str}
     """
     findings: list[dict] = []
     for n in nodes:
         if n["type"] != "research_question":
             continue
-        topic = n.get("topic", "").strip()
-        if not topic:
+        # scan_objectives pre-extracts concept slugs from related:; fall back to
+        # parsing the raw related: value if the node dict predates that field.
+        concepts = n.get("concepts")
+        if concepts is None:
+            objectives = _import_objectives()
+            concepts = objectives.concept_slugs(n.get("related", ""))
+        if not concepts:
             findings.append({
-                "type": "no-topic",
+                "type": "no-linked-concept",
                 "node_id": n["id"],
                 "path": n["path"],
-                "reason": "research_question has no topic field",
+                "reason": "research_question has no linked concept",
             })
     return findings
 
@@ -383,7 +392,7 @@ def run_all_detections(nodes: list[dict]) -> dict:
         "stale_directions": detect_stale_directions(nodes),
         "duplicate_proposals": detect_duplicate_proposals(nodes),
         "redundant_proposals": detect_proposal_vs_question(nodes),
-        "no_topic_questions": detect_no_topic_questions(nodes),
+        "no_concept_questions": detect_no_concept_questions(nodes),
     }
 
 
@@ -402,7 +411,7 @@ def apply_resolutions(
 
     - stale_directions: set status=superseded + superseded_reason
     - redundant_proposals: set status=rejected + rejection_reason
-    - no_topic_questions + duplicate_proposals: write agent_todo flags
+    - no_concept_questions + duplicate_proposals: write agent_todo flags
 
     Returns a summary dict:
       {superseded: N, rejected: M, todos_written: P, skipped: K}
@@ -446,28 +455,30 @@ def apply_resolutions(
             apply_frontmatter_update(path, updates)
         summary["rejected"] += 1
 
-    # -- Pass E: no-topic research_questions -> write agent_todo flags
-    for f in findings.get("no_topic_questions", []):
+    # -- Pass E: no-linked-concept research_questions -> write agent_todo flags
+    for f in findings.get("no_concept_questions", []):
         # Extract Q-NNNN id from path for the TODO slug.
         node_id = f["node_id"]
         body = (
             f"## For future Claude\n"
             f"This TODO was written by obj-reconcile on {today}. It flags a "
-            f"research_question that has no assigned topic. The user should assign "
-            f"a topic: T-NNNN field to this question.\n\n"
-            f"## Flag: research_question with no topic\n"
+            f"research_question that has no linked concept. The user should link "
+            f"the question to one or more active concepts via its related: field.\n\n"
+            f"## Flag: research_question with no linked concept\n"
             f"**Question:** [[{f['path']}]]\n"
-            f"**Issue:** The `topic:` field is empty or absent. This question will not "
-            f"appear in any topic-scoped analysis until a topic is assigned.\n"
-            f"**Suggested action:** Edit `{f['path']}` and set `topic: T-NNNN` to link "
-            f"it to the most appropriate active topic.\n"
+            f"**Issue:** The `related:` field carries no `[[wiki/concepts/<slug>]]` "
+            f"link. This question will not appear in any concept-scoped analysis until "
+            f"a concept is linked.\n"
+            f"**Suggested action:** Edit `{f['path']}` and add a "
+            f"`[[wiki/concepts/<slug>]]` link to its `related:` field to associate it "
+            f"with the most appropriate active concept.\n"
         )
         if dry_run:
-            print(f"[dry-run] write TODO for no-topic {node_id}")
+            print(f"[dry-run] write TODO for no-linked-concept {node_id}")
         else:
             write_agent_todo(
                 vault_root,
-                f"no-topic-{node_id}",
+                f"no-concept-{node_id}",
                 body,
                 today,
                 objectives_mod=objectives_mod,

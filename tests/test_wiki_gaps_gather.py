@@ -10,7 +10,7 @@ Covers:
   - wiki_state contains "## For future Claude" preamble verbatim
   - infrastructure files (index.md, hot.md, log.md, gaps.md, _template*.md) excluded
   - pages with open-question items appear FIRST (sorted by oq_count desc)
-  - active_topics reads from objective/topic/ (skips paused/completed)
+  - active_concepts reads from wiki/concepts/ (skips _template)
   - purpose reads from objective/purpose/PURPOSE.md (fallback: "not yet defined")
   - empty wiki dir: returns page_count=0, wiki_state fallback string
 
@@ -160,41 +160,9 @@ def _make_fixture_vault(tmp: Path) -> Path:
         encoding="utf-8",
     )
 
-    # objective/topic/ - 2 active, 1 paused (paused must be excluded from active_topics)
-    (vault / "objective" / "topic").mkdir(parents=True, exist_ok=True)
-    (vault / "objective" / "topic" / "T-0001-inference-disagg.md").write_text(
-        textwrap.dedent("""\
-        ---
-        type: topic
-        id: T-0001
-        status: active
-        ---
-        Inference disaggregation and latency implications.
-        """),
-        encoding="utf-8",
-    )
-    (vault / "objective" / "topic" / "T-0002-hbm-bandwidth.md").write_text(
-        textwrap.dedent("""\
-        ---
-        type: topic
-        id: T-0002
-        status: active
-        ---
-        HBM bandwidth constraints for decode-phase inference.
-        """),
-        encoding="utf-8",
-    )
-    (vault / "objective" / "topic" / "T-0003-paused.md").write_text(
-        textwrap.dedent("""\
-        ---
-        type: topic
-        id: T-0003
-        status: paused
-        ---
-        Paused topic - should not appear in active_topics.
-        """),
-        encoding="utf-8",
-    )
+    # The subject axis is now the set of concept pages under wiki/concepts/
+    # (the retired objective/topic/ nodes are gone). The fixture's concept pages
+    # (hbm-bandwidth, latency-floor) are the active concepts; _template is skipped.
 
     return vault
 
@@ -343,7 +311,7 @@ def test_gather_oq_pages_first():
 
 
 # ---------------------------------------------------------------------------
-# Tests: gather_wiki_state - purpose and active_topics
+# Tests: gather_wiki_state - purpose and active_concepts
 # ---------------------------------------------------------------------------
 
 def test_gather_purpose_from_purpose_md():
@@ -355,22 +323,26 @@ def test_gather_purpose_from_purpose_md():
     )
 
 
-def test_gather_active_topics_includes_active():
+def test_gather_active_concepts_includes_pages():
     with tempfile.TemporaryDirectory() as tmp_str:
         vault = _make_fixture_vault(Path(tmp_str))
         payload = gather_wiki_state(vault)
-    topics = payload["active_topics"]
-    assert "T-0001" in topics, f"T-0001 not in active_topics: {topics}"
-    assert "T-0002" in topics, f"T-0002 not in active_topics: {topics}"
+    concepts = payload["active_concepts"]
+    assert "hbm-bandwidth" in concepts, f"hbm-bandwidth not in active_concepts: {concepts}"
+    assert "latency-floor" in concepts, f"latency-floor not in active_concepts: {concepts}"
 
 
-def test_gather_active_topics_excludes_paused():
+def test_gather_active_concepts_excludes_non_concepts():
+    """Only wiki/concepts/ pages are active concepts; entities and the template are not."""
     with tempfile.TemporaryDirectory() as tmp_str:
         vault = _make_fixture_vault(Path(tmp_str))
         payload = gather_wiki_state(vault)
-    topics = payload["active_topics"]
-    assert "T-0003" not in topics, (
-        f"Paused topic T-0003 should not appear in active_topics: {topics}"
+    concepts = payload["active_concepts"]
+    assert "nvidia-h100" not in concepts, (
+        f"Entity page nvidia-h100 should not appear in active_concepts: {concepts}"
+    )
+    assert "_template" not in concepts, (
+        f"The concept _template should not appear in active_concepts: {concepts}"
     )
 
 
@@ -389,15 +361,15 @@ def test_gather_purpose_fallback_when_no_purpose_md():
     assert len(payload["purpose"]) > 0
 
 
-def test_gather_active_topics_returns_none_when_no_topics():
-    """Without objective/topic/, active_topics is 'none'."""
+def test_gather_active_concepts_returns_none_when_no_concepts():
+    """Without wiki/concepts/, active_concepts is 'none'."""
     with tempfile.TemporaryDirectory() as tmp_str:
         vault = _make_fixture_vault(Path(tmp_str))
         import shutil
-        shutil.rmtree(vault / "objective" / "topic")
+        shutil.rmtree(vault / "wiki" / "concepts")
         payload = gather_wiki_state(vault)
-    assert payload["active_topics"] == "none", (
-        f"Expected 'none' when no topics; got: {payload['active_topics']}"
+    assert payload["active_concepts"] == "none", (
+        f"Expected 'none' when no concepts; got: {payload['active_concepts']}"
     )
 
 
@@ -425,7 +397,7 @@ def _sample_payload() -> dict:
     return {
         "purpose": "Understand the latency floor of disaggregated LLM inference.",
         "today": "2026-06-21",
-        "active_topics": "- T-0001: Inference disaggregation\n- T-0002: HBM bandwidth",
+        "active_concepts": "- hbm-bandwidth: HBM Memory Bandwidth\n- latency-floor: Inference Latency Floor",
         "wiki_state": (
             "### [[wiki/concepts/hbm-bandwidth.md]]\n\n"
             "#### Open Questions\n"
@@ -447,10 +419,10 @@ def test_fill_gap_prompt_contains_today():
     assert "2026-06-21" in filled
 
 
-def test_fill_gap_prompt_contains_active_topics():
+def test_fill_gap_prompt_contains_active_concepts():
     filled = fill_gap_prompt(_sample_payload())
-    assert "T-0001" in filled
-    assert "T-0002" in filled
+    assert "hbm-bandwidth" in filled
+    assert "latency-floor" in filled
 
 
 def test_fill_gap_prompt_contains_wiki_state():
@@ -497,7 +469,7 @@ VALID_GAPS_OUTPUT = """\
 - shows_up_in: [[wiki/concepts/hbm-bandwidth]]
 - missing: a benchmarked measurement at batch size 1 on H100
 - fillable_by: arxiv | web
-- topic: T-0001
+- concepts: [[wiki/concepts/hbm-bandwidth]]
 - priority: high  -  appears in Open-Question Harvest
 
 ## Stale / Unverified

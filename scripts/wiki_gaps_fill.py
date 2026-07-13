@@ -57,7 +57,7 @@ def fill_gap_prompt(payload: dict) -> str:
     ----------
     payload : dict
         As returned by gather_wiki_state().  Required keys:
-          purpose, today, active_topics, wiki_state.
+          purpose, today, active_concepts, wiki_state.
 
     Returns
     -------
@@ -72,7 +72,7 @@ def fill_gap_prompt(payload: dict) -> str:
     return WIKI_GAP_PROMPT.format(
         purpose=payload["purpose"],
         today=payload["today"],
-        active_topics=payload["active_topics"],
+        active_concepts=payload["active_concepts"],
         wiki_state=payload["wiki_state"],
     )
 

@@ -74,7 +74,8 @@ Read the matched proposal file. Verify frontmatter fields:
 
 Extract from the proposal:
 - `priority`: high | medium | low (defaults to medium if missing).
-- `topic`: the T-NNNN if the proposal specifies it; else empty (user may set this).
+- `related`: the `[[wiki/concepts/<slug>]]` concept links carried on the proposal (the
+  subject axis; may be empty). These flow into the new question's `related:` block.
 - Body: the question text (first line or full body).
 
 ## Step 2 - confirm with the user
@@ -86,7 +87,7 @@ Proposal to promote:
 **ID:** {QP_ID}
 **Status:** pending
 **Priority:** {priority}
-**Topic:** {topic or "(not set)"}
+**Concepts:** {related concept links or "(none)"}
 
 **Question:**
 {first 200 chars of body}
@@ -117,7 +118,8 @@ from scripts.question_lifecycle import proposal_to_question_frontmatter
 from pathlib import Path
 
 proposal_file = Path('${PROPOSAL_PATH}').read_text()
-fm = proposal_to_question_frontmatter(proposal_file, '${NEW_ID}', topic='${TOPIC}')
+# The helper carries the proposal's [[wiki/concepts/<slug>]] links into related:.
+fm = proposal_to_question_frontmatter(proposal_file, '${NEW_ID}')
 
 # Build the frontmatter block.
 fm_lines = [
@@ -126,7 +128,7 @@ fm_lines = [
     f'created: {fm[\"created\"]}',
     f'updated: {fm[\"updated\"]}',
     f'solved: {fm[\"solved\"]}',
-    f'topic: {fm[\"topic\"]}',
+    f'related: {fm[\"related\"]}',
     f'priority: {fm[\"priority\"]}',
     f'answer_ref: {fm[\"answer_ref\"]}',
 ]
@@ -256,7 +258,9 @@ to `objective/research_question/` remain denied.
   `objective/index.md`.
 - Does NOT autonomously decide which proposals to promote; the user explicitly approves
   each one.
-- Does NOT create new topics or decisions; those are user-only.
+- Does NOT create decisions (user-only) or concept pages (wiki-owned under `wiki/concepts/`);
+  it only carries the proposal's existing `[[wiki/concepts/<slug>]]` links into the new
+  question's `related:` block.
 - Does NOT write to `wiki/`.
 - ASCII only (no em-dashes, curly quotes, or Unicode math).
 
