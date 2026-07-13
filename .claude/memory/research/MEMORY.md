@@ -77,17 +77,28 @@ current; never store fact bodies here.
 - Phase 3 crawl blockers for Q-0008: arXiv 2509.17863 (EaaS) and 2508.02520 (xDeepServe) un-ingested.
 - GAP-05 (optical KV layout / format-translation cost) unresolved; blocks DIR-0003 acceptance criterion D.
 
-## Objective graph state (updated 2026-07-13, post question-promote QP-0005 -> Q-0009)
+## Objective graph state (updated 2026-07-13, post obj-reconcile simulator-phase entry)
 
 - Current open research questions: 7 (Q-0001, Q-0003, Q-0005..Q-0009); Q-0002 SOLVED, Q-0004 SOLVED.
-- Current open directions: 11 (DIR-0001..DIR-0005, DIR-0007..DIR-0011; DIR-0006 in complete/).
-  DIR-0011 (2026-07-13): optical operator profile schema + DAG extension for Q-0002 (still active).
-- Current proposals: 1 (QP-0004 pending); QP-0005 approved/promoted -> Q-0009.
-- Last skill run: question-promote QP-0005 -> Q-0009, 2026-07-13.
-- Q-0009 created: definitive LLMServingSim reuse/extension map (simulator selection answer).
-  promoted_from: QP-0005; parent_question: Q-0002; priority: high; topic: simulator-design.
-  File: objective/research_question/Q-0009-llmservingsim-reuse-extension-map.md
-- index.md next_id.research_question = 10 (Q-0009 allocated). next_id.research_question_proposal = 6.
+- Active directions: 6 (DIR-0001, DIR-0003, DIR-0004, DIR-0007, DIR-0009, DIR-0010).
+  Superseded: DIR-0002, DIR-0005, DIR-0008, DIR-0011 (all served Q-0002 or were dup).
+- Current proposals: 4 pending (QP-0004, QP-0006, QP-0007, QP-0008).
+- Last skill run: obj-reconcile + simulator synthesis, 2026-07-13.
+- index.md next_id.research_question = 10, next_id.research_question_proposal = 9.
+- TODO-0001 written: flags Q-0001/Q-0003/Q-0005/Q-0006/Q-0007/Q-0008 missing topic: field.
+- QP-0006: critical parameters spec (Tetra vs GPU prefill simulator comparison).
+- QP-0007: Lstab stochastic model for simulator validity.
+- QP-0008: Pareto-optimal (C, na_attn, na_ffn) configurations -- CORE simulator deliverable.
+
+## obj-reconcile run (2026-07-13, simulator phase entry)
+
+- Pass A: 3 stale (DIR-0002/DIR-0008/DIR-0011 all served Q-0002 which is now solved).
+- Pass B: 1 dup (DIR-0005 superseded by DIR-0009; judge=YES-DUPLICATE, 1 adj. call used).
+- Pass C: clean (only QP-0004 pending, no pairs).
+- Pass D: clean (QP-0004 distinct from all open RQs).
+- Pass E: 6 no-topic Qs (Q-0001/Q-0003/Q-0005/Q-0006/Q-0007/Q-0008) -> TODO-0001.
+- 3 new QPs written (QP-0006/QP-0007/QP-0008) from simulator design synthesis.
+- hot.md and index.md updated (locked writes). relink applied: 6 files changed.
 - relink applied after promote.
 
 ## Objective graph state (updated 2026-07-10, post-promote QP-0001 -> Q-0008)

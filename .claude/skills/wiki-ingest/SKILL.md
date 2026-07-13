@@ -211,7 +211,11 @@ also carries the `## For future Claude` preamble and `ai-first: true`.
 - **entities/** (concrete: person/organization/tool/company/project/place): keep `type: entity`,
   `entity_type`, `role`, `status`, `aliases`, `related`, `sources`, `tags: [entity]`; ADD the
   bi-temporal `timeline:` (from/until/learned/source) and `company`/`last_interaction` where
-  useful. Append to `timeline:`; never overwrite `role`/`status`.
+  useful. Append to `timeline:`; never overwrite `role`/`status`. When the source is a code repo
+  (`raw/code/`), set `repo: "[[sources/<name>-repo]]"` on the primary entity page for that
+  repository — this is a stable direct link to the source page for the repo, distinct from
+  `sources:` (which lists all sources). Only one repo per entity; if the entity is a hardware
+  product whose simulator lives in a separate repo, point `repo:` at the simulator source page.
 - **concepts/** (abstract: ideas/frameworks/theories/methods): `type: concept`, `complexity`,
   `domain`, `status`, `aliases`, `related`, `sources`, `tags: [concept]`.
 - **sources/** (one summary per ingested raw source): `type: source`, `source_type`, `author`,
