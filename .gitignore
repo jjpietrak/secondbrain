@@ -21,3 +21,6 @@ wheels/
 logs/
 
 logs/.interactive_watermarks/
+
+# Memory files
+*/MEMORY.md
