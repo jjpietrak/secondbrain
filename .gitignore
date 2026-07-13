@@ -1,5 +1,7 @@
 # Secrets & local config
 .env
+# may contain sensitive information
+*/MEMORY.md  
 
 # Reference repos (cloned, not vendored)
 .osb_reference/

@@ -48,6 +48,25 @@ current; never store fact bodies here.
 - Deep zone analysis: H800 dead zone for DeepSeek-V3 at NF<=2; Step-3 essentially immune.
 - Minimum B_ScaleOut to eliminate dead zone at NF=X for DeepSeek-V3: 20*X GB/s.
 
+## obj-synth run (2026-07-13, Q-0002 LLMServingSim vs Frontier synthesis)
+
+- Triggered by: raw/notes/LLMServingSim vs Frontier (internal Lumai comparison note, ingested same day).
+- User context: LLMServingSim 2.0 provides all necessary features to model PD and AFD disagg.
+- DECISION RESOLVED: LLMServingSim 2.0 is the definitive simulator base. Q-0002 criterion (2) ANSWERED.
+  LLMServingSim wins: AFD in code (MSG splitting), 0.95% error, bench/ harness, required ASTRA-sim.
+  Frontier (pre-release v0.2): PDD only, AFD explicitly deferred; 16-23% error; no bench harness.
+- DESIGN PATTERN: Frontier's ping-pong event graph (ATTN_COMPUTE->A_TO_F->FFN_COMPUTE->F_TO_A per
+  layer per micro-batch) to be IMPORTED into LLMServingSim DAG Generator (not a code fork).
+- OptiSim role clarified: profile GENERATOR (not runtime). Optical arithmetic intensity profiles
+  feed LLMServingSim's extended Operator-Level Profiler.
+- DIR-0011 created: optical operator profile schema (Lstab/Lprog/fanalog/etc) + DAG extension +
+  attention kernel profile plan. Serves Q-0002 criteria (3) and (7).
+- QP-0005 created: simulator selection answer sub-question (pending user approval). Proposes
+  formalising criterion (2) answer as a promotable question.
+- Objective graph: 11 directions, 2 proposals pending (QP-0004, QP-0005), 7 open questions.
+- Q-0002 now has 3 directions: DIR-0002 (criteria 1,2,4,5,6), DIR-0008 (3BO feasibility),
+  DIR-0011 (criteria 3,7 -- new).
+
 ## obj-synth run (2026-07-10, post-promote direction audit)
 
 - DIR-0007 reassigned: serves_question changed from Q-0001 to Q-0007 (C_min_afd content belongs to Q-0007, not Q-0001).
@@ -57,6 +76,19 @@ current; never store fact bodies here.
 - hot.md rewritten: current state table, phase 3 crawl targets, already-answerable list.
 - Phase 3 crawl blockers for Q-0008: arXiv 2509.17863 (EaaS) and 2508.02520 (xDeepServe) un-ingested.
 - GAP-05 (optical KV layout / format-translation cost) unresolved; blocks DIR-0003 acceptance criterion D.
+
+## Objective graph state (updated 2026-07-13, post question-promote QP-0005 -> Q-0009)
+
+- Current open research questions: 7 (Q-0001, Q-0003, Q-0005..Q-0009); Q-0002 SOLVED, Q-0004 SOLVED.
+- Current open directions: 11 (DIR-0001..DIR-0005, DIR-0007..DIR-0011; DIR-0006 in complete/).
+  DIR-0011 (2026-07-13): optical operator profile schema + DAG extension for Q-0002 (still active).
+- Current proposals: 1 (QP-0004 pending); QP-0005 approved/promoted -> Q-0009.
+- Last skill run: question-promote QP-0005 -> Q-0009, 2026-07-13.
+- Q-0009 created: definitive LLMServingSim reuse/extension map (simulator selection answer).
+  promoted_from: QP-0005; parent_question: Q-0002; priority: high; topic: simulator-design.
+  File: objective/research_question/Q-0009-llmservingsim-reuse-extension-map.md
+- index.md next_id.research_question = 10 (Q-0009 allocated). next_id.research_question_proposal = 6.
+- relink applied after promote.
 
 ## Objective graph state (updated 2026-07-10, post-promote QP-0001 -> Q-0008)
 
@@ -113,7 +145,11 @@ disaggregation, not just prefill-vs-decode:
   CPO vs. PCIe per-token latency penalty. GAP-05 identified as blocking prerequisite.
   Key finding: beyond-the-buzz "not a bottleneck" conclusion conditional on homogeneous Blackwell
   clusters; does not apply to Tetra (BW_egress proportional to 1/FTL).
-- Q-0002, Q-0005..Q-0006 -> no reports yet.
+- Q-0002 -> SOLVED (2026-07-13): solved: yes; answer_ref: objective/hot.md.
+  Criterion (2) met: LLMServingSim 2.0 wins over Frontier (AFD in code, 0.95% error, bench/ harness, ASTRA-sim).
+  Remaining design work continues via DIR-0002 (criteria 1,4,5,6), DIR-0008 (3BO), DIR-0011 (criteria 3,7).
+  question-solve used SB_SANCTIONED_SKILL=question-solve; file moved to solved/; index updated; relink applied.
+- Q-0005..Q-0006 -> no reports yet.
 - Q-0003 body update (2026-07-10): added "Known techniques" subsection with F3 (pipelined
   layer-by-layer KV transfer for 128K+) and F4 (ZTE 1D tensor flattening; blocker-dependency
   Q-0003 <-> Q-0008). Written via SB_SANCTIONED_SKILL=question-promote.

@@ -301,8 +301,8 @@ def pending(name: str | None = None) -> list[Path]:
         rec = led.get(sid)
         is_pending = rec is None or rec.get("status") != "ingested" \
             or rec.get("content_hash") != info["content_hash"]
+        seen_ids.add(sid)
         if is_pending:
-            seen_ids.add(sid)
             out.append(p)
     return out
 
