@@ -92,8 +92,8 @@ def _iso_date(raw: str | None) -> str:
 
 
 def _arxiv_id_from_url(url: str) -> str | None:
-    """Extract arXiv id like '2401.09670' from an arXiv URL, or return None."""
-    m = re.search(r"arxiv\.org/abs/([0-9]+\.[0-9v]+)", url)
+    """Extract arXiv id like '2401.09670' from an arXiv URL, stripping version suffix."""
+    m = re.search(r"arxiv\.org/abs/([0-9]+\.[0-9]+)(?:v\d+)?", url)
     return m.group(1) if m else None
 
 
@@ -216,13 +216,14 @@ def _result_to_paper_candidate(result: Any, engine: str) -> dict:
     abstract = result.abstract or result.snippet or ""
     posted_at = result.posted_at or (str(result.year) if result.year else "")
 
-    # Determine id_type + source_id
-    arxiv_id = _arxiv_id_from_url(url)
+    # Determine id_type + source_id; prefer arxiv > doi > url for stable dedup
+    extra = (result.extra or {}) if hasattr(result, "extra") else {}
+    arxiv_id = _arxiv_id_from_url(url) or extra.get("arxiv_id")
     if arxiv_id:
         id_type = "arxiv"
         source_id = f"arxiv:{arxiv_id}"
     else:
-        doi = (result.extra or {}).get("doi") if hasattr(result, "extra") else None
+        doi = extra.get("doi")
         if doi:
             id_type = "doi"
             source_id = doi
@@ -594,15 +595,24 @@ def candidate_ident(cand: dict) -> str:
 
     Rules:
     - arxiv / doi source_ids are already globally unique per item -> return them.
+    - Normalize arxiv.org URLs (from websearch / agent candidates) to arxiv:<id>
+      so the same paper found by different engines collapses to one identity.
     - For everything else (RSS, GitHub, forum) use the per-item URL (stripped of
       trailing slash) because source_id on those candidates holds the FEED-level
       registry id (e.g. "huggingface_blog"), not the individual post.
     - Fall back to source_id only when url is absent/empty.
     """
     sid = (cand.get("source_id") or "")
-    if sid.startswith(("arxiv:", "doi:")):
+    if sid.startswith("arxiv:"):
+        # Strip version suffix so arxiv:2509.17357v1 == arxiv:2509.17357
+        return re.sub(r"v\d+$", "", sid)
+    if sid.startswith("doi:"):
         return sid
+    # Normalize arxiv.org URLs regardless of which field they appear in
     url = (cand.get("url") or "").rstrip("/")
+    arxiv_id = _arxiv_id_from_url(url) or _arxiv_id_from_url(sid)
+    if arxiv_id:
+        return f"arxiv:{arxiv_id}"
     if url:
         return url
     return sid

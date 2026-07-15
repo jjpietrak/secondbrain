@@ -40,8 +40,15 @@ def _parse(payload: dict) -> list[Result]:
     out: list[Result] = []
     for paper in payload.get("data", []):
         authors = [a.get("name", "") for a in paper.get("authors") or []]
-        doi = (paper.get("externalIds") or {}).get("DOI")
+        external = paper.get("externalIds") or {}
+        doi = external.get("DOI")
+        arxiv_id = external.get("ArXiv")
         url = paper.get("url") or (f"https://doi.org/{doi}" if doi else "")
+        extra: dict = {}
+        if arxiv_id:
+            extra["arxiv_id"] = arxiv_id
+        elif doi:
+            extra["doi"] = doi
         out.append(
             Result(
                 source="semantic_scholar",
@@ -50,7 +57,7 @@ def _parse(payload: dict) -> list[Result]:
                 abstract=paper.get("abstract"),
                 authors=[a for a in authors if a],
                 year=paper.get("year"),
-                extra={"doi": doi} if doi else {},
+                extra=extra,
             )
         )
     return out
