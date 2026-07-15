@@ -606,6 +606,10 @@ def candidate_ident(cand: dict) -> str:
     if sid.startswith("arxiv:"):
         # Strip version suffix so arxiv:2509.17357v1 == arxiv:2509.17357
         return re.sub(r"v\d+$", "", sid)
+    # Semantic Scholar uses 10.48550/arXiv.<ID> DOIs for arXiv papers — normalize them
+    m = re.search(r"10\.48550/[Aa]r[Xx]iv\.([0-9]+\.[0-9]+)", sid)
+    if m:
+        return f"arxiv:{m.group(1)}"
     if sid.startswith("doi:"):
         return sid
     # Normalize arxiv.org URLs regardless of which field they appear in
