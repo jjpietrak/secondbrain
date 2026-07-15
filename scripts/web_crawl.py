@@ -200,8 +200,7 @@ def _load_ingest_rows(vault_root: str) -> list[dict]:
     """Load ingest index rows. Returns [] on any failure."""
     try:
         ii = _import_ingest_index()
-        vault_name = Path(vault_root).name
-        data = ii._load(vault_name)
+        data = ii._load(root=Path(vault_root))
         return list(data.get("sources", {}).values())
     except Exception:
         # Fallback: read meta/ingest_index.json directly
