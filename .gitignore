@@ -26,8 +26,5 @@ logs/.interactive_watermarks/
 */MEMORY.md
 
 # Vault files
-*/vault.yaml
-*/budget.yaml
-*/topics.yaml
-*/web-config.json
-*/seen.json
+config/vault/*
+.claude/web/cache/*
