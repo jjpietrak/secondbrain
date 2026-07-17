@@ -48,6 +48,63 @@ current; never store fact bodies here.
 - Deep zone analysis: H800 dead zone for DeepSeek-V3 at NF<=2; Step-3 essentially immune.
 - Minimum B_ScaleOut to eliminate dead zone at NF=X for DeepSeek-V3: 20*X GB/s.
 
+## question-promote run (2026-07-16, QP-0007 -> Q-0012, USER-refocused)
+
+- QP-0007 promoted to Q-0012 AFTER a user-instructed refocus (body rewritten 2026-07-16 before
+  promotion): question is now OptiSim + LISS integration into LLMServingSim/AstraSim (entry
+  point, profile schema, dual-model policy); the original Lstab-distribution concern demoted
+  to sub-question 4 / acceptance criterion 4. Body carried VERBATIM from rewritten proposal.
+- Proposal filename slug stayed stale (lstab-stochastic-model...) in promoted/ archive; the NEW
+  question slug matches the refocused content: Q-0012-optisim-liss-integration-llmservingsim.md.
+  Lesson: on refocused promotions, name the Q file from the new focus, not the QP slug.
+- Frontmatter: topic: simulator-design, priority: high (gates Q-0010 + Q-0011), written_by:
+  USER, promoted_from: QP-0007. next-id returned Q-0012 as expected (counter now 13).
+- relink --apply: 2 files (Q-0012 links:auto emptied as usual; promoted QP-0007 relinked).
+- hot.md: open Qs now 10 (added Q-0012), pending QPs down to 1 (QP-0004 only); stale QP-0007
+  link in "New QP proposals" section repointed to promoted/ path; priority list item 6 added
+  for Q-0012 (gates Q-0010/Q-0011).
+- Graph now: 10 open Qs (Q-0001, Q-0003, Q-0005..Q-0012), 2 solved, 1 pending QP (QP-0004).
+
+## question-promote run (2026-07-16, QP-0006 -> Q-0011)
+
+- QP-0006 (critical parameters spec, Tetra vs GPU prefill simulator) promoted to Q-0011 on
+  explicit user approval; body carried VERBATIM including user-added (2026-07-16) "AFD x
+  PD-disagg intersection" section (C as cross-level variable: KV handoff cadence, decode-pool
+  interference, egress link contention) and a distinctness note vs Q-0007 (Q-0007 = one
+  analytical C_min_afd boundary; Q-0011 = the requirements spec that gates Q-0009; Q-0007's
+  answer is one Tier-1 calibration target inside it).
+- File: objective/research_question/Q-0011-simulator-critical-parameters-tetra-vs-gpu-prefill.md
+  (topic: simulator-design, priority: high (gates Q-0009; proposal had no priority field),
+  written_by: USER, promoted_from: QP-0006).
+- next-id returned Q-0011 as expected (counter now 12; contiguous with Q-0010 anomaly fix).
+- NOTE: relink --apply normalizes the new Q node's links:auto block to empty (proposal-era
+  relates-to edges are stripped; same as Q-0010). Body text otherwise untouched.
+- QP-0006 moved to research_question_proposal/promoted/ (status: approved, promoted_to: Q-0011
+  added manually after mark_proposal_approved, as before).
+- index op-log row appended; hot.md updated (9 open Qs, 2 pending QPs: QP-0004/QP-0007;
+  priority item 4 repointed QP-0006 -> Q-0011); relink applied (2 files).
+- Graph now: 9 open Qs (Q-0001, Q-0003, Q-0005..Q-0011), 2 solved, 2 pending QPs.
+
+## question-promote run (2026-07-16, QP-0008 -> Q-0010)
+
+- QP-0008 (Pareto-optimal (C, na_attn, na_ffn) Tetra+GPU prefill configs) promoted to Q-0010
+  on explicit user approval; body carried VERBATIM including user-added "Feasibility conditions"
+  section (2026-07-16): hidden-FFN T_e <= T_a (FastAFD) + hidden-comm T_c < max(T_a, T_e)
+  (MegaScale-Infer ping-pong); both carve infeasible regions OUT of the Pareto plane.
+- File: objective/research_question/Q-0010-pareto-optimal-tetra-gpu-prefill-configurations.md
+  (topic: simulator-design, priority: medium (proposal had no priority field), written_by: USER).
+- COUNTER ANOMALY: index.md next_id.research_question was already 11 before allocation (Q-0010
+  orphan-bumped by a prior aborted run; no Q-0010 existed anywhere in vault). next-id returned
+  Q-0011. Used Q-0010 manually (user-expected, collision-free) and reset counter 12 -> 11 so
+  Q-0011 is next. Lesson: verify next-id output against actual files before trusting it.
+- wiki-lock.sh requires VAULT-RELATIVE paths (absolute paths fail rc=4) and VAULT_PATH env.
+- mark_proposal_approved only sets status: approved; promoted_to: must be added manually.
+- Native WSL now: no wsl.exe wrapper; prefix agents.* calls with VAULT_PATH=<vault root>
+  (secondbrain.yaml default_vault holds a path, so vault_config env fails without it).
+- QP-0008 moved to research_question_proposal/promoted/ (status: approved, promoted_to: Q-0010).
+- index op-log row appended; hot.md updated (8 open Qs, 3 pending QPs); relink applied (1 file).
+- Graph now: 8 open Qs (Q-0001, Q-0003, Q-0005..Q-0010), 2 solved, 3 pending QPs (QP-0004/0006/0007).
+
 ## obj-synth run (2026-07-13, Q-0002 LLMServingSim vs Frontier synthesis)
 
 - Triggered by: raw/notes/LLMServingSim vs Frontier (internal Lumai comparison note, ingested same day).

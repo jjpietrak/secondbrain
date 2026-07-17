@@ -4,7 +4,7 @@
 # This file holds only what is shared: the vault registry, the default vault, and
 # pointers to shared infrastructure (API keys in .env).
 #
-# Selecting the active vault: set the VAULT env var (e.g. VAULT=example).
+# Selecting the active vault: set the VAULT env var (e.g. VAULT=Inference-Disagg).
 # If unset, `default_vault` below is used. Resolve at runtime with:
 #   python -m agents.vault_config path     # active vault's absolute path
 #   python -m agents.vault_config name      # active vault name
@@ -13,12 +13,12 @@
 # CODE_PATH (repo root) is resolved automatically from agents/vault_config.py
 # (__file__-relative). Override with the CODE_PATH env var if needed.
 
-default_vault: example
+default_vault: Inference-Disagg
 
 # Registry of known vaults. `enabled` controls whether the nightly run touches it
 # when iterating all vaults (VAULT=all). Each name maps to config/vaults/<name>/.
 vaults:
-  - name: example
+  - name: Inference-Disagg
     enabled: true
 
 

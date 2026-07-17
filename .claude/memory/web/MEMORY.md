@@ -83,3 +83,34 @@ index current; never store fact bodies here.
 - [ ] Skills `/web-scrape` `/web-rank` `/wiki-approve` + the `web` agent need a **CLI restart** to register.
 - [ ] Phase 3B: paid scraper adapters behind the cost gate.
 - [ ] Phase 4: nightly_run.sh integration (web after research) + agent-learn feedback persistence + nightly auto-read of the ticked report (report_approve reused).
+
+## Dedup patch verification (2026-07-15)
+
+- **Version-suffix dedup (arxiv:2509.17357v1 == arxiv:2509.17357): CONFIRMED WORKING.**
+  `candidate_ident()` strips vN suffix via `re.sub(r"v\d+$", "")`. Dry-run trace shows
+  ingested arxiv IDs correctly tagged `ingest-dedup:ingested`.
+- **Cross-engine dedup (same arxiv paper via different engines): CONFIRMED WORKING.**
+  Nexus paper (2507.06608) was submitted twice (engines: arxiv + semantic_scholar); dry-run
+  trace shows `ident arxiv:2507.06608: dropped arxiv:2507.06608, kept arxiv:2507.06608` under
+  "Intra-pool duplicates collapsed".
+- **Already-ingested re-surfacing: CONFIRMED BLOCKED.** arxiv:2601.21351 (ingested) and
+  arxiv:2605.28302 (pending) did not appear in final selection. Trace shows
+  `ingest-dedup:ingested` and `ingest-dedup:pending` tags.
+- **RESIDUAL GAP -- DOI/SS-URL to arxiv dedup miss:** DualPath paper (arXiv:2602.21548,
+  status=ingested) was harvested by semantic_scholar with URL key
+  `url:https://www.semanticscholar.org/paper/893f6c4c9790b66687044ca1e0c0292549bf8a73`.
+  `candidate_ident()` returns the SS URL (not `arxiv:2602.21548`) because `_arxiv_id_from_url`
+  only matches arxiv.org URLs, not opaque SS hash URLs. The `source_id` field carries
+  `10.48550/arXiv.2602.21548` (DOI) which normalizes to `id:10.48550/...` -- also not matched.
+  **FIX needed:** detect `10.48550/arXiv.<ID>` pattern in `source_id` inside `candidate_ident()`
+  and return `arxiv:<ID>`. This is a known open issue; does not break the primary dedup paths.
+
+## Run invocation note (2026-07-15)
+
+- `web_crawl.py --vault` correctly passes `root=Path(vault_root)` to `_load_ingest_rows` (dedup)
+  and to the nightly report write. BUT `ii.enqueue()` inside the script has NO `root=` arg --
+  it uses env-based vault resolution. When `VAULT` is not exported into the subprocess, it falls
+  to `default_vault=example` in secondbrain.yaml. The `.env` file has `VAULT=Inference-Disagg`
+  but without `export` it is not inherited by Python. **Always run with `export VAULT_PATH=<root>`
+  or `export VAULT=<name>` before invoking web_crawl.py to ensure enqueue targets the right vault.**
+  Correct invocation: `source .env && export VAULT_PATH=/mnt/c/Obsidian/Inference-Disagg && python scripts/web_crawl.py --vault /mnt/c/Obsidian/Inference-Disagg ...`

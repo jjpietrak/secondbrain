@@ -1,13 +1,13 @@
 {
-  "new_sources_total": 5,
+  "new_sources_total": 6,
   "lanes": {
     "gap":      {"quota": 3},
-    "research": {"quota": 1, "min": 1},
+    "research": {"quota": 2},
     "news":     {"quota": 1}
   },
   "spillover_order": ["gap", "research", "news"],
   "registry_boost": 0.25,
-  "paid_scrape": {"enabled": false, "max_calls_per_crawl": 2, "engines": ["perplexity"]},
+  "paid_scrape": {"enabled": true, "max_calls_per_crawl": 2, "engines": ["perplexity"]},
   "learn": {"enabled": true, "w_rep": 0.15, "w_rej": 0.2, "prior_strength": 1.0, "min_reject_freq": 2},
   "query": {"reformulate": false, "use_llm": true, "max_queries_per_engine": 3},
   "category_weights": {

@@ -1,0 +1,67 @@
+# Research topics for automated nightly crawl — aligned to the Inference-Disagg vault
+# PURPOSE (disaggregated LLM inference + the Iris Tetra optical accelerator project).
+# Tier-1 cloud Routines (code.claude.com) read this list conceptually; the local
+# Tier-2 nightly_run.sh pulls whatever those Routines committed. Mirror of meta/topics.md.
+topics:
+  - name: Disaggregated inference
+    keywords: [disaggregated inference, prefill decode disaggregation, prefill/decode separation,
+               P/D disaggregation, DistServe, Splitwise, Mooncake, TetriInfer, goodput SLO serving]
+    sources: [arxiv, hackernews, reddit/r/LocalLLaMA, semantic_scholar]
+    frequency: daily
+    output: research/daily/disagg-inference
+
+  - name: KV-cache systems
+    keywords: [KV cache, KV cache transfer, KV cache offloading, KV cache compression,
+               paged attention, prefix caching, cache-aware routing, layer-wise KV streaming]
+    sources: [arxiv, hackernews, semantic_scholar]
+    frequency: daily
+    output: research/daily/kv-cache
+
+  - name: LLM serving systems and schedulers
+    keywords: [vLLM, SGLang, TensorRT-LLM, NVIDIA Dynamo, llm-d, continuous batching,
+               chunked prefill, inference scheduling, disaggregated serving framework]
+    sources: [arxiv, hackernews, reddit/r/LocalLLaMA]
+    frequency: daily
+    output: research/daily/serving-systems
+
+  - name: Layer and expert disaggregation
+    keywords: [attention FFN disaggregation, attention-FFN separation, layer-wise disaggregation,
+               MoE expert parallelism, expert offloading, disaggregated MoE serving]
+    sources: [arxiv, semantic_scholar]
+    frequency: weekly
+    output: research/daily/layer-disagg
+
+  - name: Heterogeneous-cluster inference
+    keywords: [heterogeneous GPU serving, heterogeneous cluster inference, hardware-aware scheduling,
+               accelerator placement, SLO-aware serving, cross-accelerator scheduling]
+    sources: [arxiv, hackernews, semantic_scholar]
+    frequency: weekly
+    output: research/daily/hetero-clusters
+
+  - name: Optical accelerators and inference efficiency
+    keywords: [optical accelerator, photonic computing, silicon photonics AI, analog optical compute,
+               energy-efficient inference, power efficiency accelerator, optical matrix multiply,
+               Lightmatter, Celestial AI Photonic Fabric, Ayar Labs optical I/O,
+               photonic interconnect, co-packaged optics, optical interconnect disaggregation]
+    sources: [arxiv, hackernews, semantic_scholar]
+    frequency: weekly
+    output: research/daily/optical-accelerators
+
+  - name: Specialised AI accelerators (heterogeneous hardware)
+    keywords: [Groq LPU, Cerebras wafer-scale, SambaNova RDU, Tenstorrent, Graphcore IPU,
+               Etched Sohu, d-Matrix Corsair, MatX, Furiosa RNGD, Untether AI, Positron,
+               Esperanto, Rebellions, Callosum, transformer ASIC, dataflow accelerator,
+               heterogeneous accelerator, inference chip startup]
+    sources: [arxiv, hackernews, reddit/r/LocalLLaMA, semantic_scholar]
+    frequency: weekly
+    output: research/daily/accelerators
+
+  - name: Prefill-bound workloads and compute characteristics
+    keywords: [long-context inference, long context prefill, prefill-bound workloads,
+               prefill throughput, compute-bound vs memory-bound, arithmetic intensity,
+               prefill/decode roofline, decode-oriented accelerator]
+    sources: [arxiv, hackernews, reddit/r/LocalLLaMA]
+    frequency: weekly
+    output: research/daily/prefill-workloads
+
+# Add your own topics below — one entry per research area.

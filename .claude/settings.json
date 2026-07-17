@@ -10,7 +10,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python scripts/track_interactive_tokens.py"
+            "command": "/home/jpietrak/second_brain/.venv/bin/python scripts/track_interactive_tokens.py"
           }
         ]
       }
