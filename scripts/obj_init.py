@@ -284,10 +284,10 @@ written_by: research
 ---
 
 ## For future Claude
-This is the objective hot-cache: the last objective-reasoning context written
-by the research agent. It records the current focus, open threads, and proposed
-next actions. Read this to orient before starting a research task.
-Keep under ~500 words; older context graduates to objective/index.md log rows.
+This is the objective hot-cache: the current state of the research graph. It records the
+active focus, open threads, proposed next actions, and recently touched nodes. Read this
+before any research task to orient quickly. Keep under ~500 words; overwrite completely
+each run -- older context graduates to objective/index.md log rows.
 
 # Objective hot cache
 
@@ -301,6 +301,9 @@ Keep under ~500 words; older context graduates to objective/index.md log rows.
 -
 
 ## Proposed next actions
+-
+
+## Focus zone (last 10 nodes)
 -
 """
 

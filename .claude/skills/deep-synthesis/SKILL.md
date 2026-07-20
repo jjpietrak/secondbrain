@@ -373,21 +373,33 @@ For each proposal returned by `parse_proposals()`:
 
 ## Step 9 - update objective/hot.md (locked write)
 
-Append a summary of this synthesis run to `$VAULT_ROOT/objective/hot.md`:
+**OVERWRITE** `$VAULT_ROOT/objective/hot.md` with a fresh structured snapshot - never append.
+Keep body under ~500 words. Preserve the full frontmatter (`type: hot`, `updated`, `written_by:
+research`) and the `## For future Claude` preamble. The body must contain exactly these four
+sections plus the Focus zone:
+
+```markdown
+## Last updated
+YYYY-MM-DD
+
+## Current focus
+- <scope of this deep-synthesis run; research report path; directions/proposals emitted>
+
+## Open threads
+- <open questions still unresolved; directions blocked on missing sources>
+
+## Proposed next actions
+- <already-answerable items; next skills to run>
+
+## Focus zone (last 10 nodes)
+<run `python scripts/wiki_focus_zone.py render` and paste output here>
+```
+
+Populate the Focus zone by running `python scripts/wiki_focus_zone.py render`.
 
 ```bash
-# Acquire lock
 bash "$CODE_PATH/scripts/wiki-lock.sh" acquire "objective/hot.md" || { sleep 2; bash "$CODE_PATH/scripts/wiki-lock.sh" acquire "objective/hot.md"; }
-
-# Read current content, append summary block, write back
-# Summary block:
-# ### deep-synthesis run YYYY-MM-DD
-# - Scope: <scope>
-# - Research report: <output path>
-# - Directions emitted: <DIR ids>
-# - Proposals emitted: <QP ids>
-# - Already answerable: <list or "none">
-
+# ... write the full structured file ...
 bash "$CODE_PATH/scripts/wiki-lock.sh" release "objective/hot.md"
 ```
 

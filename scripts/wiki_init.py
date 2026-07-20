@@ -431,6 +431,7 @@ updated: {today}
 tags:
   - hot
 ai-first: true
+written_by: wiki
 sources: []
 ---
 
@@ -454,6 +455,9 @@ proposed research directions, and open work threads. Read this first to orient. 
 -
 
 ## Blind spots / proposed directions
+-
+
+## Focus zone (last 10 nodes)
 -
 """
 

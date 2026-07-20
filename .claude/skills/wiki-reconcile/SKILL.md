@@ -98,8 +98,41 @@ Never overwrite a fact on an unreachable judge.
    contradiction and pick the authoritative source.
 4. Apply outcome 1 (timeline append) or outcome 2 (warning callout + conflict note + log)
    per the classification. Both are ADDITIVE - never delete a prior value.
-5. Report: resolved-as-evolution (old fact -> new fact + why), flagged contradictions
+5. OVERWRITE `wiki/hot.md` with a fresh structured snapshot reflecting current vault state
+   (see hot.md format below), then append to `wiki/log.md`.
+6. Report: resolved-as-evolution (old fact -> new fact + why), flagged contradictions
    (needs human judgement), and any pages whose `timeline:` was seeded.
+
+## hot.md format (OVERWRITE, never append)
+
+`wiki/hot.md` is replaced completely on every wiki operation. Never grow it by appending
+session blocks. Keep the body under ~500 words; condense by pruning the oldest "Recent
+changes" entries first. Preserve the full frontmatter and the `## For future Claude`
+preamble unchanged. The body must contain exactly these five sections with current-state
+info (not a session history):
+
+```markdown
+## Last updated
+YYYY-MM-DD
+
+## Key recent facts
+- <most significant findings from the last 2-3 sessions>
+
+## Recent changes
+- <pages created/patched in the most recent session>
+
+## Active threads (next sessions)
+- <open questions and carry-overs from the most recent session>
+
+## Blind spots / proposed directions
+- <gaps and proposed research directions from the most recent session>
+
+## Focus zone (last 10 nodes)
+<run `python scripts/wiki_focus_zone.py render` and paste output here>
+```
+
+Populate the Focus zone section by running `python scripts/wiki_focus_zone.py render`
+(the PostToolUse hook maintains `meta/focus_zone.json` automatically as pages are written).
 
 ## Locking (shared-target writes)
 

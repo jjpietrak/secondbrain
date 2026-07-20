@@ -32,7 +32,7 @@ Vault root resolution order: `$WIKI_LOCK_VAULT` (test override) > `$VAULT_ROOT` 
 `agents.vault_config path` > script-parent fallback.
 
 Skill wiring: every skill that writes to a shared append target (`wiki/index.md`,
-`wiki/log.md`, `wiki/hot/hot.md`, `meta/ingest_index*`) wraps the write in the canonical
+`wiki/log.md`, `wiki/hot.md`, `meta/ingest_index*`) wraps the write in the canonical
 acquire -> write -> release pattern documented in `skills/references/locking.md`. For
 multi-file writes, acquire in sorted-path order (deadlock-free). On rc=75: retry once
 after 2s then log+skip.

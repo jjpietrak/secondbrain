@@ -128,7 +128,40 @@ Fetch methods (choose by id type):
 `ingest_index scan` is called implicitly by `ingest_index mark` at the end of each ingest,
 which flips the row from pending -> ingested.
 
-### 5. Annotate the report
+### 5. Overwrite wiki/hot.md
+
+After all ingests are complete, OVERWRITE `wiki/hot.md` with a fresh structured snapshot
+reflecting the current vault state. Never append session blocks to it; replace the whole
+file. Keep body under ~500 words. The five required sections are:
+
+```markdown
+## Last updated
+YYYY-MM-DD
+
+## Key recent facts
+- <most significant findings from the last 2-3 sessions>
+
+## Recent changes
+- <pages created/patched in the most recent session>
+
+## Active threads (next sessions)
+- <open questions and carry-overs>
+
+## Blind spots / proposed directions
+- <gaps and proposed research directions>
+
+## Focus zone (last 10 nodes)
+<run `python scripts/wiki_focus_zone.py render` and paste output here>
+```
+
+Populate the Focus zone section by running `python scripts/wiki_focus_zone.py render`
+(the PostToolUse hook has already updated `meta/focus_zone.json` as pages were written).
+
+Preserve the full frontmatter (`type: hot`, `date`, `created`, `updated`, `tags`,
+`ai-first: true`, `written_by: wiki`, `sources: []`) and the `## For future Claude`
+preamble. Use the wiki-lock snippet when writing (shared target).
+
+### 6. Annotate the report
 
 After all fetches and ingests complete, mark each row in the report file:
 - Approved + ingested: change `- [x] approve` to `- [x] approve (ingested YYYY-MM-DD)`

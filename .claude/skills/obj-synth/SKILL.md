@@ -297,16 +297,35 @@ wsl.exe -- bash -lc 'cd "$CODE_PATH" && bash scripts/wiki-lock.sh release object
 On rc=75 (lock held): retry once after 2s; if still held, log a warning to
 `objective/agent_todo/TODO-NNNN-hot-update-deferred.md` and skip the hot update.
 
-hot.md content format:
-```yaml
----
-type: hot
-updated: YYYY-MM-DD
-generated_by: research
----
+**objective/hot.md is an OVERWRITE target - replace the entire file every time, never append.**
+Keep body under ~500 words; older context graduates to objective/index.md log rows.
+Preserve the full frontmatter (`type: hot`, `updated`, `written_by: research`) and the
+`## For future Claude` preamble. The body must contain exactly these four sections plus
+the Focus zone:
+
+```markdown
+## Last updated
+YYYY-MM-DD
+
+## Current focus
+- <what obj-synth just reasoned over; active direction ids + their targets>
+
+## Open threads
+- <direction ids still open; what each is blocked on or waiting for>
+
+## Proposed next actions
+- <"Already Answerable" recommendations; next skill to run; next questions to promote>
+
+## Focus zone (last 10 nodes)
+<run `python scripts/wiki_focus_zone.py render` and paste output here>
 ```
-Body: current focus (what obj-synth just reasoned over), open threads (direction ids +
-their targets), and "Already Answerable" recommendations.
+
+Populate the Focus zone section by running:
+```bash
+python scripts/wiki_focus_zone.py render
+```
+The PostToolUse hook maintains `meta/focus_zone.json` (code repo) automatically as
+objective and wiki pages are written; `render` formats the current window.
 
 ## Step 10 - Append to objective/index.md (locked write)
 

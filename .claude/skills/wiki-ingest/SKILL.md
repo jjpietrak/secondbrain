@@ -124,6 +124,39 @@ Trigger: a file in `raw/` is `pending`, or the user points at one source.
 9. **Update the shared targets** - `wiki/hot.md`, `wiki/log.md` - using the locking snippet
    below (these are multi-writer append targets). `wiki/index.md` is rebuilt deterministically
    by step 11 instead of being appended to manually.
+
+   **hot.md is an OVERWRITE target - replace the entire file every time, never append.**
+   Keep the body under ~500 words. If content would exceed that, condense by removing the
+   oldest entries from "Recent changes" first. Always preserve the full frontmatter block
+   (`type: hot`, `date`, `created`, `updated`, `tags`, `ai-first: true`, `written_by: wiki`,
+   `sources: []`) and the `## For future Claude` preamble. The structured body must contain
+   exactly these five sections, populated with current-state info (NOT a session history log):
+
+   ```markdown
+   ## Last updated
+   YYYY-MM-DD
+
+   ## Key recent facts
+   - <most significant findings from the last 2-3 sessions>
+
+   ## Recent changes
+   - <pages created/patched in the most recent session>
+
+   ## Active threads (next sessions)
+   - <open questions and carry-overs from the most recent session>
+
+   ## Blind spots / proposed directions
+   - <gaps and proposed research directions from the most recent session>
+
+   ## Focus zone (last 10 nodes)
+   <run `$PY scripts/wiki_focus_zone.py render` and paste output here>
+   ```
+   Populate the Focus zone section by running:
+   ```bash
+   $PY scripts/wiki_focus_zone.py render
+   ```
+   The hook has already updated `meta/focus_zone.json` as pages were written; `render`
+   formats the current window as a wikilink list. Paste its output verbatim.
 10. **Check for contradictions** (below).
 11. **Record the ingest** in the index, then rebuild `wiki/index.md`:
     ```bash

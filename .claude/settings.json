@@ -25,6 +25,21 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd /home/jpietrak/second_brain && /home/jpietrak/second_brain/.venv/bin/python scripts/wiki_focus_zone.py"
+          }
+        ]
+      }
     ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "/home/jpietrak/second_brain/.claude/statusline.sh"
   }
 }

@@ -75,9 +75,9 @@ discipline), then look for:
      carrying a recency marker and its `[[sources/X]]` citation.
 4. **Link back**: add a `[[<synthesis page>]]` wikilink from each source page the
    synthesis draws on (the propagation rule - never create a synthesis in isolation).
-5. Update the shared targets under a lock (see Locking): add the page to `wiki/index.md`
-   and append a `wiki/log.md` entry `## [YYYY-MM-DD] synth | N pages created, M orphans
-   rescued`.
+5. Update the shared targets under a lock (see Locking): add the page to `wiki/index.md`,
+   append a `wiki/log.md` entry `## [YYYY-MM-DD] synth | N pages created, M orphans
+   rescued`, and OVERWRITE `wiki/hot.md` with a fresh structured snapshot (see format below).
 6. Report: pages created (with their `synthesis_type`), orphans rescued, connections
    found.
 
@@ -104,6 +104,37 @@ done
 # ... write index.md + log.md while held ...
 for p in "${held[@]}"; do bash "$LOCK" release "$p"; done
 ```
+
+## hot.md format (OVERWRITE, never append)
+
+`wiki/hot.md` is replaced completely on every wiki operation. Never grow it by appending
+session blocks. Keep the body under ~500 words; condense by pruning the oldest "Recent
+changes" entries first. Preserve the full frontmatter and the `## For future Claude`
+preamble unchanged. The body must contain exactly these five sections with current-state
+info (not a session history):
+
+```markdown
+## Last updated
+YYYY-MM-DD
+
+## Key recent facts
+- <most significant findings from the last 2-3 sessions>
+
+## Recent changes
+- <pages created/patched in the most recent session>
+
+## Active threads (next sessions)
+- <open questions and carry-overs from the most recent session>
+
+## Blind spots / proposed directions
+- <gaps and proposed research directions from the most recent session>
+
+## Focus zone (last 10 nodes)
+<run `python scripts/wiki_focus_zone.py render` and paste output here>
+```
+
+Populate the Focus zone section by running `python scripts/wiki_focus_zone.py render`
+(the PostToolUse hook maintains `meta/focus_zone.json` automatically as pages are written).
 
 ## Conventions
 
