@@ -23,8 +23,9 @@ logs/
 logs/.interactive_watermarks/
 
 # Memory files
-*MEMORY.md
-.claude/memory/*
+**/*MEMORY.md
+.claude/memory/
+.claude/memory/**
 
 # Vault files
 config/vault/*
